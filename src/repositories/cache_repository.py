@@ -727,6 +727,133 @@ class CacheRepository:
             })
         return out
 
+    async def get_tasks_by_status(
+        self, space_id: str, status_filter: str | None = None, folder_id: str | None = None, limit: int = 50
+    ) -> dict:
+        """Retorna tarefas agrupadas por status atual. Filtra por status e/ou pasta opcionalmente."""
+        conditions = [
+            ClickUpListCache.space_id == space_id,
+            ClickUpTaskCache.parent_task_id.is_(None),
+        ]
+        if folder_id:
+            conditions.append(ClickUpFolderCache.folder_id == folder_id)
+        if status_filter:
+            from sqlalchemy import func as sqlfunc
+            conditions.append(sqlfunc.lower(ClickUpTaskCache.status) == status_filter.strip().lower())
+
+        stmt = (
+            select(
+                ClickUpTaskCache,
+                ClickUpListCache.name.label("list_name"),
+                ClickUpFolderCache.name.label("folder_name"),
+            )
+            .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+            .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .where(*conditions)
+            .order_by(ClickUpTaskCache.status, ClickUpTaskCache.name)
+            .limit(limit)
+        )
+        rows = (await self._db.execute(stmt)).all()
+
+        by_status: dict[str, list[dict]] = {}
+        for row in rows:
+            task, list_name, folder_name = row[0], row[1], row[2]
+            try:
+                assignees = json.loads(task.assignees_json or "[]")
+            except Exception:
+                assignees = []
+            entry = {
+                "name": task.name,
+                "status": task.status,
+                "folder_name": folder_name or "—",
+                "list_name": list_name,
+                "assignees": [a.get("username") or "?" for a in assignees],
+                "due_date": task.due_date.strftime("%d/%m/%Y") if task.due_date else None,
+                "url": task.url,
+            }
+            key = (task.status or "sem status").lower()
+            by_status.setdefault(key, []).append(entry)
+
+        return {
+            "filter": status_filter,
+            "total": len(rows),
+            "by_status": by_status,
+        }
+
+    async def get_recent_changes(self, space_id: str, since: datetime, limit: int = 40) -> dict:
+        """Retorna tarefas criadas, concluídas e atualizadas desde `since`.
+
+        O ClickUp só preenche date_closed ao arquivar — para capturar conclusões
+        usa-se date_updated + status_type 'done'/'closed'.
+        """
+        _done_types = ("done", "closed")
+
+        base = (
+            select(
+                ClickUpTaskCache,
+                ClickUpListCache.name.label("list_name"),
+                ClickUpFolderCache.name.label("folder_name"),
+            )
+            .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+            .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .where(
+                ClickUpListCache.space_id == space_id,
+                ClickUpTaskCache.parent_task_id.is_(None),
+            )
+        )
+
+        def _row_to_dict(row) -> dict:
+            task, list_name, folder_name = row[0], row[1], row[2]
+            try:
+                assignees = json.loads(task.assignees_json or "[]")
+            except Exception:
+                assignees = []
+            return {
+                "name": task.name,
+                "status": task.status,
+                "folder_name": folder_name or "—",
+                "list_name": list_name,
+                "assignees": [a.get("username") or "?" for a in assignees],
+                "url": task.url,
+            }
+
+        # Tarefas criadas no período
+        created_rows = (await self._db.execute(
+            base.where(ClickUpTaskCache.date_created >= since)
+            .order_by(ClickUpTaskCache.date_created.desc()).limit(limit)
+        )).all()
+
+        # Tarefas concluídas no período (date_updated + status done/closed)
+        completed_rows = (await self._db.execute(
+            base.where(
+                ClickUpTaskCache.date_updated >= since,
+                ClickUpTaskCache.status_type.in_(_done_types),
+            )
+            .order_by(ClickUpTaskCache.date_updated.desc()).limit(limit)
+        )).all()
+
+        # Todas as tarefas ativas atualizadas no período (exclui done/closed)
+        active_rows = (await self._db.execute(
+            base.where(
+                ClickUpTaskCache.date_updated >= since,
+                ClickUpTaskCache.status_type.notin_(_done_types),
+            )
+            .order_by(ClickUpTaskCache.date_updated.desc()).limit(limit * 3)
+        )).all()
+
+        # Agrupa por status para que a IA consiga responder "quais entraram em X"
+        by_status: dict[str, list[dict]] = {}
+        for row in active_rows:
+            task = row[0]
+            status_name = (task.status or "sem status").lower()
+            by_status.setdefault(status_name, []).append(_row_to_dict(row))
+
+        return {
+            "created": [_row_to_dict(r) for r in created_rows],
+            "completed": [_row_to_dict(r) for r in completed_rows],
+            "by_status": by_status,
+        }
+
     async def get_last_refresh(self) -> CacheRefreshLog | None:
         return (await self._db.execute(
             select(CacheRefreshLog).order_by(CacheRefreshLog.created_at.desc()).limit(1)

@@ -34,5 +34,12 @@ class Settings(BaseSettings):
     dashboard_enabled: bool = True
     sse_keepalive_seconds: float = 15.0
 
+    # Chat / AI Agent
+    chat_enabled: bool = True
+    anthropic_api_key: str = ""
+    chat_model: str = "claude-haiku-4-5-20251001"
+    chat_max_iterations: int = 5
+    chat_max_tokens: int = 1024
+
 
 settings = Settings()

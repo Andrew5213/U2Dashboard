@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assistente IA — U2 Broadcast</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/echarts.min.js"></script>
+  <style>
+    /* Submenu de províncias */
+    #provincia-submenu { max-height: 0; overflow: hidden; transition: max-height 0.25s ease; }
+    #provincia-chevron { transition: transform 0.25s ease; }
+
+    /* ── Chat scroll ── */
+    .chat-scroll { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+    .chat-inner { max-width: 760px; margin: 0 auto; padding: 24px 20px 8px; }
+
+    /* ── Welcome screen ── */
+    #chat-welcome { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; gap: 20px; }
+    .welcome-icon { width: 56px; height: 56px; background: #1e40af; border-radius: 16px; display: flex; align-items: center; justify-content: center; }
+    .welcome-title { font-size: 22px; font-weight: 700; color: #1e293b; }
+    .welcome-sub { font-size: 14px; color: #64748b; max-width: 420px; line-height: 1.6; }
+    .suggestions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; width: 100%; max-width: 620px; margin-top: 8px; }
+    .suggestion-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: left; font-size: 12.5px; color: #374151; line-height: 1.4; transition: all .15s; display: flex; align-items: flex-start; gap: 8px; }
+    .suggestion-card:hover { border-color: #1e40af; color: #1e40af; background: #eff6ff; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(30,64,175,.08); }
+    .suggestion-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Messages ── */
+    #chat-messages { display: flex; flex-direction: column; gap: 20px; }
+    #chat-messages.hidden { display: none; }
+    .msg-wrap { display: flex; align-items: flex-start; gap: 10px; }
+    .msg-user { flex-direction: row-reverse; }
+    .msg-avatar { width: 30px; height: 30px; border-radius: 50%; background: #1e40af; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+    .msg-bubble { max-width: 85%; padding: 12px 15px; border-radius: 14px; font-size: 13.5px; line-height: 1.6; word-break: break-word; }
+    .bubble-user { background: #1e40af; color: #fff; border-bottom-right-radius: 4px; }
+    .bubble-bot { background: #fff; color: #1e293b; border-bottom-left-radius: 4px; border: 1px solid #e2e8f0; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+
+    /* Typing indicator */
+    .typing-bubble { display: flex; align-items: center; gap: 4px; padding: 14px 18px; }
+    .typing-bubble span { width: 7px; height: 7px; background: #94a3b8; border-radius: 50%; animation: blink 1.2s infinite; }
+    .typing-bubble span:nth-child(2) { animation-delay: .2s; }
+    .typing-bubble span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%,80%,100%{opacity:.3;transform:scale(.8)} 40%{opacity:1;transform:scale(1)} }
+
+    /* ── Charts ── */
+    .chart-canvas { width: 100%; height: 300px; margin-top: 12px; border-radius: 8px; overflow: hidden; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .kpi-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; text-align: center; }
+    .kpi-value { font-size: 22px; font-weight: 700; color: #1e40af; }
+    .kpi-label { font-size: 10.5px; color: #64748b; margin-top: 3px; }
+    .chat-table-wrap { overflow-x: auto; margin-top: 10px; max-height: 320px; overflow-y: auto; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .chat-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .chat-table th { background: #f1f5f9; padding: 7px 10px; text-align: left; border-bottom: 1px solid #e2e8f0; white-space: nowrap; font-weight: 600; color: #374151; position: sticky; top: 0; }
+    .chat-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; color: #475569; }
+    .chat-table tr.even td { background: #fff; }
+    .chat-table tr.odd td { background: #f8fafc; }
+    .chat-table tr:last-child td { border-bottom: none; }
+    .chat-table tr:hover td { background: #eff6ff; }
+
+    /* ── Input area ── */
+    .input-bar { background: #fff; border-top: 1px solid #e2e8f0; padding: 14px 20px; flex-shrink: 0; }
+    .input-inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
+    #chat-input { flex: 1; resize: none; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; font-size: 13.5px; outline: none; max-height: 120px; overflow-y: auto; font-family: inherit; background: #fff; line-height: 1.5; transition: border-color .15s; }
+    #chat-input:focus { border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.08); }
+    #chat-send { background: #1e40af; color: #fff; border: none; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background .15s; display: flex; align-items: center; gap: 6px; }
+    #chat-send:hover { background: #1d4ed8; }
+    #chat-send:disabled { background: #93c5fd; cursor: not-allowed; }
+    .input-hint { font-size: 10.5px; color: #94a3b8; margin-top: 6px; text-align: center; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+
+  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+  <aside class="w-56 flex-shrink-0 bg-gray-900 flex flex-col z-30 h-screen overflow-hidden">
+
+    <!-- Logo -->
+    <div class="px-0 py-0 border-b border-gray-700 flex-shrink-0">
+      <img src="/img/Logo Branca.png" alt="U2 Broadcast" class="h-36 w-auto" />
+    </div>
+
+    <!-- Nav principal -->
+    <nav class="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
+
+      <!-- Visão Geral -->
+      <a href="/"
+        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+        </svg>
+        Visão Geral
+      </a>
+
+      <!-- Assistente IA — ativo -->
+      <a href="/assistente"
+        class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+        </svg>
+        Assistente IA
+      </a>
+
+      <!-- Divisor + label Relatórios -->
+      <div class="pt-3 pb-1">
+        <div class="border-t border-gray-700 mb-3"></div>
+        <p class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Relatórios</p>
+      </div>
+
+      <!-- PDF Diário -->
+      <button id="btn-pdf-diario" onclick="exportDiario()"
+        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+        </svg>
+        PDF Diário
+      </button>
+
+      <!-- PDF Semanal -->
+      <button id="btn-pdf-semanal" onclick="exportSemanal()"
+        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5m.75-9 3-3 2.148 2.148A12.061 12.061 0 0 1 16.5 7.605" />
+        </svg>
+        PDF Semanal
+      </button>
+
+      <!-- PDF Executivo -->
+      <button id="btn-pdf-executivo" onclick="exportPDF()"
+        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+        </svg>
+        PDF Executivo
+      </button>
+
+      <!-- PDF Por Província (expansível) -->
+      <div>
+        <button id="btn-pdf-provincia" onclick="toggleProvinciaMenu()"
+          class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c-.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+          </svg>
+          <span class="flex-1">PDF Província</span>
+          <svg id="provincia-chevron" class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+        <div id="provincia-submenu">
+          <div id="provincia-list" class="ml-8 mt-1 mb-1 space-y-0.5">
+            <div class="px-3 py-1.5 text-xs text-gray-500">Carregando...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Divisor + Atualizar -->
+      <div class="pt-3">
+        <div class="border-t border-gray-700 mb-3"></div>
+      </div>
+
+      <button onclick="triggerRefresh()" id="refresh-btn"
+        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+        <span id="refresh-label">Atualizar Cache</span>
+      </button>
+
+    </nav>
+
+    <!-- Rodapé da sidebar -->
+    <div class="px-4 py-3 border-t border-gray-700 flex-shrink-0">
+      <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span id="sse-dot" class="w-2 h-2 rounded-full bg-gray-600 transition-colors flex-shrink-0"></span>
+        <span id="sse-label">offline</span>
+      </div>
+      <span id="last-refresh" class="text-xs text-gray-500 mt-1 block truncate"></span>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════ ÁREA DE CONTEÚDO ═══════════════════ -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- Topbar -->
+    <header class="bg-white border-b border-gray-200 flex-shrink-0 h-14 flex items-center justify-between px-6 shadow-sm">
+      <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+        </svg>
+        <span class="text-sm font-semibold text-gray-800">Assistente U2</span>
+        <span class="text-xs bg-blue-50 text-blue-500 px-2 py-0.5 rounded-full font-medium">Haiku</span>
+      </div>
+      <button id="chat-clear" class="text-xs text-gray-400 border border-gray-200 px-3 py-1.5 rounded-lg hover:border-gray-400 hover:text-gray-600 transition-all">
+        Limpar conversa
+      </button>
+    </header>
+
+    <!-- Scroll area -->
+    <div class="chat-scroll">
+      <div class="chat-inner">
+
+        <!-- Welcome -->
+        <div id="chat-welcome">
+          <div class="welcome-icon">
+            <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+            </svg>
+          </div>
+          <div>
+            <p class="welcome-title">Como posso ajudar?</p>
+            <p class="welcome-sub">Pergunte sobre o progresso das províncias, tarefas atrasadas, equipe e muito mais.</p>
+          </div>
+          <div class="suggestions-grid">
+            <button class="suggestion-card" data-query="Qual o resumo geral do projeto?">
+              <span class="suggestion-icon">📊</span>
+              <span>Qual o resumo geral do projeto?</span>
+            </button>
+            <button class="suggestion-card" data-query="Compare o progresso de todas as províncias">
+              <span class="suggestion-icon">🗺️</span>
+              <span>Compare o progresso de todas as províncias</span>
+            </button>
+            <button class="suggestion-card" data-query="Quais tarefas estão atrasadas?">
+              <span class="suggestion-icon">⚠️</span>
+              <span>Quais tarefas estão atrasadas?</span>
+            </button>
+            <button class="suggestion-card" data-query="O que vence nos próximos 30 dias?">
+              <span class="suggestion-icon">📅</span>
+              <span>O que vence nos próximos 30 dias?</span>
+            </button>
+            <button class="suggestion-card" data-query="Quem tem mais tarefas em aberto?">
+              <span class="suggestion-icon">👥</span>
+              <span>Quem tem mais tarefas em aberto?</span>
+            </button>
+            <button class="suggestion-card" data-query="Mostre a evolução do progresso das províncias">
+              <span class="suggestion-icon">📈</span>
+              <span>Mostre a evolução do progresso</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mensagens -->
+        <div id="chat-messages" class="hidden"></div>
+
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-bar">
+      <div class="input-inner">
+        <textarea id="chat-input" rows="1" placeholder="Pergunte sobre províncias, tarefas, equipe… (Enter para enviar)"></textarea>
+        <button id="chat-send">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"/>
+          </svg>
+          Enviar
+        </button>
+      </div>
+      <p class="input-hint">Shift+Enter para nova linha &nbsp;·&nbsp; Os dados vêm do cache local do ClickUp</p>
+    </div>
+
+  </div>
+
+  <script src="/static/chat-page.js?v=3"></script>
+  <script>
+    function _exportWithSpinner(btnId, url) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg class="w-4 h-4 animate-spin inline mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Gerando...';
+      btn.disabled = true;
+      const a = document.createElement('a');
+      a.href = url; a.download = '';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 6000);
+    }
+
+    function exportPDF()     { _exportWithSpinner('btn-pdf-executivo', '/reports/pdf'); }
+    function exportDiario()  { _exportWithSpinner('btn-pdf-diario',    '/reports/pdf/daily'); }
+    function exportSemanal() { _exportWithSpinner('btn-pdf-semanal',   '/reports/pdf/weekly'); }
+
+    function triggerRefresh() {
+      fetch('/dashboard/refresh', { method: 'POST' })
+        .then(() => { const l = document.getElementById('refresh-label'); if(l) { l.textContent='Atualizando…'; setTimeout(()=>l.textContent='Atualizar Cache',3000); } });
+    }
+
+    let _provinciasLoaded = false, _submenuOpen = false;
+    async function toggleProvinciaMenu() {
+      _submenuOpen = !_submenuOpen;
+      const submenu = document.getElementById('provincia-submenu');
+      const chevron = document.getElementById('provincia-chevron');
+      submenu.style.maxHeight = _submenuOpen ? '800px' : '0';
+      chevron.style.transform  = _submenuOpen ? 'rotate(180deg)' : '';
+      if (_submenuOpen && !_provinciasLoaded) {
+        try {
+          const folders = await fetch('/reports/folders').then(r => r.json());
+          const list = document.getElementById('provincia-list');
+          list.innerHTML = folders.length
+            ? folders.map(f => `<button onclick="exportProvincia('${f.folder_id}')"
+                class="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors block">
+                ${f.name}</button>`).join('')
+            : '<div class="px-3 py-1.5 text-xs text-gray-500">Nenhuma área encontrada</div>';
+          _provinciasLoaded = true;
+        } catch { document.getElementById('provincia-list').innerHTML = '<div class="px-3 py-1.5 text-xs text-red-400">Erro ao carregar</div>'; }
+      }
+    }
+
+    function exportProvincia(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      _exportWithSpinner('btn-pdf-provincia', `/reports/pdf/provincia?folder_id=${folderId}`);
+    }
+  </script>
+</body>
+</html>

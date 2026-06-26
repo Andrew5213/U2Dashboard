@@ -49,7 +49,8 @@ src/
 ├── static/              # Served at /static (CSS, JS for dashboard UI)
 ├── img/                 # Served at /img (images for dashboard UI)
 ├── templates/
-│   └── index.html       # Jinja2 dashboard UI (served at GET /)
+│   ├── index.html       # Jinja2 dashboard UI (served at GET /)
+│   └── chat.html        # AI assistant page (served at GET /assistente)
 ├── core/
 │   ├── config.py        # Settings via pydantic-settings (reads .env)
 │   ├── database.py      # Async SQLAlchemy engine, Base, get_db, init_db
@@ -58,7 +59,8 @@ src/
 │   ├── schemas.py           # Pydantic DTOs: AirboxTask, AirboxAgreement, ClickUpTask, SyncResult
 │   ├── sync_map.py          # SQLAlchemy ORM: TaskSyncMap, AgreementSyncMap, SyncLog
 │   ├── cache_models.py      # SQLAlchemy ORM: ClickUpSpaceCache, FolderCache, ListCache, TaskCache, UserCache, CacheRefreshLog, DisciplineWeight
-│   └── dashboard_schemas.py # Pydantic response schemas for dashboard API
+│   ├── dashboard_schemas.py # Pydantic response schemas for dashboard API
+│   └── chat_schemas.py      # Pydantic DTOs: ChatRequest, ChatResponse, ChartPayload
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
 │   └── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
@@ -71,7 +73,9 @@ src/
 │   ├── event_broadcaster.py # In-process asyncio pub/sub for SSE events
 │   ├── dashboard_service.py # Reads from cache tables to serve dashboard API
 │   ├── report_service.py    # Generates PDF reports via fpdf2 (ReportService + ProvinceReportService)
-│   └── weights_config.py    # EVM weight constants + compute_province_progress / compute_list_progress / build_province_evolution
+│   ├── weights_config.py    # EVM weight constants + compute_province_progress / compute_list_progress / build_province_evolution
+│   ├── chat_service.py      # Agentic loop: Claude Haiku + tool use → ChatResponse (with optional ChartPayload)
+│   └── chat_tools.py        # TOOL_DEFINITIONS (9 tools) + dispatch_tool() routing to DashboardService/CacheRepository
 ├── api/
 │   ├── health.py            # GET /health
 │   ├── sync.py              # POST /sync/trigger, GET /sync/status|logs, GET+POST /sync/mappings/agreements
@@ -81,7 +85,8 @@ src/
 │   │                        #   POST /dashboard/refresh
 │   ├── dashboard_stream.py  # GET /dashboard/stream (Server-Sent Events)
 │   ├── reports.py           # GET /reports/pdf, /reports/pdf/provincia, /reports/folders
-│   └── disciplines.py       # GET/POST/DELETE /disciplines/folder/{folder_id}
+│   ├── disciplines.py       # GET/POST/DELETE /disciplines/folder/{folder_id}
+│   └── chat.py              # POST /chat, GET /chat/status
 └── workers/
     ├── polling_worker.py    # APScheduler: ClickUp → Airbox sync on interval
     └── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
@@ -124,6 +129,36 @@ Two report types, both generated on-demand using `fpdf2` (Latin-1 fonts — use 
 - **`GET /reports/folders`** — lists folders available for province reports (reads from cache).
 
 Both endpoints accept `?inline=true` to stream the PDF inline in the browser instead of downloading.
+
+## AI Agent (Chat)
+
+The assistant lives at `GET /assistente` (HTML page) and is backed by `POST /chat`.
+
+**Agentic loop** (`ChatService.ask`):
+1. User message arrives → `_detect_forced_tool()` checks for temporal/status keywords and may force a specific tool on iteration 1 via `tool_choice: {type: "tool", name: ...}`.
+2. Claude Haiku is called with `TOOL_DEFINITIONS` (9 tools, all read-only against the SQLite cache).
+3. On `stop_reason == "tool_use"`, each `tool_use` block is dispatched by `dispatch_tool()` in `chat_tools.py`, which calls `DashboardService` or `CacheRepository` and returns `(text_for_claude, raw_data_for_chart)`.
+4. Loop continues up to `CHAT_MAX_ITERATIONS` (default 5). On `end_turn`, `_build_chart()` picks the highest-priority tool result and constructs a `ChartPayload` (bar, pie, line, table, or kpi).
+
+**Tools available to the agent** (defined in `chat_tools.py::TOOL_DEFINITIONS`):
+
+| Tool | Purpose |
+|---|---|
+| `get_recent_changes` | Tasks created/completed/active in a time window (today/yesterday/week/month) |
+| `list_tasks_by_status` | All tasks grouped by current status, with optional status filter |
+| `get_overview_kpis` | Space-level KPIs (totals, completion rate, status distribution) |
+| `list_folders` | All provinces with task counts and completion rates |
+| `get_folder_progress` | EVM-weighted progress breakdown for a single province |
+| `list_overdue_tasks` | Overdue tasks, optionally filtered by province |
+| `list_upcoming_tasks` | Tasks due within N future days |
+| `get_assignee_stats` | Open/completed/overdue counts per team member |
+| `get_evolution_curve` | Historical weighted-progress series for all provinces |
+
+**Keyword forcing** (`_detect_forced_tool`): if the user message contains temporal keywords ("hoje", "semana", "mudou", etc.) the loop forces `get_recent_changes` on the first call; status keywords ("fazendo", "revisão", "aprovação", etc.) force `list_tasks_by_status`. This is a deterministic override on top of Claude's own routing.
+
+**Province name resolution** (`_resolve_folder`): exact match → single partial match → list of candidates returned as error for Claude to handle.
+
+**Chart priority**: when multiple tools fire in one turn, `_TOOL_PRIORITY` picks which one drives the chart (e.g., `get_folder_progress` wins over `list_folders`).
 
 ## Weighted Progress (EVM)
 
@@ -194,6 +229,11 @@ Tables:
 | `LOG_LEVEL` | Loguru log level | `INFO` |
 | `APP_ENV` | Environment tag (`development` / `production`) | `development` |
 | `APP_PORT` | Port hint (informational; actual port set via uvicorn CLI) | `8000` |
+| `CHAT_ENABLED` | Enable the AI assistant (`/assistente` + `POST /chat`) | `true` |
+| `ANTHROPIC_API_KEY` | Anthropic API key — required for chat; if empty, chat returns 503 | `""` |
+| `CHAT_MODEL` | Claude model used by the agent | `claude-haiku-4-5-20251001` |
+| `CHAT_MAX_ITERATIONS` | Max tool-use iterations per request | `5` |
+| `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
 
 ## mapper.py Constants (require manual setup)
 
@@ -228,5 +268,6 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 Tests use `pytest-asyncio` (mode: `auto`) and `pytest-httpx` for mocking httpx HTTP calls. Env vars for tests are defined in `pytest.ini` via the `env =` directive — this requires the **`pytest-env`** package, which is not in `requirements.txt`; install it with `pip install pytest-env`. No `.env` file needed when running tests. Unit tests cover:
 - `tests/unit/test_mapper.py` — all mapping functions (ClickUp ↔ Airbox)
 - `tests/unit/test_webhook_signature.py` — HMAC signature verification logic
+- `tests/unit/test_chat_tool_routing.py` — `get_recent_changes` and `list_tasks_by_status` repository methods against an in-memory SQLite DB (no mocks, uses real ORM)
 
 Integration tests directory exists (`tests/integration/`) but is empty.
