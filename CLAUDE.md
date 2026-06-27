@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Bidirectional middleware API synchronizing **ClickUp** with **AltoQI Visus Workflow** (powered by Airbox). Built with FastAPI + async SQLAlchemy.
 
+**Business domain:** The system is built for **U2 Broadcast Angola** to track the installation of radio studios and FM sites across Angolan provinces. In the data model, *Folder = Province*, *List = Module* (Studio or FM Site), *Task = Discipline* (Civil Works, Electrical, etc.), and *Subtask = Activity*. The AI assistant persona is "Assistente U2, gestor de projetos da U2 Broadcast Angola".
+
 The AltoQI Visus Workflow platform exposes the **Airbox public API** at `https://workflow-api.altoqivisus.com.br`. Spec: `https://app.swaggerhub.com/apis/Airbox/AirboxAPI/1.1.0`.
 
 ## Commands
@@ -193,6 +195,8 @@ Lists and agreements are matched **by name** (case-insensitive). If names don't 
 ## Database
 
 SQLite by default (`sync.db`). Schema is auto-created at startup via `Base.metadata.create_all`. **If you change ORM models, delete `sync.db` to recreate.** `alembic` is listed in `requirements.txt` but is not used — do not create migrations.
+
+**Railway deployment:** For persistent storage on Railway, mount a volume at `/data` and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`.
 
 The `import src.models.cache_models  # noqa: F401` in `main.py` is an intentional side-effect import: SQLAlchemy only registers cache tables with `Base.metadata` if the module is imported before `init_db()` runs. Removing or reordering that import will silently drop the cache tables on startup.
 
