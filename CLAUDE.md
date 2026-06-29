@@ -74,7 +74,9 @@ src/
 │   ├── cache_service.py     # Refreshes local SQLite cache from ClickUp API
 │   ├── event_broadcaster.py # In-process asyncio pub/sub for SSE events
 │   ├── dashboard_service.py # Reads from cache tables to serve dashboard API
-│   ├── report_service.py    # Generates PDF reports via fpdf2 (ReportService + ProvinceReportService)
+│   ├── report_service.py    # Generates PDF reports via fpdf2 (ReportService + ProvinceReportService + PeriodicReportService)
+│   ├── report_strings.py    # Bilingual string dictionaries for PDF text (PT/EN), keyed by get_strings(lang)
+│   ├── translation.py       # Static PT→EN dict for ClickUp field names (disciplines, activities, statuses) via translate()
 │   ├── weights_config.py    # EVM weight constants + compute_province_progress / compute_list_progress / build_province_evolution
 │   ├── chat_service.py      # Agentic loop: Claude Haiku + tool use → ChatResponse (with optional ChartPayload)
 │   └── chat_tools.py        # TOOL_DEFINITIONS (9 tools) + dispatch_tool() routing to DashboardService/CacheRepository
@@ -86,7 +88,7 @@ src/
 │   │                        #   GET /dashboard/gantt/{list_id}|gantt/folder/{id}|gantt/task/{id}
 │   │                        #   POST /dashboard/refresh
 │   ├── dashboard_stream.py  # GET /dashboard/stream (Server-Sent Events)
-│   ├── reports.py           # GET /reports/pdf, /reports/pdf/provincia, /reports/folders
+│   ├── reports.py           # GET /reports/pdf, /reports/pdf/provincia, /reports/pdf/daily, /reports/pdf/weekly, /reports/folders
 │   ├── disciplines.py       # GET/POST/DELETE /disciplines/folder/{folder_id}
 │   └── chat.py              # POST /chat, GET /chat/status
 └── workers/
@@ -124,13 +126,15 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 ## PDF Reports
 
-Two report types, both generated on-demand using `fpdf2` (Latin-1 fonts — use `_s()` helper to sanitize em-dashes, curly quotes, etc.):
+Four report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use `_s()` helper to sanitize em-dashes, curly quotes, etc.). Every PDF endpoint accepts `?lang=pt|en` (default `pt`) and `?inline=true` to stream in-browser.
 
 - **`GET /reports/pdf`** — executive report for the full space (cover + summary + project health + overdue + upcoming + team performance). Uses `ReportService`.
 - **`GET /reports/pdf/provincia?folder_id=<id>`** — detailed report for a single folder/province (cover + summary + per-list detail with task-level breakdown). Uses `ProvinceReportService`. Incorporates EVM weighted progress when discipline weights are configured.
+- **`GET /reports/pdf/daily`** — daily updates report (tasks created/completed yesterday and today). Uses `PeriodicReportService`.
+- **`GET /reports/pdf/weekly`** — weekly updates report (last 7 days). Uses `PeriodicReportService`.
 - **`GET /reports/folders`** — lists folders available for province reports (reads from cache).
 
-Both endpoints accept `?inline=true` to stream the PDF inline in the browser instead of downloading.
+Bilingual support: `report_strings.py` holds all UI strings keyed by `get_strings(lang)`. `translation.py` maps normalized Portuguese field names → English equivalents via `translate()` / `translate_task_row()`.
 
 ## AI Agent (Chat)
 
@@ -269,9 +273,17 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 
 ## Testing
 
-Tests use `pytest-asyncio` (mode: `auto`) and `pytest-httpx` for mocking httpx HTTP calls. Env vars for tests are defined in `pytest.ini` via the `env =` directive — this requires the **`pytest-env`** package, which is not in `requirements.txt`; install it with `pip install pytest-env`. No `.env` file needed when running tests. Unit tests cover:
-- `tests/unit/test_mapper.py` — all mapping functions (ClickUp ↔ Airbox)
-- `tests/unit/test_webhook_signature.py` — HMAC signature verification logic
-- `tests/unit/test_chat_tool_routing.py` — `get_recent_changes` and `list_tasks_by_status` repository methods against an in-memory SQLite DB (no mocks, uses real ORM)
+Tests use `pytest-asyncio` (mode: `auto`) and `pytest-httpx` for mocking httpx HTTP calls. Env vars for tests are defined in `pytest.ini` via the `env =` directive — this requires the **`pytest-env`** package, which is not in `requirements.txt`; install it with `pip install pytest-env`. No `.env` file needed when running tests.
 
-Integration tests directory exists (`tests/integration/`) but is empty.
+Unit tests:
+- `test_mapper.py` — all mapping functions (ClickUp ↔ Airbox)
+- `test_webhook_signature.py` — HMAC signature verification logic
+- `test_chat_tool_routing.py` — `get_recent_changes` and `list_tasks_by_status` repository methods against an in-memory SQLite DB (no mocks, uses real ORM)
+- `test_dashboard_service.py` — DashboardService read methods
+- `test_event_broadcaster.py` — asyncio pub/sub broadcast logic
+- `test_cache_service.py` — CacheService refresh and webhook patch logic
+- `test_cache_repository.py` — CacheRepository upsert and query methods
+
+Integration tests:
+- `test_webhook_cache_update.py` — full webhook → cache → SSE path against a real in-memory DB
+- `test_dashboard_endpoints.py` — `/dashboard/*` endpoint responses with seeded cache data

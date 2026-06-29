@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>U2 Broadcast — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/mobile.css" />
+</head>
+<body class="bg-gray-100 font-sans" style="padding-top:env(safe-area-inset-top)">
+
+  <!-- ══ HEADER ══════════════════════════════════════════════════ -->
+  <header class="mob-header">
+    <img src="/img/Logo Branca.png" alt="U2" style="height:28px;width:auto" />
+    <div id="mob-breadcrumb">
+      <span class="mob-bc-current">Visão Geral</span>
+    </div>
+    <div class="mob-sse-chip">
+      <span id="sse-dot" style="width:7px;height:7px;border-radius:50%;background:#4b5563;flex-shrink:0;display:inline-block"></span>
+      <span id="sse-label" style="display:none"></span>
+    </div>
+  </header>
+
+  <!-- ══ MAIN ════════════════════════════════════════════════════ -->
+  <main class="mob-main" id="mob-main">
+    <div id="mob-view">
+      <div class="mob-loading">
+        <div class="mob-spinner"></div>
+        <span style="font-size:13px">Carregando…</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ══ TOAST ═══════════════════════════════════════════════════ -->
+  <div id="mob-toast"></div>
+
+  <!-- ══ REPORTS DRAWER ══════════════════════════════════════════ -->
+  <div class="mob-drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+  <div class="mob-drawer" id="reports-drawer">
+    <div class="mob-drawer-handle"></div>
+    <div class="mob-drawer-title">Relatórios</div>
+    <div class="mob-drawer-body">
+
+      <!-- Lang toggle -->
+      <div class="mob-drawer-lang">
+        <span>Idioma:</span>
+        <button id="dlang-pt" class="mob-lang-btn active" onclick="setReportLang('pt')">PT</button>
+        <button id="dlang-en" class="mob-lang-btn idle"   onclick="setReportLang('en')">EN</button>
+      </div>
+
+      <!-- PDF Diário -->
+      <button class="mob-drawer-item" id="btn-pdf-diario" onclick="exportDiario()">
+        <span class="mob-drawer-item-icon" style="background:#fef3c7">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#d97706" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+        </span>
+        <div>
+          <div>PDF Diário</div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:400">Atualizações de ontem e hoje</div>
+        </div>
+      </button>
+
+      <!-- PDF Semanal -->
+      <button class="mob-drawer-item" id="btn-pdf-semanal" onclick="exportSemanal()">
+        <span class="mob-drawer-item-icon" style="background:#ecfdf5">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#16a34a" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
+          </svg>
+        </span>
+        <div>
+          <div>PDF Semanal</div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:400">Resumo dos últimos 7 dias</div>
+        </div>
+      </button>
+
+      <!-- PDF Executivo -->
+      <button class="mob-drawer-item" id="btn-pdf-executivo" onclick="exportPDF()">
+        <span class="mob-drawer-item-icon" style="background:#eff6ff">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#1e40af" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+        </span>
+        <div>
+          <div>PDF Executivo</div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:400">Relatório completo do espaço</div>
+        </div>
+      </button>
+
+      <!-- PDF Província (expansível) -->
+      <button class="mob-drawer-item" id="btn-pdf-provincia" onclick="toggleProvinciaDrawer()">
+        <span class="mob-drawer-item-icon" style="background:#f5f3ff">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c-.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+          </svg>
+        </span>
+        <div style="flex:1">
+          <div>PDF por Província</div>
+          <div style="font-size:11px;color:#94a3b8;font-weight:400">Selecione uma área</div>
+        </div>
+        <svg id="prov-chevron" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#94a3b8" stroke-width="2" style="transition:transform .2s;flex-shrink:0">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/>
+        </svg>
+      </button>
+      <div class="mob-provincia-list" id="prov-drawer-list">
+        <div style="padding:10px 8px 10px 56px;font-size:12px;color:#94a3b8">Carregando…</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ BOTTOM NAV ═══════════════════════════════════════════════ -->
+  <nav class="mob-nav">
+    <!-- Dashboard -->
+    <a href="#/" class="mob-nav-item active" id="nav-home">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+      </svg>
+      Dashboard
+    </a>
+
+    {% if chat_enabled %}
+    <!-- Assistente -->
+    <a href="/assistente" class="mob-nav-item" id="nav-ai">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+      </svg>
+      Assistente
+    </a>
+    {% endif %}
+
+    <!-- Relatórios -->
+    <button class="mob-nav-item" id="nav-reports" onclick="openDrawer()">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+      </svg>
+      Relatórios
+    </button>
+
+    <!-- Atualizar -->
+    <button class="mob-nav-item" id="nav-refresh" onclick="triggerRefresh()">
+      <svg id="refresh-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+      </svg>
+      Atualizar
+    </button>
+  </nav>
+
+  <!-- ══ SCRIPTS ════════════════════════════════════════════════ -->
+  <script src="/static/sse.js?v=30"></script>
+  <script src="/static/charts.js?v=30"></script>
+
+  <script>
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Dashboard Mobile SPA
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  (function () {
+
+    /* ── Estado ─────────────────────────────────────────────── */
+    const nav = { folderId: null, folderName: null, listId: null, listName: null };
+
+    /* ── Utilitários ─────────────────────────────────────────── */
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+      catch { return iso; }
+    }
+
+    function fmtPct(r) { return Math.round((r||0)*100)+'%'; }
+
+    function healthColor(rate, overdue) {
+      if (overdue > 0)  return { border:'#f87171', badge:'#fef2f2', badgeTxt:'#dc2626', dot:'#ef4444', label:'Em risco' };
+      if (rate < 0.1)   return { border:'#fbbf24', badge:'#fffbeb', badgeTxt:'#b45309', dot:'#f59e0b', label:'Atenção' };
+      return               { border:'#4ade80', badge:'#f0fdf4', badgeTxt:'#16a34a', dot:'#22c55e', label:'No prazo' };
+    }
+
+    function progressFill(rate) {
+      const p = Math.round((rate||0)*100);
+      const c = p>=80?'#4ade80':p>=40?'#fb923c':'#f87171';
+      return `<div class="mob-progress-bar"><div class="mob-progress-fill" style="width:${p}%;background:${c}"></div></div>`;
+    }
+
+    function statusBadge(status, color) {
+      const bg = color ? color+'22' : '#e2e8f022';
+      const fg = color || '#64748b';
+      return `<span class="mob-status" style="background:${bg};color:${fg}">
+        <span style="width:6px;height:6px;border-radius:50%;background:${fg};display:inline-block"></span>
+        ${esc(status||'sem status')}
+      </span>`;
+    }
+
+    function warnIcon() {
+      return `<svg style="width:12px;height:12px;display:inline;vertical-align:middle;flex-shrink:0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>`;
+    }
+
+    function showToast(msg, type) {
+      const el = document.getElementById('mob-toast');
+      const colors = {
+        success:'background:#f0fdf4;color:#166534;border:1px solid #bbf7d0',
+        error:  'background:#fef2f2;color:#991b1b;border:1px solid #fecaca',
+        info:   'background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe',
+      };
+      el.setAttribute('style', (colors[type]||colors.info)+';display:block');
+      el.textContent = msg;
+      setTimeout(()=>{ el.style.display='none'; }, 3200);
+    }
+
+    function setBreadcrumb(parts) {
+      const el = document.getElementById('mob-breadcrumb');
+      if (!el || !parts.length) return;
+      const last = parts[parts.length-1];
+      if (parts.length === 1) {
+        el.innerHTML = `<span class="mob-bc-current">${esc(last.label)}</span>`;
+      } else {
+        const prev = parts[parts.length-2];
+        el.innerHTML = `<a href="${esc(prev.href)}" style="color:#94a3b8;text-decoration:none">
+          <svg style="width:14px;height:14px;display:inline;vertical-align:middle;margin-right:2px" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>${esc(prev.label)}</a>
+          <svg style="width:10px;height:10px;color:#cbd5e1;flex-shrink:0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+          <span class="mob-bc-current">${esc(last.label)}</span>`;
+      }
+    }
+
+    function setView(html) {
+      Charts.disposeAll();
+      document.getElementById('mob-view').innerHTML = html;
+    }
+
+    function loading() {
+      setView(`<div class="mob-loading"><div class="mob-spinner"></div><span style="font-size:13px">Carregando…</span></div>`);
+    }
+
+    async function api(path) {
+      const r = await fetch(path);
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      if (!j.success) throw new Error(j.error||'Erro desconhecido');
+      return j.data;
+    }
+
+    function kpiCard(label, value, sub, color) {
+      return `<div class="mob-kpi-card">
+        <div class="mob-kpi-label">${esc(label)}</div>
+        <div class="mob-kpi-value" style="color:${color||'#1e293b'}">${esc(String(value))}</div>
+        ${sub?`<div class="mob-kpi-sub">${esc(String(sub))}</div>`:''}
+      </div>`;
+    }
+
+    /* ── VIEW: Overview ─────────────────────────────────────── */
+    async function renderOverview() {
+      loading();
+      setBreadcrumb([{label:'Visão Geral',href:'#/'}]);
+      setNavActive('nav-home');
+
+      let overview, folders, upcoming;
+      try {
+        [overview, folders, upcoming] = await Promise.all([
+          api('/dashboard/overview'),
+          api('/dashboard/folders'),
+          api('/dashboard/upcoming?days=30'),
+        ]);
+      } catch(e) {
+        setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro ao carregar: ${esc(e.message)}</div>`);
+        return;
+      }
+
+      const pct = fmtPct(overview.completion_rate);
+      const overdueClr = overview.overdue_tasks>0?'#dc2626':'#1e293b';
+
+      const foldersHTML = folders.map(f=>{
+        const h = healthColor(f.completion_rate, f.overdue_tasks);
+        return `<div class="mob-card" style="border-left-color:${h.border}"
+          onclick="location.hash='#/folder/${esc(f.folder_id)}';window.__folderName='${esc(f.name)}'">
+          <div class="mob-card-header">
+            <div style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span style="width:8px;height:8px;border-radius:50%;background:${h.dot};flex-shrink:0"></span>
+              <span class="mob-card-title">${esc(f.name)}</span>
+            </div>
+            <span class="mob-card-badge" style="background:${h.badge};color:${h.badgeTxt}">${h.label}</span>
+          </div>
+          <div class="mob-card-meta">${f.total_lists} área(s) · ${f.total_tasks} task(s) · ${fmtPct(f.completion_rate)} concluído</div>
+          ${progressFill(f.completion_rate)}
+          ${f.overdue_tasks>0?`<div class="mob-card-warn">${warnIcon()} ${f.overdue_tasks} em atraso</div>`:''}
+        </div>`;
+      }).join('');
+
+      const upIn7 = upcoming.filter(t=>new Date(t.due_date)<=new Date(Date.now()+7*86400000));
+      const upRows = (list)=>{
+        if(!list.length) return `<div style="text-align:center;padding:24px 0;font-size:12px;color:#94a3b8">Nenhuma tarefa vencendo.</div>`;
+        return list.map(t=>{
+          const days = Math.ceil((new Date(t.due_date)-Date.now())/86400000);
+          const urgClr = days<=2?'#dc2626':days<=7?'#d97706':'#64748b';
+          const dot    = days<=2?'#ef4444':days<=7?'#f59e0b':'#cbd5e1';
+          const dayStr = days===0?'Hoje':days===1?'Amanhã':'em '+days+'d';
+          return `<div class="mob-task-row">
+            <span class="mob-task-dot" style="background:${dot}"></span>
+            <div style="flex:1;min-width:0">
+              <div class="mob-task-name">${esc(t.name)}</div>
+              <div class="mob-task-meta">${esc(t.folder_name)} · ${esc(t.list_name)}</div>
+            </div>
+            <div class="mob-task-date" style="color:${urgClr}">${dayStr}</div>
+          </div>`;
+        }).join('');
+      };
+
+      setView(`
+        <!-- KPIs -->
+        <div class="mob-kpi-grid">
+          ${kpiCard('Total de Tasks', overview.total_tasks, null, '#1e293b')}
+          ${kpiCard('Concluídas', overview.completed_tasks, pct+' do total', '#16a34a')}
+          ${kpiCard('Progresso', pct, overview.completed_tasks+' de '+overview.total_tasks, '#dc2626')}
+          ${kpiCard('Em Atraso', overview.overdue_tasks, 'tasks vencidas', overdueClr)}
+        </div>
+
+        <!-- Gráfico progresso por província -->
+        <div class="mob-chart-wrap">
+          <div class="mob-chart-title">Progresso por Província</div>
+          <div id="chart-folders" style="width:100%;height:${Math.max(180,folders.length*36)}px"></div>
+        </div>
+
+        <!-- Próximos vencimentos -->
+        <div class="mob-table-wrap">
+          <div class="mob-table-header">
+            Próximos Vencimentos
+            <div class="mob-tab-bar">
+              <button class="mob-tab active" id="tab-7"
+                onclick="document.getElementById('up-7').style.display='';document.getElementById('up-30').style.display='none';this.className='mob-tab active';document.getElementById('tab-30').className='mob-tab idle'">7d</button>
+              <button class="mob-tab idle"   id="tab-30"
+                onclick="document.getElementById('up-30').style.display='';document.getElementById('up-7').style.display='none';this.className='mob-tab active';document.getElementById('tab-7').className='mob-tab idle'">30d</button>
+            </div>
+          </div>
+          <div id="up-7">${upRows(upIn7)}</div>
+          <div id="up-30" style="display:none">${upRows(upcoming)}</div>
+        </div>
+
+        <!-- Províncias -->
+        <div class="mob-section-title">Províncias (${folders.length})</div>
+        ${foldersHTML}
+      `);
+
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        const sorted = folders.slice().sort((a,b)=>{
+          const rA=a.total_tasks>0?a.completed_tasks/a.total_tasks:0;
+          const rB=b.total_tasks>0?b.completed_tasks/b.total_tasks:0;
+          return rA-rB;
+        });
+        Charts.renderProgressBars('chart-folders',sorted,'name','completed_tasks','total_tasks',true,f=>{
+          window.__folderName=f.name;
+          location.hash='#/folder/'+f.folder_id;
+        });
+      }));
+    }
+
+    /* ── VIEW: Folder (listas) ──────────────────────────────── */
+    async function renderFolder(folderId) {
+      loading();
+      const folderName = window.__folderName||'Província';
+      setBreadcrumb([{label:'Visão Geral',href:'#/'},{label:folderName,href:'#/folder/'+folderId}]);
+
+      let lists, disciplines;
+      try {
+        [lists, disciplines] = await Promise.all([
+          api('/dashboard/folder/'+folderId),
+          fetch('/disciplines/folder/'+folderId).then(r=>r.json()).then(j=>j.success?j.data:null).catch(()=>null),
+        ]);
+      } catch(e) {
+        setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`);
+        return;
+      }
+
+      nav.folderId = folderId; nav.folderName = folderName;
+      const total     = lists.reduce((s,l)=>s+l.total_tasks,0);
+      const completed = lists.reduce((s,l)=>s+l.completed_tasks,0);
+      const overdue   = lists.reduce((s,l)=>s+l.overdue_tasks,0);
+      const rate      = total>0?completed/total:0;
+      const wp        = disciplines?.weights_configured?disciplines.weighted_progress:null;
+
+      const listsHTML = lists.map(l=>`
+        <div class="mob-card" style="border-left-color:#6366f1"
+          onclick="location.hash='#/list/${esc(l.list_id)}';window.__listName='${esc(l.name)}'">
+          <div class="mob-card-header">
+            <span class="mob-card-title">${esc(l.name)}</span>
+            <span style="font-size:14px;font-weight:700;color:${l.completion_rate>=0.8?'#16a34a':l.completion_rate>=0.4?'#d97706':'#dc2626'};flex-shrink:0">${fmtPct(l.completion_rate)}</span>
+          </div>
+          <div class="mob-card-meta">${l.total_tasks} task(s)</div>
+          ${progressFill(l.completion_rate)}
+          ${l.overdue_tasks>0?`<div class="mob-card-warn">${warnIcon()} ${l.overdue_tasks} em atraso</div>`:''}
+        </div>`).join('');
+
+      setView(`
+        <div class="mob-kpi-grid">
+          ${kpiCard('Áreas', lists.length, null, '#6366f1')}
+          ${kpiCard('Tasks', total, null, '#1e293b')}
+          ${kpiCard('Concluídas', fmtPct(rate), completed+' de '+total, '#16a34a')}
+          ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'#1e293b')}
+          ${wp!==null?kpiCard('Prog. Ponderado',fmtPct(wp),'EVM por disciplina','#7c3aed'):''}
+        </div>
+        <div class="mob-chart-wrap">
+          <div class="mob-chart-title">Progresso por Disciplina</div>
+          <div id="chart-lists" style="width:100%;height:${Math.max(180,lists.length*36)}px"></div>
+        </div>
+        <div class="mob-section-title">Disciplinas / Áreas (${lists.length})</div>
+        ${listsHTML}
+      `);
+
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        Charts.renderProgressBars('chart-lists',lists,'name','completed_tasks','total_tasks',true,l=>{
+          window.__listName=l.name;
+          location.hash='#/list/'+l.list_id;
+        });
+      }));
+    }
+
+    /* ── VIEW: Lista (tasks) ────────────────────────────────── */
+    async function renderList(listId) {
+      loading();
+      const listName = window.__listName||'Área';
+      setBreadcrumb([
+        {label:'Visão Geral',href:'#/'},
+        nav.folderId?{label:nav.folderName||'Província',href:'#/folder/'+nav.folderId}:null,
+        {label:listName,href:'#/list/'+listId},
+      ].filter(Boolean));
+
+      let tasks;
+      try { tasks = await api('/dashboard/list/'+listId); }
+      catch(e) {
+        setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`);
+        return;
+      }
+
+      nav.listId=listId; nav.listName=listName;
+      const total     = tasks.length;
+      const completed = tasks.filter(t=>t.status_type==='done'||t.status_type==='closed').length;
+      const overdue   = tasks.filter(t=>t.is_overdue).length;
+      const rate      = total>0?completed/total:0;
+
+      const taskRows = tasks.map(t=>`
+        <div class="mob-task-row" onclick="location.hash='#/task/${esc(t.task_id)}';window.__taskName='${esc(t.name)}'">
+          <span class="mob-task-dot" style="background:${t.status_color||'#94a3b8'}"></span>
+          <div style="flex:1;min-width:0">
+            <div class="mob-task-name">${esc(t.name)}</div>
+            <div class="mob-task-meta">${statusBadge(t.status,t.status_color)}</div>
+          </div>
+          <div class="mob-task-date ${t.is_overdue?'style="color:#dc2626"':''}">${t.is_overdue?warnIcon()+' ':''}</div>
+        </div>`).join('');
+
+      setView(`
+        <div class="mob-kpi-grid">
+          ${kpiCard('Tasks', total)}
+          ${kpiCard('Concluídas', completed, fmtPct(rate), '#16a34a')}
+          ${kpiCard('Em Andamento', total-completed-overdue, null, '#2563eb')}
+          ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'#1e293b')}
+        </div>
+        <div class="mob-table-wrap">
+          <div class="mob-table-header">${esc(listName)} — Tasks (${total})</div>
+          ${taskRows||`<div style="text-align:center;padding:24px;font-size:12px;color:#94a3b8">Nenhuma task nesta área</div>`}
+        </div>
+      `);
+    }
+
+    /* ── VIEW: Task (detalhe) ───────────────────────────────── */
+    async function renderTask(taskId) {
+      loading();
+      const taskName = window.__taskName||'Task';
+      setBreadcrumb([
+        {label:'Visão Geral',href:'#/'},
+        nav.folderId?{label:nav.folderName||'Província',href:'#/folder/'+nav.folderId}:null,
+        nav.listId?{label:nav.listName||'Área',href:'#/list/'+nav.listId}:null,
+        {label:taskName,href:'#/task/'+taskId},
+      ].filter(Boolean));
+
+      let task;
+      try { task = await api('/dashboard/task/'+taskId); }
+      catch(e) {
+        setView(`<div style="text-align:center;padding:48px 0;color:#94a3b8;font-size:13px">Task não encontrada no cache.</div>`);
+        return;
+      }
+
+      const assignees = (task.assignees||[]).map(a=>a.username||'?').join(', ')||'—';
+
+      const subtaskRows = (task.subtasks||[]).map(s=>{
+        const names = (s.assignees||[]).map(a=>a.username||'?').join(', ')||'—';
+        return `<div class="mob-task-row">
+          <span class="mob-task-dot" style="background:${s.status_color||'#94a3b8'}"></span>
+          <div style="flex:1;min-width:0">
+            <div class="mob-task-name">${esc(s.name)}</div>
+            <div class="mob-task-meta">${esc(names)} · ${fmtDate(s.due_date)}</div>
+          </div>
+          ${statusBadge(s.status,s.status_color)}
+        </div>`;
+      }).join('');
+
+      setView(`
+        <div class="mob-table-wrap" style="margin-bottom:10px">
+          <div style="padding:16px 14px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px">
+              <h1 style="font-size:16px;font-weight:700;color:#1e293b;flex:1">${esc(task.name)}</h1>
+              ${task.url?`<a href="${esc(task.url)}" target="_blank" style="font-size:11px;color:#dc2626;white-space:nowrap;text-decoration:none">ClickUp ↗</a>`:''}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+              ${statusBadge(task.status,task.status_color)}
+              ${task.is_overdue?`<span class="mob-status" style="background:#fef2f2;color:#dc2626">${warnIcon()} Em atraso</span>`:''}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px">
+              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Responsável</div><div style="color:#374151;font-weight:500">${esc(assignees)}</div></div>
+              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Prazo</div><div style="color:${task.is_overdue?'#dc2626':'#374151'};font-weight:500">${fmtDate(task.due_date)}</div></div>
+              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Início</div><div style="color:#374151">${fmtDate(task.start_date)}</div></div>
+              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Criada</div><div style="color:#374151">${fmtDate(task.date_created)}</div></div>
+            </div>
+          </div>
+        </div>
+        ${task.has_subtasks?`
+          <div class="mob-table-wrap">
+            <div class="mob-table-header">Subtasks (${task.subtasks.length})</div>
+            ${subtaskRows}
+          </div>`:''}
+      `);
+    }
+
+    /* ── Gantt: redireciona para view simplificada ────────────── */
+    function renderGanttSimple(title, backHref, items) {
+      const tasks = items.filter(t=>t.due_date);
+      const noDate = items.length - tasks.length;
+      setView(`
+        <div class="mob-gantt-banner">
+          <div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:4px">${esc(title)}</div>
+          <div>${tasks.length} item(s) com prazo${noDate?' · '+noDate+' sem prazo':''}</div>
+          <div style="margin-top:8px;font-size:11px">Role horizontalmente para ver o cronograma</div>
+        </div>
+        <div class="mob-chart-wrap" style="overflow-x:auto">
+          <div id="chart-gantt" style="width:100%;min-width:500px;height:${Math.max(220,tasks.length*38+80)}px"></div>
+        </div>
+      `);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        Charts.renderGanttChart('chart-gantt',tasks,()=>{});
+      }));
+    }
+
+    async function renderGanttOverview() {
+      loading();
+      setBreadcrumb([{label:'Visão Geral',href:'#/'},{label:'Cronograma'}]);
+      try {
+        const rows = (await fetch('/dashboard/gantt/overview').then(r=>r.json())).data||[];
+        renderGanttSimple('Cronograma Geral','#/',rows);
+      } catch(e) { setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`); }
+    }
+
+    async function renderGanttFolder(folderId) {
+      loading();
+      const name = window.__folderName||nav.folderName||'Província';
+      setBreadcrumb([{label:'Visão Geral',href:'#/'},{label:name,href:'#/folder/'+folderId},{label:'Cronograma'}]);
+      try {
+        const rows = await api('/dashboard/gantt/folder/'+folderId);
+        renderGanttSimple(name+' — Cronograma','#/folder/'+folderId,rows);
+      } catch(e) { setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`); }
+    }
+
+    async function renderGantt(listId) {
+      loading();
+      const name = window.__listName||nav.listName||'Área';
+      setBreadcrumb([{label:'Visão Geral',href:'#/'},{label:name,href:'#/list/'+listId},{label:'Cronograma'}]);
+      try {
+        const rows = await api('/dashboard/gantt/'+listId);
+        renderGanttSimple(name+' — Cronograma','#/list/'+listId,rows);
+      } catch(e) { setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`); }
+    }
+
+    async function renderGanttTask(taskId) {
+      loading();
+      const name = window.__taskName||nav.taskName||'Task';
+      setBreadcrumb([{label:'Visão Geral',href:'#/'},{label:name,href:'#/task/'+taskId},{label:'Cronograma'}]);
+      try {
+        const rows = await api('/dashboard/gantt/task/'+taskId);
+        renderGanttSimple(name+' — Cronograma','#/task/'+taskId,rows);
+      } catch(e) { setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`); }
+    }
+
+    /* ── Bottom nav highlight ────────────────────────────────── */
+    function setNavActive(id) {
+      ['nav-home','nav-ai','nav-reports','nav-refresh'].forEach(n=>{
+        const el = document.getElementById(n);
+        if (el) el.classList.toggle('active', n===id);
+      });
+    }
+
+    /* ── Roteador ───────────────────────────────────────────── */
+    function router() {
+      closeDrawer();
+      const hash  = location.hash.replace(/^#\/?/,'');
+      const parts = hash.split('/').filter(Boolean);
+      const route = parts[0]||'';
+      const param = parts[1]||'';
+
+      if      (route==='folder'&&param)                          renderFolder(param);
+      else if (route==='list'&&param)                            renderList(param);
+      else if (route==='task'&&param)                            renderTask(param);
+      else if (route==='gantt'&&param==='overview')              renderGanttOverview();
+      else if (route==='gantt'&&param==='folder'&&parts[2])      renderGanttFolder(parts[2]);
+      else if (route==='gantt'&&param==='task'&&parts[2])        renderGanttTask(parts[2]);
+      else if (route==='gantt'&&param)                           renderGantt(param);
+      else                                                       renderOverview();
+    }
+
+    /* ── Refresh ────────────────────────────────────────────── */
+    window.triggerRefresh = async function() {
+      const btn = document.getElementById('nav-refresh');
+      const icon = document.getElementById('refresh-icon');
+      if (icon) icon.style.animation='mob-spin .7s linear infinite';
+      try {
+        await fetch('/dashboard/refresh',{method:'POST'});
+        showToast('Refresh iniciado! Dados sendo atualizados.','success');
+      } catch(e) { showToast('Falha ao disparar refresh: '+e.message,'error'); }
+      finally { if(icon) icon.style.animation=''; }
+    };
+
+    /* ── SSE ────────────────────────────────────────────────── */
+    document.addEventListener('dashboard-update',e=>{
+      showToast('Dados atualizados ('+((e.detail||{}).type||'evento')+')','info');
+      router();
+    });
+    document.addEventListener('dashboard-poll',()=>router());
+
+    /* ── Init ───────────────────────────────────────────────── */
+    window.addEventListener('hashchange',router);
+    window.addEventListener('load',router);
+
+  })();
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     Reports Drawer
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  let _reportLang = 'pt';
+  let _provDrawerOpen = false;
+  let _provLoaded = false;
+
+  function openDrawer() {
+    document.getElementById('reports-drawer').classList.add('open');
+    document.getElementById('drawer-overlay').classList.add('open');
+  }
+  function closeDrawer() {
+    document.getElementById('reports-drawer').classList.remove('open');
+    document.getElementById('drawer-overlay').classList.remove('open');
+  }
+
+  function setReportLang(lang) {
+    _reportLang = lang;
+    document.getElementById('dlang-pt').className = 'mob-lang-btn '+(lang==='pt'?'active':'idle');
+    document.getElementById('dlang-en').className = 'mob-lang-btn '+(lang==='en'?'active':'idle');
+  }
+
+  function _exportWithSpinner(btnId, url) {
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.style.opacity='.5'; btn.disabled=true; }
+    const a = document.createElement('a');
+    a.href=url; a.download='';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    closeDrawer();
+    if (btn) setTimeout(()=>{ btn.style.opacity=''; btn.disabled=false; },5000);
+  }
+
+  function exportPDF()     { _exportWithSpinner('btn-pdf-executivo',`/reports/pdf?lang=${_reportLang}`); }
+  function exportDiario()  { _exportWithSpinner('btn-pdf-diario',   `/reports/pdf/daily?lang=${_reportLang}`); }
+  function exportSemanal() { _exportWithSpinner('btn-pdf-semanal',  `/reports/pdf/weekly?lang=${_reportLang}`); }
+
+  async function toggleProvinciaDrawer() {
+    _provDrawerOpen = !_provDrawerOpen;
+    const list = document.getElementById('prov-drawer-list');
+    const chev = document.getElementById('prov-chevron');
+    list.classList.toggle('open', _provDrawerOpen);
+    chev.style.transform = _provDrawerOpen?'rotate(180deg)':'';
+
+    if (_provDrawerOpen && !_provLoaded) {
+      try {
+        const folders = await fetch('/reports/folders').then(r=>r.json());
+        list.innerHTML = folders.length
+          ? folders.map(f=>`<button class="mob-provincia-btn" onclick="exportProvincia('${f.folder_id}')">${f.name}</button>`).join('')
+          : '<div style="padding:10px 8px 10px 56px;font-size:12px;color:#94a3b8">Nenhuma área encontrada</div>';
+        _provLoaded = true;
+      } catch { list.innerHTML='<div style="padding:10px 8px 10px 56px;font-size:12px;color:#ef4444">Erro ao carregar</div>'; }
+    }
+  }
+
+  function exportProvincia(folderId) {
+    _exportWithSpinner('btn-pdf-provincia',`/reports/pdf/provincia?folder_id=${folderId}&lang=${_reportLang}`);
+  }
+  </script>
+
+</body>
+</html>

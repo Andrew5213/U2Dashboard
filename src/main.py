@@ -52,12 +52,26 @@ app.include_router(disciplines.router)
 app.include_router(chat.router)
 
 
+_MOBILE_UA_KEYWORDS = ("mobile", "android", "iphone", "ipad", "ipod")
+
+
+def _is_mobile(request: Request) -> bool:
+    view = request.query_params.get("view", "").lower()
+    if view == "desktop":
+        return False
+    if view == "mobile":
+        return True
+    ua = request.headers.get("user-agent", "").lower()
+    return any(kw in ua for kw in _MOBILE_UA_KEYWORDS)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_home(request: Request):
     chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
+    template = "index_mobile.html" if _is_mobile(request) else "index.html"
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
+        name=template,
         context={"chat_enabled": chat_enabled},
     )
 
@@ -66,4 +80,5 @@ async def dashboard_home(request: Request):
 async def chat_page(request: Request):
     if not (settings.chat_enabled and settings.anthropic_api_key):
         return HTMLResponse("<h2>Assistente de IA desabilitado.</h2>", status_code=503)
-    return templates.TemplateResponse(request=request, name="chat.html")
+    template = "chat_mobile.html" if _is_mobile(request) else "chat.html"
+    return templates.TemplateResponse(request=request, name=template)
