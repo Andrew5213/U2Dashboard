@@ -261,11 +261,12 @@
 
       let overview, folders, upcoming, assignees;
       try {
+        // assignees usa .catch(() => []) para não bloquear os outros gráficos em caso de falha
         [overview, folders, upcoming, assignees] = await Promise.all([
           api('/dashboard/overview'),
           api('/dashboard/folders'),
           api('/dashboard/upcoming?days=30'),
-          api('/dashboard/assignees'),
+          api('/dashboard/assignees').catch(() => []),
         ]);
       } catch(e) {
         setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro ao carregar: ${esc(e.message)}</div>`);
