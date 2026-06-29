@@ -259,12 +259,13 @@
       setBreadcrumb([{label:'Visão Geral',href:'#/'}]);
       setNavActive('nav-home');
 
-      let overview, folders, upcoming;
+      let overview, folders, upcoming, assignees;
       try {
-        [overview, folders, upcoming] = await Promise.all([
+        [overview, folders, upcoming, assignees] = await Promise.all([
           api('/dashboard/overview'),
           api('/dashboard/folders'),
           api('/dashboard/upcoming?days=30'),
+          api('/dashboard/assignees'),
         ]);
       } catch(e) {
         setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro ao carregar: ${esc(e.message)}</div>`);
@@ -325,6 +326,13 @@
           <div id="chart-folders" style="width:100%;height:${Math.max(180,folders.length*36)}px"></div>
         </div>
 
+        <!-- Gráfico de equipes -->
+        ${assignees&&assignees.length?`
+        <div class="mob-chart-wrap">
+          <div class="mob-chart-title">Produtividade por Equipe</div>
+          <div id="chart-assignees" style="width:100%;height:${Math.max(160,assignees.length*32)}px"></div>
+        </div>`:''}
+
         <!-- Próximos vencimentos -->
         <div class="mob-table-wrap">
           <div class="mob-table-header">
@@ -355,6 +363,34 @@
           window.__folderName=f.name;
           location.hash='#/folder/'+f.folder_id;
         });
+
+        // Gráfico de equipes — barras horizontais (nomes longos, tela estreita)
+        if (assignees&&assignees.length&&document.getElementById('chart-assignees')) {
+          const top = assignees.slice(0,15);
+          const inst = echarts.init(document.getElementById('chart-assignees'));
+          const barData = top.map(d=>{
+            const total = d.open+d.completed;
+            const rate  = total>0?d.completed/total:0;
+            const color = rate>=0.7?'#4ade80':rate>=0.35?'#fbbf24':'#f87171';
+            return {value:total,rate,open:d.open,completed:d.completed,overdue:d.overdue,
+                    itemStyle:{color,borderRadius:[0,4,4,0]}};
+          });
+          inst.setOption({
+            tooltip:{trigger:'item',formatter:p=>{
+              const d=p.data, pct=Math.round((d.rate||0)*100);
+              return `<b>${top[p.dataIndex].assignee}</b><br>Total: <b>${d.value}</b><br>`+
+                     `Concluídas: <b>${d.completed}</b> (${pct}%)<br>Em aberto: <b>${d.open}</b>`+
+                     (d.overdue?`<br><span style="color:#f87171">Em atraso: <b>${d.overdue}</b></span>`:'');
+            }},
+            grid:{left:8,right:44,top:6,bottom:6,containLabel:true},
+            xAxis:{type:'value',axisLabel:{fontSize:9},splitLine:{lineStyle:{color:'#f1f5f9'}}},
+            yAxis:{type:'category',data:top.map(d=>d.assignee),
+                   axisLabel:{fontSize:9,width:120,overflow:'truncate'}},
+            series:[{type:'bar',data:barData,barMaxWidth:20,
+                     label:{show:true,position:'right',fontSize:9,formatter:p=>p.data.value}}],
+          });
+          window.addEventListener('resize',()=>inst.resize());
+        }
       }));
     }
 
