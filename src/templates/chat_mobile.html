@@ -188,60 +188,77 @@
       }
 
       // ECharts: bar / pie / line
+      // Calcular altura dinâmica antes de inserir no DOM
+      const cats = chart.type === 'bar' ? (chart.data?.categories || []) : [];
+      const isHoriz = chart.type === 'bar' && (cats.length > 5 || cats.some(c => c.length > 10));
+      let chartHeight = 240;
+      if (isHoriz) chartHeight = Math.max(240, cats.length * 28 + 80);
+      else if (chart.type === 'line') chartHeight = 260;
+
       const el = document.createElement('div');
       el.className = 'mob-chart-canvas';
+      el.style.height = chartHeight + 'px';
       container.appendChild(el);
       disposeChart(chartId);
-      const inst = echarts.init(el);
-      _charts[chartId] = inst;
 
-      let opt = {
-        title: { text: chart.title || '', textStyle: { fontSize: 12, fontWeight: 600, color: '#1e293b' } },
-        tooltip: { trigger: chart.type === 'pie' ? 'item' : 'axis' },
-        animation: true,
-      };
+      // Duplo rAF: garante que o browser calculou o layout antes do ECharts ler as dimensões
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const inst = echarts.init(el, '', { renderer: 'canvas' });
+        _charts[chartId] = inst;
 
-      if (chart.type === 'pie') {
-        opt.series = [{ type: 'pie', radius: ['35%', '65%'], data: chart.data || [], label: { fontSize: 10 } }];
-        opt.legend = { orient: 'vertical', right: '5%', top: 'center', textStyle: { fontSize: 10 } };
-      }
+        const hasTitle = !!(chart.title || '').trim();
+        let opt = {
+          tooltip: { trigger: chart.type === 'pie' ? 'item' : 'axis' },
+          animation: false,
+        };
+        if (hasTitle) opt.title = { text: chart.title, textStyle: { fontSize: 12, fontWeight: 600, color: '#1e293b' } };
 
-      if (chart.type === 'bar') {
-        const d = chart.data || {};
-        const cats = d.categories || [];
-        const isHoriz = cats.length > 5 || cats.some(c => c.length > 10);
-        const series = (d.series || []).map(s => ({
-          name: s.name, type: 'bar', data: s.data,
-          stack: d.stacked ? 'total' : undefined, barMaxWidth: 32,
-        }));
-        if (isHoriz) {
-          opt.xAxis = { type: 'value', axisLabel: { fontSize: 9 } };
-          opt.yAxis = { type: 'category', data: cats, axisLabel: { fontSize: 9, width: 100, overflow: 'truncate' } };
-          opt.grid = { left: 110, right: 40, top: 40, bottom: 12 };
-        } else {
-          opt.xAxis = { type: 'category', data: cats, axisLabel: { fontSize: 9, rotate: 30 } };
-          opt.yAxis = { type: 'value', axisLabel: { fontSize: 9, formatter: v => `${v}%` } };
-          opt.grid = { left: 40, right: 16, top: 40, bottom: 44 };
+        if (chart.type === 'pie') {
+          opt.series = [{ type: 'pie', radius: ['35%', '65%'], data: chart.data || [], label: { fontSize: 10 } }];
+          opt.legend = { orient: 'vertical', right: '5%', top: 'center', textStyle: { fontSize: 10 } };
         }
-        opt.series = series;
-        if (d.stacked) opt.legend = { bottom: 4, textStyle: { fontSize: 9 } };
-      }
 
-      if (chart.type === 'line') {
-        const seriesData = chart.data?.series || [];
-        const allDates = [...new Set(seriesData.flatMap(s => (s.points || []).map(p => p.date)))].sort();
-        opt.xAxis = { type: 'category', data: allDates, axisLabel: { fontSize: 9, rotate: 30 } };
-        opt.yAxis = { type: 'value', min: 0, max: 100, axisLabel: { fontSize: 9, formatter: v => `${v}%` } };
-        opt.grid = { left: 40, right: 16, top: 40, bottom: 56 };
-        opt.legend = { bottom: 4, textStyle: { fontSize: 9 } };
-        opt.series = seriesData.map(s => {
-          const map = Object.fromEntries((s.points || []).map(p => [p.date, p.value]));
-          return { name: s.name, type: 'line', smooth: true, symbol: 'none', data: allDates.map(d => map[d] ?? null), connectNulls: false };
-        });
-      }
+        if (chart.type === 'bar') {
+          const d = chart.data || {};
+          const series = (d.series || []).map(s => ({
+            name: s.name, type: 'bar', data: s.data,
+            stack: d.stacked ? 'total' : undefined, barMaxWidth: 32,
+          }));
+          const topSpace = hasTitle ? 36 : 10;
+          if (isHoriz) {
+            opt.xAxis = { type: 'value', axisLabel: { fontSize: 9 } };
+            opt.yAxis = { type: 'category', data: cats, axisLabel: { fontSize: 9, width: 100, overflow: 'truncate' } };
+            opt.grid = { left: 110, right: 40, top: topSpace, bottom: 12 };
+          } else {
+            opt.xAxis = { type: 'category', data: cats, axisLabel: { fontSize: 9, rotate: 30 } };
+            opt.yAxis = { type: 'value', axisLabel: { fontSize: 9, formatter: v => `${v}%` } };
+            opt.grid = { left: 40, right: 16, top: topSpace, bottom: 44 };
+          }
+          opt.series = series;
+          if (d.stacked) opt.legend = { bottom: 4, textStyle: { fontSize: 9 } };
+        }
 
-      inst.setOption(opt);
-      window.addEventListener('resize', () => inst.resize());
+        if (chart.type === 'line') {
+          const seriesData = chart.data?.series || [];
+          const allDates = [...new Set(seriesData.flatMap(s => (s.points || []).map(p => p.date)))].sort();
+          opt.xAxis = { type: 'category', data: allDates, axisLabel: { fontSize: 9, rotate: 30 } };
+          opt.yAxis = { type: 'value', min: 0, max: 100, axisLabel: { fontSize: 9, formatter: v => `${v}%` } };
+          opt.grid = { left: 40, right: 16, top: hasTitle ? 36 : 10, bottom: 56 };
+          opt.legend = { bottom: 4, textStyle: { fontSize: 9 } };
+          opt.series = seriesData.map(s => {
+            const map = Object.fromEntries((s.points || []).map(p => [p.date, p.value]));
+            return { name: s.name, type: 'line', smooth: true, symbol: 'none', data: allDates.map(d => map[d] ?? null), connectNulls: false };
+          });
+        }
+
+        inst.setOption(opt);
+        inst.resize();
+        window.addEventListener('resize', () => inst.resize());
+
+        // Scroll para mostrar o gráfico recém-renderizado
+        const scroll = document.getElementById('mob-chat-scroll');
+        if (scroll) setTimeout(() => { scroll.scrollTop = scroll.scrollHeight; }, 60);
+      }));
     }
 
     function appendMessage(role, text, chart, save = true) {
