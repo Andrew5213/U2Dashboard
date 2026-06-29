@@ -8,12 +8,13 @@
   <script src="/static/echarts.min.js"></script>
   <link rel="stylesheet" href="/static/mobile.css" />
   <style>
-    html { height: 100%; }
+    html, body { height: 100%; margin: 0; }
     body {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
-      /* height é controlada pelo JS via visualViewport para lidar com teclado virtual */
-      height: 100dvh;
       overflow: hidden;
       background: #f1f5f9;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -349,39 +350,36 @@
       });
 
       // ── Correção de teclado virtual (iOS / Android) ───────────────
-      // O iOS sobe o viewport quando o teclado abre e não restaura ao fechar.
-      // Usamos visualViewport para ajustar a altura do body dinamicamente.
-      function applyViewportHeight() {
-        const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-        document.body.style.height = h + 'px';
+      // body tem position:fixed para não scrollar com a página.
+      // visualViewport.offsetTop compensa o "pan" que o iOS aplica ao abrir o teclado.
+      // visualViewport.height dá a altura visível (excluindo o teclado).
+      function syncViewport() {
+        if (!window.visualViewport) return;
+        const vv = window.visualViewport;
+        document.body.style.height = vv.height + 'px';
+        document.body.style.transform = `translateY(${vv.offsetTop}px)`;
       }
 
-      applyViewportHeight();
+      syncViewport();
 
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', () => {
-          applyViewportHeight();
-          // Se o input está em foco (teclado acabou de abrir), mantém o scroll no fim
+          syncViewport();
           if (document.activeElement === input) {
-            setTimeout(() => { chatScroll.scrollTop = chatScroll.scrollHeight; }, 50);
+            setTimeout(() => { chatScroll.scrollTop = chatScroll.scrollHeight; }, 80);
           }
         });
+        window.visualViewport.addEventListener('scroll', syncViewport);
       } else {
-        window.addEventListener('resize', applyViewportHeight);
+        window.addEventListener('resize', syncViewport);
       }
 
-      // Quando o teclado fecha (blur), reseta qualquer scroll residual do window
       input.addEventListener('blur', () => {
-        setTimeout(() => {
-          window.scrollTo(0, 0);
-          document.documentElement.scrollTop = 0;
-          document.body.scrollTop = 0;
-        }, 100);
+        setTimeout(syncViewport, 150);
       });
 
-      // Quando o teclado abre (focus), rola o chat para o fim
       input.addEventListener('focus', () => {
-        setTimeout(() => { chatScroll.scrollTop = chatScroll.scrollHeight; }, 350);
+        setTimeout(() => { chatScroll.scrollTop = chatScroll.scrollHeight; }, 400);
       });
       // ─────────────────────────────────────────────────────────────
 
