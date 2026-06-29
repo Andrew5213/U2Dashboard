@@ -99,10 +99,18 @@
         Assistente IA
       </a>
 
-      <!-- Divisor + label Relatórios -->
+      <!-- Divisor + label Relatórios + toggle PT/EN -->
       <div class="pt-3 pb-1">
         <div class="border-t border-gray-700 mb-3"></div>
-        <p class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Relatórios</p>
+        <div class="flex items-center justify-between px-3 mb-2">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Relatórios</p>
+          <div class="flex items-center gap-0.5 bg-gray-800 rounded p-0.5">
+            <button id="lang-pt" onclick="setReportLang('pt')"
+              class="px-2 py-0.5 text-xs rounded font-semibold transition-colors bg-blue-600 text-white">PT</button>
+            <button id="lang-en" onclick="setReportLang('en')"
+              class="px-2 py-0.5 text-xs rounded font-semibold transition-colors text-gray-400 hover:text-white">EN</button>
+          </div>
+        </div>
       </div>
 
       <!-- PDF Diário -->
@@ -272,9 +280,18 @@
       setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 6000);
     }
 
-    function exportPDF()     { _exportWithSpinner('btn-pdf-executivo', '/reports/pdf'); }
-    function exportDiario()  { _exportWithSpinner('btn-pdf-diario',    '/reports/pdf/daily'); }
-    function exportSemanal() { _exportWithSpinner('btn-pdf-semanal',   '/reports/pdf/weekly'); }
+    let _reportLang = 'pt';
+    function setReportLang(lang) {
+      _reportLang = lang;
+      const active = 'px-2 py-0.5 text-xs rounded font-semibold transition-colors bg-blue-600 text-white';
+      const idle   = 'px-2 py-0.5 text-xs rounded font-semibold transition-colors text-gray-400 hover:text-white';
+      document.getElementById('lang-pt').className = lang === 'pt' ? active : idle;
+      document.getElementById('lang-en').className = lang === 'en' ? active : idle;
+    }
+
+    function exportPDF()     { _exportWithSpinner('btn-pdf-executivo', `/reports/pdf?lang=${_reportLang}`); }
+    function exportDiario()  { _exportWithSpinner('btn-pdf-diario',    `/reports/pdf/daily?lang=${_reportLang}`); }
+    function exportSemanal() { _exportWithSpinner('btn-pdf-semanal',   `/reports/pdf/weekly?lang=${_reportLang}`); }
 
     function triggerRefresh() {
       fetch('/dashboard/refresh', { method: 'POST' })
@@ -304,7 +321,7 @@
 
     function exportProvincia(folderId) {
       if (_submenuOpen) toggleProvinciaMenu();
-      _exportWithSpinner('btn-pdf-provincia', `/reports/pdf/provincia?folder_id=${folderId}`);
+      _exportWithSpinner('btn-pdf-provincia', `/reports/pdf/provincia?folder_id=${folderId}&lang=${_reportLang}`);
     }
   </script>
 </body>
