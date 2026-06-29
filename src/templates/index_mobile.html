@@ -324,7 +324,7 @@
         <!-- Gráfico progresso por província -->
         <div class="mob-chart-wrap">
           <div class="mob-chart-title">Progresso por Província</div>
-          <div id="chart-folders" style="width:100%;height:${Math.max(180,folders.length*36)}px"></div>
+          <div id="chart-folders" style="width:100%;height:${Math.max(240,folders.length*52)}px"></div>
         </div>
 
         <!-- Gráfico de equipes -->
@@ -360,10 +360,40 @@
           const rB=b.total_tasks>0?b.completed_tasks/b.total_tasks:0;
           return rA-rB;
         });
-        Charts.renderProgressBars('chart-folders',sorted,'name','completed_tasks','total_tasks',true,f=>{
-          window.__folderName=f.name;
-          location.hash='#/folder/'+f.folder_id;
-        });
+        (function(){
+          const el=document.getElementById('chart-folders');
+          if(!el)return;
+          const chart=echarts.init(el,'',{renderer:'canvas'});
+          const names=sorted.map(f=>f.name);
+          const completed=sorted.map(f=>f.total_tasks>0?Math.round(f.completed_tasks/f.total_tasks*100):0);
+          const open=sorted.map(f=>f.total_tasks>0?Math.round((f.total_tasks-f.completed_tasks)/f.total_tasks*100):100);
+          chart.setOption({
+            tooltip:{trigger:'axis',axisPointer:{type:'shadow'},
+              formatter:function(params){
+                var idx=params[0]?params[0].dataIndex:0;
+                var f=sorted[idx]||{};
+                var title=params[0]?'<b>'+params[0].axisValue+'</b><br/>':'';
+                return title+'Concluídas: <b>'+f.completed_tasks+'</b><br/>Em aberto: <b>'+(f.total_tasks-f.completed_tasks)+'</b>';
+              }},
+            legend:{data:['Concluídas','Em aberto'],bottom:0,textStyle:{fontSize:11}},
+            grid:{left:'2%',right:'4%',top:10,bottom:40,containLabel:true},
+            xAxis:{type:'value',max:100,axisLabel:{fontSize:11,formatter:function(v){return v+'%';}}},
+            yAxis:{type:'category',data:names,axisLabel:{fontSize:11,width:160,overflow:'truncate'}},
+            series:[
+              {name:'Concluídas',type:'bar',stack:'total',data:completed,
+               itemStyle:{color:'#4ade80',cursor:'pointer'},
+               label:{show:true,position:'inside',formatter:function(p){return p.value?p.value+'%':'';},fontSize:10,color:'#166534'}},
+              {name:'Em aberto',type:'bar',stack:'total',data:open,
+               itemStyle:{color:'#e2e8f0'},
+               label:{show:false}},
+            ],
+          });
+          chart.on('click',function(params){
+            var f=sorted[params.dataIndex];
+            if(f){window.__folderName=f.name;location.hash='#/folder/'+f.folder_id;}
+          });
+          window.addEventListener('resize',function(){chart.resize();});
+        })();
 
         // Gráfico de equipes — barras horizontais (nomes longos, tela estreita)
         if (assignees&&assignees.length&&document.getElementById('chart-assignees')) {

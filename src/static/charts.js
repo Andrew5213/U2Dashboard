@@ -87,7 +87,7 @@ const Charts = (function () {
       yAxis: {
         type: 'category',
         data: names,
-        axisLabel: { interval: 0, fontSize: 11, width: 160, overflow: 'truncate' },
+        axisLabel: { fontSize: 11, width: 160, overflow: 'truncate' },
       },
       series: [
         {
