@@ -15,6 +15,7 @@ def _set_sqlite_pragmas(dbapi_conn, _):
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=30000")  # aguarda até 30s se o DB estiver bloqueado
     cursor.close()
 
 

@@ -29,7 +29,7 @@ class CacheService:
 
         try:
             async with ClickUpClient() as clickup:
-                # 1) Space
+                # 1) Space — commitado imediatamente (leve e independente)
                 spaces = await clickup.get_spaces(settings.clickup_team_id)
                 space = next((s for s in spaces if str(s["id"]) == space_id), None)
                 if space:
@@ -37,7 +37,7 @@ class CacheService:
                     summary.spaces_updated = 1
                     await self._db.commit()
 
-                # 2) Membros
+                # 2) Membros — commitado separadamente para não bloquear o refresh principal
                 try:
                     members = await clickup.get_team_members()
                     for m in members:
@@ -50,7 +50,10 @@ class CacheService:
                     summary.errors.append(f"members: {exc}")
                     await self._db.rollback()
 
-                # 3) Folders + listas + tasks
+                # 3) Folders + listas + tasks — SEM commits intermediários.
+                # Todos os dados ficam na sessão e são gravados atomicamente ao final.
+                # Isso impede que o dashboard leia estados parciais (ex: pasta com 0 tasks
+                # porque o commit ocorreu antes de carregar as tasks daquela lista).
                 folders = await clickup.get_folders(space_id)
                 for folder in folders:
                     folder_id = str(folder["id"])
@@ -62,12 +65,9 @@ class CacheService:
                         list_id = str(lst["id"])
                         await self._repo.upsert_list(lst, space_id, folder_id)
                         summary.lists_updated += 1
-                        await self._db.commit()
 
                         await self._load_tasks(clickup, list_id, summary)
                         await asyncio.sleep(0.6)
-
-                await self._db.commit()
 
                 # 4) Listas sem folder
                 folderless = await clickup.get_folderless_lists(space_id)
@@ -75,11 +75,11 @@ class CacheService:
                     list_id = str(lst["id"])
                     await self._repo.upsert_list(lst, space_id, None)
                     summary.lists_updated += 1
-                    await self._db.commit()
 
                     await self._load_tasks(clickup, list_id, summary)
                     await asyncio.sleep(0.6)
 
+                # Commit único e atômico — o dashboard só vê dados completos ou o estado anterior
                 await self._db.commit()
 
         except Exception as exc:
@@ -123,11 +123,11 @@ class CacheService:
                 seen.add(str(task["id"]))
                 summary.tasks_updated += 1
             await self._repo.mark_tasks_stale(list_id, seen)
-            await self._db.commit()
+            # Sem commit aqui — o refresh_cache_full commita tudo atomicamente ao final
         except Exception as exc:
             logger.error(f"Cache: erro ao carregar tasks da lista {list_id}: {exc}")
             summary.errors.append(f"list {list_id}: {exc}")
-            await self._db.rollback()
+            # Sem rollback — erros de lista são coletados e o refresh continua nas demais listas
 
     async def refresh_list(self, list_id: str) -> int:
         count = 0
