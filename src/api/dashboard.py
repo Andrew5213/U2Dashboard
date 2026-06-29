@@ -1,5 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
@@ -10,55 +9,64 @@ from src.services.dashboard_service import DashboardService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-_NO_CACHE = {"Cache-Control": "no-store"}
-
 
 def _svc(db: AsyncSession = Depends(get_db)) -> DashboardService:
     return DashboardService(db)
 
 
+def _no_cache(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
 @router.get("/overview", response_model=DashboardEnvelope)
-async def get_overview(svc: DashboardService = Depends(_svc)):
+async def get_overview(response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_overview(settings.clickup_default_space_id)
-    return JSONResponse(DashboardEnvelope(data=data.model_dump()).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=data.model_dump())
 
 
 @router.get("/folders", response_model=DashboardEnvelope)
-async def get_folders(svc: DashboardService = Depends(_svc)):
+async def get_folders(response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_folders(settings.clickup_default_space_id)
-    return JSONResponse(DashboardEnvelope(data=[f.model_dump() for f in data]).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=[f.model_dump() for f in data])
 
 
 @router.get("/folder/{folder_id}", response_model=DashboardEnvelope)
-async def get_folder(folder_id: str, svc: DashboardService = Depends(_svc)):
+async def get_folder(folder_id: str, response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_folder_lists(folder_id)
-    return JSONResponse(DashboardEnvelope(data=[lst.model_dump() for lst in data]).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=[lst.model_dump() for lst in data])
 
 
 @router.get("/list/{list_id}", response_model=DashboardEnvelope)
-async def get_list(list_id: str, svc: DashboardService = Depends(_svc)):
+async def get_list(list_id: str, response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_list_tasks(list_id)
-    return JSONResponse(DashboardEnvelope(data=[t.model_dump() for t in data]).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=[t.model_dump() for t in data])
 
 
 @router.get("/task/{task_id}", response_model=DashboardEnvelope)
-async def get_task(task_id: str, svc: DashboardService = Depends(_svc)):
+async def get_task(task_id: str, response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_task_detail(task_id)
     if not data:
         raise HTTPException(status_code=404, detail="Task não encontrada no cache")
-    return JSONResponse(DashboardEnvelope(data=data.model_dump()).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=data.model_dump())
 
 
 @router.get("/assignees", response_model=DashboardEnvelope)
-async def get_assignees(svc: DashboardService = Depends(_svc)):
+async def get_assignees(response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_assignee_stats(settings.clickup_default_space_id)
-    return JSONResponse(DashboardEnvelope(data=[d.model_dump() for d in data]).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=[d.model_dump() for d in data])
 
 
 @router.get("/upcoming", response_model=DashboardEnvelope)
-async def get_upcoming(days: int = 30, svc: DashboardService = Depends(_svc)):
+async def get_upcoming(response: Response, days: int = 30, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
     data = await svc.get_upcoming_tasks(settings.clickup_default_space_id, days)
-    return JSONResponse(DashboardEnvelope(data=[d.model_dump() for d in data]).model_dump(), headers=_NO_CACHE)
+    return DashboardEnvelope(data=[d.model_dump() for d in data])
 
 
 @router.get("/gantt/overview", response_model=DashboardEnvelope)
