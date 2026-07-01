@@ -41,5 +41,16 @@ class Settings(BaseSettings):
     chat_max_iterations: int = 5
     chat_max_tokens: int = 1024
 
+    # Email (relatórios semanais automáticos)
+    email_enabled: bool = False
+    email_smtp_host: str = "smtp.gmail.com"
+    email_smtp_port: int = 587
+    email_user: str = ""
+    email_password: str = ""  # App Password do Google (não a senha normal)
+    email_from: str = ""      # ex: "U2 Broadcast Angola <email@gmail.com>"
+    email_recipients: str = ""  # emails separados por vírgula
+    email_report_weekday: int = 6   # 0=segunda … 6=domingo
+    email_report_hour: int = 8      # hora UTC do envio
+
 
 settings = Settings()

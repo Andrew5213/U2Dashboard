@@ -10,6 +10,7 @@ from src.api import health, webhooks, sync
 from src.api import dashboard, dashboard_stream, reports, disciplines, chat
 from src.workers.polling_worker import start_polling, stop_polling
 from src.workers.cache_worker import start_cache_worker, stop_cache_worker
+from src.workers.email_worker import start_email_worker, stop_email_worker
 # Garante que os modelos de cache sejam criados pelo init_db
 import src.models.cache_models  # noqa: F401
 
@@ -25,8 +26,12 @@ async def lifespan(app: FastAPI):
     if settings.dashboard_enabled and settings.clickup_default_space_id:
         start_cache_worker(settings.clickup_default_space_id)
 
+    if settings.email_enabled and settings.clickup_default_space_id and settings.email_user:
+        start_email_worker(settings.clickup_default_space_id)
+
     yield
 
+    stop_email_worker()
     stop_cache_worker()
     stop_polling()
 

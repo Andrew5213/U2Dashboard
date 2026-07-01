@@ -16,8 +16,7 @@ The AltoQI Visus Workflow platform exposes the **Airbox public API** at `https:/
 # Setup
 pip install -r requirements.txt
 pip install mypy pytest-env  # dev tools not in requirements.txt
-cp .env.example .env  # then fill credentials — .env.example only has the minimum required vars;
-                      # see Key Configuration table below for the full set
+# Create .env manually with the variables listed in the Key Configuration table below
 
 # Run (dev)
 uvicorn src.main:app --reload --port 8000
@@ -51,8 +50,10 @@ src/
 ├── static/              # Served at /static (CSS, JS for dashboard UI)
 ├── img/                 # Served at /img (images for dashboard UI)
 ├── templates/
-│   ├── index.html       # Jinja2 dashboard UI (served at GET /)
-│   └── chat.html        # AI assistant page (served at GET /assistente)
+│   ├── index.html         # Jinja2 dashboard UI (served at GET / — desktop)
+│   ├── index_mobile.html  # Mobile variant — selected by UA detection in main.py
+│   ├── chat.html          # AI assistant page (served at GET /assistente — desktop)
+│   └── chat_mobile.html   # Mobile variant
 ├── core/
 │   ├── config.py        # Settings via pydantic-settings (reads .env)
 │   ├── database.py      # Async SQLAlchemy engine, Base, get_db, init_db
@@ -122,7 +123,11 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **SSE stream**: `GET /dashboard/stream` — clients receive `update` events (with `type`, `task_id`, `list_id`) whenever a webhook updates a task. Sends `ping` keepalives every `SSE_KEEPALIVE_SECONDS` (default 15s).
 
-**Dashboard UI**: served at `GET /` via `src/templates/index.html`. The frontend calls `/dashboard/*` REST endpoints and connects to `/dashboard/stream` for live updates.
+**Dashboard UI**: served at `GET /` via `src/templates/index.html` (or `index_mobile.html`). The frontend calls `/dashboard/*` REST endpoints and connects to `/dashboard/stream` for live updates.
+
+**Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. Both `GET /` and `GET /assistente` follow this pattern.
+
+**Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
 ## PDF Reports
 
@@ -200,8 +205,6 @@ Lists and agreements are matched **by name** (case-insensitive). If names don't 
 
 SQLite by default (`sync.db`). Schema is auto-created at startup via `Base.metadata.create_all`. **If you change ORM models, delete `sync.db` to recreate.** `alembic` is listed in `requirements.txt` but is not used — do not create migrations.
 
-**Railway deployment:** For persistent storage on Railway, mount a volume at `/data` and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`.
-
 The `import src.models.cache_models  # noqa: F401` in `main.py` is an intentional side-effect import: SQLAlchemy only registers cache tables with `Base.metadata` if the module is imported before `init_db()` runs. Removing or reordering that import will silently drop the cache tables on startup.
 
 Tables:
@@ -242,6 +245,15 @@ Tables:
 | `CHAT_MODEL` | Claude model used by the agent | `claude-haiku-4-5-20251001` |
 | `CHAT_MAX_ITERATIONS` | Max tool-use iterations per request | `5` |
 | `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
+| `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
+| `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
+| `EMAIL_SMTP_PORT` | Porta SMTP (STARTTLS) | `587` |
+| `EMAIL_USER` | Conta Gmail do remetente | `""` |
+| `EMAIL_PASSWORD` | App Password do Google (não a senha normal da conta) | `""` |
+| `EMAIL_FROM` | Nome e email do remetente (ex: `U2 Broadcast Angola <email@gmail.com>`) | `""` |
+| `EMAIL_RECIPIENTS` | Destinatários separados por vírgula | `""` |
+| `EMAIL_REPORT_WEEKDAY` | Dia da semana do envio (0=segunda … 6=domingo) | `6` |
+| `EMAIL_REPORT_HOUR` | Hora UTC do envio | `8` |
 
 ## mapper.py Constants (require manual setup)
 
@@ -260,6 +272,14 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 ```
 
 **Discovery workflow:** run the first sync with empty dicts → inspect the "Airbox Stage ID" custom field on created ClickUp tasks → fill in the real int IDs.
+
+## Deploy (Railway)
+
+`Procfile`: `web: uvicorn src.main:app --host 0.0.0.0 --port $PORT`
+
+`railway.toml`: builder `nixpacks`, healthcheck at `/health` (timeout 300s), restart policy `on_failure` (max 10 retries).
+
+For persistent SQLite on Railway, mount a volume at `/data` and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`.
 
 ## Airbox API
 
