@@ -1,11 +1,12 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.database import get_db
+from src.core.database import get_db, AsyncSessionLocal
 from src.core.config import settings
 from src.core.logging import logger
 from src.services.report_service import ReportService, ProvinceReportService, PeriodicReportService
+from src.services.email_service import EmailService
 from src.services.report_strings import get_strings
 from src.repositories.cache_repository import CacheRepository
 
@@ -119,6 +120,36 @@ async def export_weekly_pdf(
     filename = get_strings(lang)["filename_weekly"].format(ts=datestamp)
     disposition = "inline" if inline else f'attachment; filename="{filename}"'
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": disposition})
+
+
+async def _send_email_background(space_id: str) -> None:
+    async with AsyncSessionLocal() as db:
+        await EmailService(db).send_weekly_report(space_id)
+
+
+@router.post("/email/send", summary="Disparar envio manual do relatório semanal por email")
+async def send_email_report_now(
+    background_tasks: BackgroundTasks,
+    space_id: str = Query(default="", description="ClickUp Space ID (usa CLICKUP_DEFAULT_SPACE_ID se omitido)"),
+):
+    if not settings.email_user:
+        raise HTTPException(status_code=503, detail="Email não configurado (EMAIL_USER ausente no .env)")
+
+    sid = space_id or settings.clickup_default_space_id
+    if not sid:
+        raise HTTPException(status_code=400, detail="space_id é obrigatório ou configure CLICKUP_DEFAULT_SPACE_ID")
+
+    recipients = [r.strip() for r in settings.email_recipients.split(",") if r.strip()]
+    if not recipients:
+        raise HTTPException(status_code=503, detail="Nenhum destinatário configurado (EMAIL_RECIPIENTS ausente no .env)")
+
+    logger.info(f"Disparo manual do relatório semanal por email (space={sid})")
+    background_tasks.add_task(_send_email_background, sid)
+
+    return JSONResponse({
+        "status": "enviando",
+        "message": f"Relatório sendo gerado e enviado para {len(recipients)} destinatário(s): {', '.join(recipients)}",
+    })
 
 
 @router.get("/folders", summary="Listar pastas disponíveis para relatório")
