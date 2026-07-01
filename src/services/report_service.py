@@ -1663,8 +1663,7 @@ class PeriodicReportService:
         from datetime import timedelta
         t = get_strings(lang)
         now = datetime.utcnow()
-        days_since_sunday = (now.weekday() + 1) % 7
-        since = (now - timedelta(days=days_since_sunday)).replace(
+        since = (now - timedelta(days=now.weekday())).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         report_type = t["weekly_type"]
