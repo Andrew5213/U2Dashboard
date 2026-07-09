@@ -472,7 +472,7 @@
         return;
       }
       list.innerHTML = profiles.map(p => `
-        <button onclick="selectProfile(${p.id}, '${p.name.replace(/'/g, "\\'")}', ${JSON.stringify(p).replace(/</g, '\\u003c')})"
+        <button onclick="selectProfile(${p.id}, '${p.name.replace(/'/g, "\\'")}')"
           class="w-full text-left px-3 py-2 rounded hover:bg-blue-50 transition-colors ${selectedProfileId === p.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}">
           ${p.name}
           <span class="text-xs text-gray-400 ml-1">(${p.categories.length} cat.)</span>
@@ -490,11 +490,12 @@
       else { const e = await res.json(); showToast('Erro: ' + e.detail, 'error'); }
     }
 
-    function selectProfile(id, name, profileData) {
+    async function selectProfile(id, name) {
       selectedProfileId = id;
       document.getElementById('profile-detail-title').textContent = name;
       document.getElementById('btn-add-cat').classList.remove('hidden');
-      renderProfileDetail(profileData);
+      const res = await fetch(`/civil/progress/profiles/${id}`);
+      renderProfileDetail(await res.json());
       loadProfiles();
     }
 
@@ -542,7 +543,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), weight }),
       });
-      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      if (res.ok) selectProfile(selectedProfileId, document.getElementById('profile-detail-title').textContent);
       else showToast('Erro ao criar categoria.', 'error');
     }
 
@@ -560,7 +561,7 @@
     async function deleteCat(catId) {
       if (!confirm('Excluir categoria? Isso remove todas as atividades associadas.')) return;
       const res = await fetch(`/civil/progress/categories/${catId}`, { method: 'DELETE' });
-      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      if (res.ok) selectProfile(selectedProfileId, document.getElementById('profile-detail-title').textContent);
       else showToast('Erro ao excluir.', 'error');
     }
 
@@ -572,14 +573,14 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name.trim(), unit }),
       });
-      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      if (res.ok) selectProfile(selectedProfileId, document.getElementById('profile-detail-title').textContent);
       else showToast('Erro ao criar atividade.', 'error');
     }
 
     async function deleteActivity(actId) {
       if (!confirm('Excluir atividade?')) return;
       const res = await fetch(`/civil/progress/activities/${actId}`, { method: 'DELETE' });
-      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      if (res.ok) selectProfile(selectedProfileId, document.getElementById('profile-detail-title').textContent);
     }
 
     // ─── Novo Site (a partir de uma província do ClickUp) ──────────────────────
