@@ -122,6 +122,103 @@ async def export_weekly_pdf(
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": disposition})
 
 
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/xlsx", summary="Exportar relatório executivo em .xlsx")
+async def export_xlsx_report(
+    space_id: str = Query(default="", description="ClickUp Space ID (usa CLICKUP_DEFAULT_SPACE_ID se omitido)"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    sid = space_id or settings.clickup_default_space_id
+    if not sid:
+        raise HTTPException(status_code=400, detail="space_id é obrigatório ou configure CLICKUP_DEFAULT_SPACE_ID no .env")
+
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando relatório XLSX para space {sid} (lang={lang})")
+    try:
+        xlsx_bytes = await ReportService(db).generate_xlsx(sid, lang=lang)
+    except Exception as exc:
+        logger.error(f"Erro ao gerar XLSX para space {sid}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = f"relatorio_executivo_{datestamp}.xlsx"
+    return Response(content=xlsx_bytes, media_type=_XLSX_MEDIA_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/xlsx/provincia", summary="Exportar relatório detalhado de uma província/área em .xlsx")
+async def export_provincia_xlsx(
+    folder_id: str = Query(..., description="ID da pasta (província) no ClickUp"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando relatório XLSX de província para folder {folder_id} (lang={lang})")
+    try:
+        xlsx_bytes = await ProvinceReportService(db).generate_xlsx(folder_id, lang=lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Erro ao gerar XLSX de província {folder_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = f"relatorio_provincia_{folder_id}_{datestamp}.xlsx"
+    return Response(content=xlsx_bytes, media_type=_XLSX_MEDIA_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/xlsx/daily", summary="Exportar relatório diário de atualizações em .xlsx")
+async def export_daily_xlsx(
+    space_id: str = Query(default="", description="ClickUp Space ID (usa CLICKUP_DEFAULT_SPACE_ID se omitido)"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    sid = space_id or settings.clickup_default_space_id
+    if not sid:
+        raise HTTPException(status_code=400, detail="space_id é obrigatório ou configure CLICKUP_DEFAULT_SPACE_ID no .env")
+
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando relatório diário XLSX para space {sid} (lang={lang})")
+    try:
+        xlsx_bytes = await PeriodicReportService(db).generate_daily_xlsx(sid, lang=lang)
+    except Exception as exc:
+        logger.error(f"Erro ao gerar relatório diário XLSX: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d")
+    filename = f"relatorio_diario_{datestamp}.xlsx"
+    return Response(content=xlsx_bytes, media_type=_XLSX_MEDIA_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/xlsx/weekly", summary="Exportar relatório semanal de atualizações em .xlsx")
+async def export_weekly_xlsx(
+    space_id: str = Query(default="", description="ClickUp Space ID (usa CLICKUP_DEFAULT_SPACE_ID se omitido)"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    sid = space_id or settings.clickup_default_space_id
+    if not sid:
+        raise HTTPException(status_code=400, detail="space_id é obrigatório ou configure CLICKUP_DEFAULT_SPACE_ID no .env")
+
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando relatório semanal XLSX para space {sid} (lang={lang})")
+    try:
+        xlsx_bytes = await PeriodicReportService(db).generate_weekly_xlsx(sid, lang=lang)
+    except Exception as exc:
+        logger.error(f"Erro ao gerar relatório semanal XLSX: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d")
+    filename = f"relatorio_semanal_{datestamp}.xlsx"
+    return Response(content=xlsx_bytes, media_type=_XLSX_MEDIA_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 async def _send_email_background(space_id: str) -> None:
     async with AsyncSessionLocal() as db:
         await EmailService(db).send_weekly_report(space_id)

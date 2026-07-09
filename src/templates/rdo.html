@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>U2 Broadcast — RDO Civil</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+
+  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+  <aside class="w-56 flex-shrink-0 bg-gray-900 flex flex-col z-30 h-screen overflow-hidden">
+    <div class="px-0 py-0 border-b border-gray-700 flex-shrink-0">
+      <img src="/img/Logo Branca.png" alt="U2 Broadcast" class="h-36 w-auto" />
+    </div>
+    <nav class="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
+      <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" /></svg>
+        Visão Geral
+      </a>
+
+      {% if chat_enabled %}
+      <a href="/assistente" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+        Assistente IA
+      </a>
+      {% endif %}
+
+      <div class="pt-3 pb-1"><div class="border-t border-gray-700 mb-3"></div>
+        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 mb-2">Obra Civil</p>
+      </div>
+      <a href="/rdo" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+        RDO Diário
+      </a>
+      <a href="/progresso-civil" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+        Controle de Progresso
+      </a>
+
+      <div class="pt-3 pb-1">
+        <div class="border-t border-gray-700 mb-3"></div>
+        <div class="flex items-center justify-between px-3 mb-2">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Relatórios</p>
+          <div class="flex items-center gap-0.5 bg-gray-800 rounded p-0.5">
+            <button id="lang-pt" onclick="setReportLang('pt')" class="px-2 py-0.5 text-xs rounded font-semibold transition-colors bg-blue-600 text-white">PT</button>
+            <button id="lang-en" onclick="setReportLang('en')" class="px-2 py-0.5 text-xs rounded font-semibold transition-colors text-gray-400 hover:text-white">EN</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-diario" onclick="exportDiario()" class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+          PDF Diário
+        </button>
+        <button id="btn-xlsx-diario" onclick="exportDiarioXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-semanal" onclick="exportSemanal()" class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5m.75-9 3-3 2.148 2.148A12.061 12.061 0 0 1 16.5 7.605" /></svg>
+          PDF Semanal
+        </button>
+        <button id="btn-xlsx-semanal" onclick="exportSemanalXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-executivo" onclick="exportPDF()" class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+          PDF Executivo
+        </button>
+        <button id="btn-xlsx-executivo" onclick="exportPDFXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
+
+      <div>
+        <button id="btn-pdf-provincia" onclick="toggleProvinciaMenu()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c-.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
+          <span class="flex-1">PDF Província</span>
+          <svg id="provincia-chevron" class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+        </button>
+        <div id="provincia-submenu" style="max-height:0;overflow:hidden;transition:max-height 0.25s ease">
+          <div id="provincia-list" class="ml-8 mt-1 mb-1 space-y-0.5">
+            <div class="px-3 py-1.5 text-xs text-gray-500">Carregando...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3">
+        <div class="border-t border-gray-700 mb-3"></div>
+      </div>
+
+      <button onclick="triggerRefresh()" id="refresh-btn" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+        <span id="refresh-label">Atualizar Cache</span>
+      </button>
+    </nav>
+
+    <div class="px-4 py-3 border-t border-gray-700 flex-shrink-0">
+      <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span id="sse-dot" class="w-2 h-2 rounded-full bg-gray-600 transition-colors flex-shrink-0"></span>
+        <span id="sse-label">offline</span>
+      </div>
+      <span id="last-refresh" class="text-xs text-gray-500 mt-1 block truncate"></span>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════ CONTEÚDO ═══════════════════ -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <header class="bg-white border-b border-gray-200 flex-shrink-0 h-14 flex items-center px-6 shadow-sm">
+      <h1 class="text-sm font-semibold text-gray-700">Relatório Diário de Obra Civil (RDO)</h1>
+    </header>
+
+    <main class="flex-1 overflow-auto">
+      <div class="max-w-5xl mx-auto px-4 py-6 space-y-4">
+
+        <!-- ── Seletor de contexto: Projeto + Data ── -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Projeto</label>
+              <select id="sel-project" onchange="onProjectChange()" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Selecione...</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Data</label>
+              <input type="date" id="sel-date" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="flex gap-2">
+              <button onclick="loadDayView()" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">Carregar dia</button>
+              <button onclick="newProject()" title="Novo projeto" class="border border-gray-300 text-gray-600 px-3 py-2 rounded-md text-sm hover:bg-gray-50">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Abas de sites do dia ── -->
+        <div id="site-tabs-bar" class="hidden bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs font-medium text-gray-400 mr-1">Sites:</span>
+            <div id="site-tabs" class="flex gap-1.5 flex-wrap"></div>
+            <button onclick="addSiteToDay()" class="text-xs border border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 px-2.5 py-1 rounded-md ml-1 transition-colors">+ Novo site</button>
+          </div>
+          <!-- Painel inline de adicionar site -->
+          <div id="new-site-panel" class="hidden mt-3 pt-3 border-t border-gray-100 flex items-center gap-3 flex-wrap">
+            <select id="sel-new-site" class="border border-gray-300 rounded-md px-3 py-2 text-sm flex-1 min-w-40 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Selecione o site...</option>
+            </select>
+            <button onclick="confirmAddSite()" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">Abrir RDO</button>
+            <button onclick="cancelAddSite()" class="border border-gray-300 text-gray-600 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Cancelar</button>
+          </div>
+        </div>
+
+        <!-- ── Formulário RDO (oculto até carregar) ── -->
+        <div id="rdo-form" class="hidden space-y-3">
+          <input type="hidden" id="current-site-id" />
+
+          <!-- Badge de estado do relatório -->
+          <div id="report-badge" class="hidden text-xs px-3 py-1.5 rounded-md"></div>
+
+          <!-- 1.1 Identificação -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s11')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-t-lg">
+              <span>1.1 Identificação</span>
+              <svg id="s11-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s11" class="px-4 pb-4 grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+              <div>
+                <label class="field-label">Província</label>
+                <input id="f-province" type="text" class="field-input" placeholder="Ex: Luanda" />
+              </div>
+              <div>
+                <label class="field-label">Local / Site</label>
+                <input id="f-local-site" type="text" class="field-input" placeholder="Endereço ou referência" />
+              </div>
+              <div>
+                <label class="field-label">Responsável de Obra</label>
+                <input id="f-responsible" type="text" class="field-input" placeholder="Nome do responsável" />
+              </div>
+              <div>
+                <label class="field-label">Empreiteiro / Equipa</label>
+                <input id="f-contractor" type="text" class="field-input" placeholder="Empresa ou equipa" />
+              </div>
+              <div>
+                <label class="field-label">Fiscal / Supervisor</label>
+                <input id="f-supervisor" type="text" class="field-input" placeholder="Nome do fiscal" />
+              </div>
+              <div>
+                <label class="field-label">Condições Climáticas</label>
+                <select id="f-weather" class="field-input" onchange="applyWeatherStyle(this)">
+                  <option value="">Selecione...</option>
+                  <option>Ensolarado</option>
+                  <option>Nublado</option>
+                  <option>Chuvoso</option>
+                  <option>Tempestade</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Situação Geral</label>
+                <select id="f-situation" class="field-input" onchange="applyStatusStyle(this, {'Normal':'ok','Atenção':'warn','Crítico':'bad'})">
+                  <option value="">Selecione...</option>
+                  <option>Normal</option>
+                  <option>Atenção</option>
+                  <option>Crítico</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Hora Início</label>
+                <input id="f-start-time" type="time" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label">Hora Término</label>
+                <input id="f-end-time" type="time" class="field-input" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 1.2 Resumo do Dia -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s12')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.2 Resumo do Dia</span>
+              <svg id="s12-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s12" class="px-4 pb-4 grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1">
+              <div>
+                <label class="field-label">Frentes Ativas</label>
+                <input id="f-fronts" type="number" min="0" class="field-input" value="0" />
+              </div>
+              <div>
+                <label class="field-label">Ativ. Concluídas <span style="color:#3b82f6;font-size:10px;text-transform:none;letter-spacing:0">(calculado auto)</span></label>
+                <input id="f-act-completed" type="number" min="0" class="field-input" value="0" readonly />
+              </div>
+              <div>
+                <label class="field-label">Ativ. em Curso <span style="color:#3b82f6;font-size:10px;text-transform:none;letter-spacing:0">(calculado auto)</span></label>
+                <input id="f-act-progress" type="number" min="0" class="field-input" value="0" readonly />
+              </div>
+              <div>
+                <label class="field-label">Restrições <span style="color:#3b82f6;font-size:10px;text-transform:none;letter-spacing:0">(calculado auto)</span></label>
+                <input id="f-restrictions" type="number" min="0" class="field-input" value="0" readonly />
+              </div>
+              <div>
+                <label class="field-label">Total Pessoal <span style="color:#3b82f6;font-size:10px;text-transform:none;letter-spacing:0">(calculado auto)</span></label>
+                <input id="f-total-personnel" type="text" class="field-input" readonly />
+              </div>
+              <div>
+                <label class="field-label">Seg. / Saúde</label>
+                <select id="f-safety" class="field-input" onchange="applyStatusStyle(this, {'Sem ocorrências':'ok','Incidente leve':'warn','Incidente grave':'bad'})">
+                  <option value="">Selecione...</option>
+                  <option>Sem ocorrências</option>
+                  <option>Incidente leve</option>
+                  <option>Incidente grave</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Qualidade</label>
+                <select id="f-quality" class="field-input" onchange="applyStatusStyle(this, {'Conforme':'ok','Com ressalvas':'warn','Não conforme':'bad'})">
+                  <option value="">Selecione...</option>
+                  <option>Conforme</option>
+                  <option>Não conforme</option>
+                  <option>Com ressalvas</option>
+                </select>
+              </div>
+              <div class="sm:col-span-4">
+                <label class="field-label">Comentário do Dia</label>
+                <textarea id="f-comment" rows="3" class="field-input resize-none" placeholder="Resumo das ocorrências do dia, avanços, destaques..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- 1.3 Recursos Mobilizados -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s13')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.3 Recursos Mobilizados</span>
+              <svg id="s13-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s13" class="px-4 pb-4">
+              <table class="w-full text-sm">
+                <thead><tr class="text-left text-xs text-gray-500 border-b">
+                  <th class="pb-2 w-52">Disciplina</th>
+                  <th class="pb-2 w-24">Quantidade</th>
+                  <th class="pb-2">Observações</th>
+                </tr></thead>
+                <tbody id="tbl-resources"></tbody>
+                <tfoot><tr class="border-t font-semibold text-xs text-gray-600">
+                  <td class="pt-2">TOTAL</td>
+                  <td class="pt-2"><span id="total-resources">0</span></td>
+                  <td></td>
+                </tr></tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- 1.4 Atividades Executadas (com seletor de catálogo) -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s14')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.4 Atividades Civis Executadas
+                <span id="catalog-badge" class="hidden ml-2 text-xs font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">catálogo ativo</span>
+              </span>
+              <svg id="s14-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s14" class="px-4 pb-4">
+              <table class="w-full text-sm"><thead><tr class="text-left text-xs font-semibold text-gray-400 uppercase tracking-wide border-b">
+                <th class="pb-2 w-28">Frente</th>
+                <th class="pb-2 w-28">Categoria</th>
+                <th class="pb-2">Atividade <span class="text-blue-400 normal-case font-normal">— escolha do catálogo ou escreva abaixo</span></th>
+                <th class="pb-2 w-14">Un.</th>
+                <th class="pb-2 w-20">Qtd./dia</th>
+                <th class="pb-2 w-28">Status</th>
+                <th class="pb-2">Obs.</th>
+                <th class="pb-2 w-8"></th>
+              </tr></thead>
+              <tbody id="tbl-activities"></tbody></table>
+              <button onclick="addActivityRow()" class="mt-2 text-xs text-blue-600 hover:text-blue-800">+ Adicionar linha</button>
+            </div>
+          </div>
+
+          <!-- 1.5 Materiais -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s15')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.5 Materiais Recebidos / Aplicados</span>
+              <svg id="s15-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s15" class="px-4 pb-4">
+              <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 border-b">
+                <th class="pb-2">Material / Equipamento</th><th class="pb-2 w-16">Un.</th>
+                <th class="pb-2 w-24">Qtd. Recebida</th><th class="pb-2 w-24">Qtd. Aplicada</th>
+                <th class="pb-2 w-24 text-blue-600">Saldo (auto)</th><th class="pb-2">Obs.</th><th class="pb-2 w-8"></th>
+              </tr></thead>
+              <tbody id="tbl-materials"></tbody></table>
+              <button onclick="addMaterialRow()" class="mt-2 text-xs text-blue-600 hover:text-blue-800">+ Adicionar linha</button>
+            </div>
+          </div>
+
+          <!-- 1.6 Ocorrências -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s16')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.6 Ocorrências, Impedimentos e Riscos</span>
+              <svg id="s16-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s16" class="px-4 pb-4">
+              <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 border-b">
+                <th class="pb-2 w-28">Tipo</th><th class="pb-2">Descrição</th><th class="pb-2">Impacto</th>
+                <th class="pb-2">Ação Corretiva</th><th class="pb-2 w-28">Responsável</th>
+                <th class="pb-2 w-28">Prazo</th><th class="pb-2 w-8"></th>
+              </tr></thead>
+              <tbody id="tbl-occurrences"></tbody></table>
+              <button onclick="addOccurrenceRow()" class="mt-2 text-xs text-blue-600 hover:text-blue-800">+ Adicionar linha</button>
+            </div>
+          </div>
+
+          <!-- 1.7 Qualidade / Segurança -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s17')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.7 Qualidade, Segurança e Conformidade</span>
+              <svg id="s17-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s17" class="px-4 pb-4">
+              <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 border-b">
+                <th class="pb-2">Item</th><th class="pb-2 w-32">Resultado</th><th class="pb-2">Observações</th>
+              </tr></thead>
+              <tbody id="tbl-quality"></tbody></table>
+            </div>
+          </div>
+
+          <!-- 1.8 Fotos -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s18')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.8 Evidências Fotográficas</span>
+              <svg id="s18-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s18" class="px-4 pb-4">
+              <div id="photos-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3"></div>
+              <label class="cursor-pointer inline-flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338-2.32 5.75 5.75 0 0 1 5.822 4.82c.044.309.007.622-.109.9A2.25 2.25 0 0 1 19.5 15H18" /></svg>
+                Adicionar foto
+                <input type="file" id="photo-input" accept="image/*" multiple class="hidden" onchange="uploadPhotos(this)" />
+              </label>
+              <p id="photo-status" class="text-xs text-gray-400 mt-1"></p>
+            </div>
+          </div>
+
+          <!-- 1.9 Planeamento D+1 -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s19')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.9 Planeamento para o Dia Seguinte</span>
+              <svg id="s19-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s19" class="px-4 pb-4">
+              <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 border-b">
+                <th class="pb-2">Frente/Site</th><th class="pb-2">Atividade Prevista</th>
+                <th class="pb-2 w-32">Responsável</th><th class="pb-2">Dependência / Condição</th><th class="pb-2 w-8"></th>
+              </tr></thead>
+              <tbody id="tbl-plans"></tbody></table>
+              <button onclick="addPlanRow()" class="mt-2 text-xs text-blue-600 hover:text-blue-800">+ Adicionar linha</button>
+            </div>
+          </div>
+
+          <!-- 1.10 Conclusão -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s110')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <span>1.10 Conclusão Diária do Responsável</span>
+              <svg id="s110-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s110" class="px-4 pb-4">
+              <textarea id="f-conclusion" rows="4" class="field-input resize-none w-full" placeholder="Síntese do dia: destaques, pontos de atenção, decisões tomadas..."></textarea>
+            </div>
+          </div>
+
+          <!-- 1.11 Assinaturas -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <button onclick="toggleSection('s111')" class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 rounded-b-lg">
+              <span>1.11 Assinaturas</span>
+              <svg id="s111-icon" class="w-4 h-4 text-gray-400 rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div id="s111" class="px-4 pb-4">
+              <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 border-b">
+                <th class="pb-2 w-48">Função</th><th class="pb-2">Nome</th><th class="pb-2 w-40">Data/Hora Confirmação</th>
+              </tr></thead>
+              <tbody id="tbl-signatures"></tbody></table>
+            </div>
+          </div>
+
+          <!-- Botões de ação -->
+          <div class="flex items-center justify-between bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-3">
+            <span id="save-status" class="text-sm text-gray-500"></span>
+            <div class="flex items-center gap-2">
+              <button onclick="downloadPDF()" id="btn-pdf" disabled title="Salve o RDO primeiro"
+                class="border border-gray-300 text-gray-500 px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                PDF deste RDO
+              </button>
+              <button onclick="downloadXlsx()" id="btn-xlsx" disabled title="Salve o RDO primeiro — exportar em Excel (.xlsx)"
+                class="border border-gray-300 text-gray-500 px-2.5 py-2 rounded-md text-xs font-bold hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                XLS
+              </button>
+              <button onclick="downloadWeeklyPDF()" id="btn-weekly-pdf" disabled title="Carregue um dia primeiro"
+                class="border border-green-400 text-green-700 px-4 py-2 rounded-md text-sm font-medium hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+                Relatório Semanal
+              </button>
+              <button onclick="downloadWeeklyXlsx()" id="btn-weekly-xlsx" disabled title="Carregue um dia primeiro — exportar em Excel (.xlsx)"
+                class="border border-green-400 text-green-700 px-2.5 py-2 rounded-md text-xs font-bold hover:bg-green-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                XLS
+              </button>
+              <button onclick="saveReport()" id="btn-save" class="bg-blue-600 text-white px-6 py-2 rounded-md text-sm font-semibold hover:bg-blue-700 transition-colors">
+                Salvar RDO
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden max-w-sm"></div>
+
+  <style>
+    .field-label { display:block; font-size:11px; font-weight:600; color:#9ca3af; text-transform:uppercase; letter-spacing:.07em; margin-bottom:5px; }
+    .field-input { display:block; width:100%; border:1px solid #d1d5db; border-radius:8px; padding:8px 12px; font-size:0.875rem; background:#fff; outline:none; transition:border-color .15s, box-shadow .15s; }
+    .field-input:focus { border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
+    .field-input[readonly] { background:#f9fafb; color:#6b7280; cursor:default; }
+    .field-input.status-ok   { border-color:#22c55e !important; background:#f0fdf4 !important; color:#15803d; }
+    .field-input.status-warn { border-color:#f59e0b !important; background:#fffbeb !important; color:#92400e; }
+    .field-input.status-bad  { border-color:#ef4444 !important; background:#fef2f2 !important; color:#b91c1c; }
+    .td-input { @apply w-full border-0 bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 rounded px-1 py-0.5; }
+    .site-tab-active { @apply bg-blue-600 text-white border-blue-600; }
+    .site-tab-idle   { @apply text-gray-600 border-gray-300 hover:bg-gray-100; }
+  </style>
+
+  <script>
+    const DISCIPLINES = [
+      'Engenharia/Supervisão','Civil/Alvenaria','Pintura/Acabamentos',
+      'Carpintaria/Serralharia','Acústica Civil','Impermeabilização/Cobertura',
+      'Apoio/Limpeza','Outros'
+    ];
+    const QUALITY_LABELS = {
+      epi: 'Uso de EPI',
+      limpeza: 'Limpeza e organização do local',
+      conformidade_projeto: 'Serviços conforme projeto',
+      ensaios: 'Ensaios/testes realizados',
+      nao_conformidades: 'Não conformidades registadas',
+    };
+    const SIG_LABELS = {
+      responsavel_obra: 'Responsável da Obra',
+      fiscal_supervisor: 'Fiscal / Supervisor',
+      representante_cliente: 'Representante do Cliente',
+    };
+
+    // ─── Status colour helpers ──────────────────────────────────────────────
+    function applyStatusStyle(sel, map) {
+      sel.classList.remove('status-ok', 'status-warn', 'status-bad');
+      const key = sel.value;
+      if (key && map[key]) sel.classList.add('status-' + map[key]);
+    }
+
+    function applyWeatherStyle(sel) {
+      sel.classList.remove('status-ok', 'status-warn', 'status-bad');
+      if (sel.value === 'Chuvoso' || sel.value === 'Tempestade') sel.classList.add('status-warn');
+      else if (sel.value === 'Ensolarado') sel.classList.add('status-ok');
+    }
+
+    // Set select value with case-insensitive fallback
+    function setSelectCI(id, value) {
+      const sel = document.getElementById(id);
+      if (!value) { sel.value = ''; return; }
+      sel.value = value;
+      if (sel.value === value) return;
+      const lc = value.trim().toLowerCase();
+      for (const opt of sel.options) {
+        if (opt.value.toLowerCase() === lc || opt.text.toLowerCase() === lc) {
+          sel.value = opt.value; return;
+        }
+      }
+    }
+
+    let currentReportId = null;
+    let currentSiteId = null;
+    let projectSites = [];
+    let daySites = [];
+    let siteCatalog = {}; // { siteId: [{id, name, unit, category_name, ...}] }
+
+    // ─── Init ──────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', async () => {
+      document.getElementById('sel-date').value = new Date().toISOString().slice(0, 10);
+      await loadProjects();
+    });
+
+    async function loadProjects() {
+      const res = await fetch('/civil/projects');
+      const projects = await res.json();
+      const sel = document.getElementById('sel-project');
+      sel.innerHTML = '<option value="">Selecione...</option>' +
+        projects.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+    }
+
+    async function onProjectChange() {
+      const pid = document.getElementById('sel-project').value;
+      if (!pid) return;
+      const res = await fetch(`/civil/projects/${pid}/sites`);
+      projectSites = await res.json();
+    }
+
+    // ─── Day view ──────────────────────────────────────────────────────────────
+    async function loadDayView() {
+      const pid = parseInt(document.getElementById('sel-project').value);
+      const date = document.getElementById('sel-date').value;
+      if (!pid || !date) { showToast('Selecione projeto e data.', 'error'); return; }
+
+      if (!projectSites.length) {
+        const res = await fetch(`/civil/projects/${pid}/sites`);
+        projectSites = await res.json();
+      }
+
+      const res = await fetch(`/civil/projects/${pid}/day?date=${date}`);
+      daySites = await res.json();
+
+      renderSiteTabs(daySites);
+      document.getElementById('site-tabs-bar').classList.remove('hidden');
+
+      if (daySites.length > 0) {
+        await switchSiteTab(daySites[0].site_id, daySites[0].site_name);
+      } else {
+        currentReportId = null;
+        currentSiteId = null;
+        document.getElementById('rdo-form').classList.add('hidden');
+        document.getElementById('btn-pdf').disabled = true;
+        document.getElementById('btn-xlsx').disabled = true;
+        document.getElementById('btn-weekly-pdf').disabled = true;
+        document.getElementById('btn-weekly-xlsx').disabled = true;
+        showToast('Nenhum RDO para este dia. Use "+ Novo site" para começar.', 'error');
+      }
+    }
+
+    function renderSiteTabs(sites) {
+      const container = document.getElementById('site-tabs');
+      container.innerHTML = sites.map(s =>
+        `<button id="tab-${s.site_id}"
+          onclick="switchSiteTab(${s.site_id}, ${JSON.stringify(s.site_name)})"
+          class="site-tab px-3 py-1 rounded-md text-xs font-medium border transition-colors site-tab-idle">
+          ${escHtml(s.site_name)}<span class="ml-1 text-current opacity-60">#${s.report_number ?? '—'}</span>
+        </button>`
+      ).join('');
+    }
+
+    async function switchSiteTab(siteId, siteName) {
+      currentSiteId = siteId;
+      document.getElementById('current-site-id').value = siteId;
+      document.getElementById('btn-weekly-pdf').disabled = false;
+      document.getElementById('btn-weekly-xlsx').disabled = false;
+
+      document.querySelectorAll('.site-tab').forEach(t => {
+        t.classList.remove('site-tab-active');
+        t.classList.add('site-tab-idle');
+      });
+      const active = document.getElementById(`tab-${siteId}`);
+      if (active) { active.classList.remove('site-tab-idle'); active.classList.add('site-tab-active'); }
+
+      // Carrega catálogo do site (uma vez)
+      if (!siteCatalog[siteId]) await loadSiteCatalog(siteId);
+
+      // Carrega relatório
+      const date = document.getElementById('sel-date').value;
+      const res = await fetch(`/civil/reports?site_id=${siteId}&date=${date}`);
+      const list = await res.json();
+
+      if (list.length > 0) {
+        const detail = await fetch(`/civil/reports/${list[0].id}`);
+        renderReport(await detail.json());
+      } else {
+        currentReportId = null;
+        document.getElementById('btn-pdf').disabled = true;
+        document.getElementById('btn-xlsx').disabled = true;
+        clearForm();
+        document.getElementById('rdo-form').classList.remove('hidden');
+        showBadge(`Novo RDO — ${escHtml(siteName)} — ainda não salvo`, 'amber');
+      }
+    }
+
+    async function loadSiteCatalog(siteId) {
+      try {
+        const res = await fetch(`/civil/sites/${siteId}/activity-catalog`);
+        siteCatalog[siteId] = res.ok ? await res.json() : [];
+      } catch { siteCatalog[siteId] = []; }
+
+      const hasCatalog = siteCatalog[siteId].length > 0;
+      document.getElementById('catalog-badge').classList.toggle('hidden', !hasCatalog);
+    }
+
+    // ─── Add site to day ───────────────────────────────────────────────────────
+    function addSiteToDay() {
+      const existingIds = new Set(daySites.map(s => s.site_id));
+      const available = projectSites.filter(s => !existingIds.has(s.id));
+      if (!available.length) { showToast('Todos os sites já têm RDO neste dia.', 'error'); return; }
+
+      const sel = document.getElementById('sel-new-site');
+      sel.innerHTML = '<option value="">Selecione o site...</option>' +
+        available.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+      document.getElementById('new-site-panel').classList.remove('hidden');
+    }
+
+    async function confirmAddSite() {
+      const siteId = parseInt(document.getElementById('sel-new-site').value);
+      if (!siteId) { showToast('Selecione um site.', 'error'); return; }
+      const site = projectSites.find(s => s.id === siteId);
+      const siteName = site?.name || `Site ${siteId}`;
+
+      daySites.push({ site_id: siteId, site_name: siteName, report_id: null, report_number: null });
+      const container = document.getElementById('site-tabs');
+      const btn = document.createElement('button');
+      btn.id = `tab-${siteId}`;
+      btn.className = 'site-tab px-3 py-1 rounded-md text-xs font-medium border transition-colors site-tab-idle';
+      btn.innerHTML = `${escHtml(siteName)}<span class="ml-1 opacity-60">#—</span>`;
+      btn.onclick = () => switchSiteTab(siteId, siteName);
+      container.appendChild(btn);
+
+      cancelAddSite();
+      await switchSiteTab(siteId, siteName);
+    }
+
+    function cancelAddSite() {
+      document.getElementById('new-site-panel').classList.add('hidden');
+    }
+
+    // ─── Section toggle ────────────────────────────────────────────────────────
+    function toggleSection(id) {
+      const el = document.getElementById(id);
+      const icon = document.getElementById(id + '-icon');
+      const hidden = el.style.display === 'none';
+      el.style.display = hidden ? '' : 'none';
+      icon.style.transform = hidden ? 'rotate(180deg)' : 'rotate(0deg)';
+    }
+
+    // ─── Badge ────────────────────────────────────────────────────────────────
+    function showBadge(text, color) {
+      const el = document.getElementById('report-badge');
+      const cls = color === 'amber'
+        ? 'bg-amber-50 text-amber-700 border border-amber-200'
+        : 'bg-green-50 text-green-700 border border-green-200';
+      el.className = `text-xs px-3 py-1.5 rounded-md ${cls}`;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+
+    // ─── Catalog helpers ──────────────────────────────────────────────────────
+    function buildCatalogOptions(siteId) {
+      const items = siteCatalog[siteId] || [];
+      if (!items.length) return '';
+      const groups = {};
+      items.forEach(item => {
+        if (!groups[item.category_name]) groups[item.category_name] = [];
+        groups[item.category_name].push(item);
+      });
+      return Object.entries(groups).map(([cat, acts]) =>
+        `<optgroup label="${escHtml(cat)}">${acts.map(a =>
+          `<option value="${a.id}" data-unit="${escHtml(a.unit||'')}" data-cat="${escHtml(cat)}">${escHtml(a.name)}</option>`
+        ).join('')}</optgroup>`
+      ).join('');
+    }
+
+    function onCatalogSelect(sel) {
+      const tr = sel.closest('tr');
+      const opt = sel.options[sel.selectedIndex];
+      const isCatalog = sel.value !== '';
+
+      tr.dataset.actdefid = isCatalog ? sel.value : '';
+
+      const descInput = tr.querySelector('.act-desc');
+      const catInput  = tr.querySelector('.act-category');
+      const unitInput = tr.querySelector('.act-unit');
+
+      if (isCatalog) {
+        descInput.classList.add('hidden');
+        catInput.value = opt.dataset.cat || '';
+        catInput.readOnly = true; catInput.style.background = '#f3f4f6';
+        unitInput.value = opt.dataset.unit || '';
+        unitInput.readOnly = true; unitInput.style.background = '#f3f4f6';
+      } else {
+        descInput.classList.remove('hidden');
+        catInput.readOnly = false; catInput.style.background = '';
+        unitInput.readOnly = false; unitInput.style.background = '';
+      }
+    }
+
+    // ─── Activities table (with catalog) ─────────────────────────────────────
+    function addActivityRow(existing) {
+      const e = existing || {};
+      const defId = e.activity_def_id ?? null;
+      const isCatalog = defId !== null && defId > 0;
+      const catalogOpts = buildCatalogOptions(currentSiteId);
+
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-100';
+      tr.dataset.actdefid = defId || '';
+
+      tr.innerHTML = `
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.front_site)}" placeholder="Frente" class="td-input border border-gray-200 rounded w-full act-front" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.civil_category)}" placeholder="Categoria" class="td-input border border-gray-200 rounded w-full act-category" ${isCatalog?'readonly style="background:#f3f4f6"':''} /></td>
+        <td class="py-1 pr-1" style="min-width:160px">
+          <select class="td-input border border-gray-200 rounded w-full act-sel text-xs" onchange="onCatalogSelect(this)">
+            <option value="">— escrever manualmente</option>
+            ${catalogOpts}
+          </select>
+          <input type="text" value="${isCatalog?'':escVal(e.activity_description)}" placeholder="Atividade" class="td-input border border-gray-200 rounded w-full act-desc mt-0.5 ${isCatalog?'hidden':''}" />
+        </td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.unit)}" placeholder="un" class="td-input border border-gray-200 rounded w-16 act-unit" ${isCatalog?'readonly style="background:#f3f4f6"':''} /></td>
+        <td class="py-1 pr-1"><input type="number" step="any" value="${e.qty_day??''}" placeholder="0" class="td-input border border-gray-200 rounded w-20 act-qty" /></td>
+        <td class="py-1 pr-1"><select class="td-input border border-gray-200 rounded act-status" onchange="updateActivityCounts()">
+          <option value="">—</option>
+          <option ${e.status==='Não iniciado'?'selected':''}>Não iniciado</option>
+          <option ${e.status==='Em curso'?'selected':''}>Em curso</option>
+          <option ${e.status==='Concluído'?'selected':''}>Concluído</option>
+          <option ${e.status==='Suspenso'?'selected':''}>Suspenso</option>
+          <option ${e.status==='Atrasado'?'selected':''}>Atrasado</option>
+        </select></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.observations)}" placeholder="Obs." class="td-input border border-gray-200 rounded w-full act-obs" /></td>
+        <td class="py-1"><button onclick="this.closest('tr').remove();updateActivityCounts()" class="text-red-400 hover:text-red-600 text-xs px-1">✕</button></td>
+      `;
+
+      if (isCatalog) {
+        const sel = tr.querySelector('.act-sel');
+        sel.value = String(defId);
+        if (!sel.value) sel.value = ''; // fallback if catalog not loaded yet
+      }
+
+      document.getElementById('tbl-activities').appendChild(tr);
+    }
+
+    function buildActivitiesTable(data) {
+      document.getElementById('tbl-activities').innerHTML = '';
+      data.forEach(a => addActivityRow(a));
+      updateActivityCounts();
+    }
+
+    // Deriva Ativ. Concluídas / Em Curso / Restrições a partir do status de cada atividade,
+    // em vez de exigir redigitação manual do que já foi preenchido na tabela.
+    function updateActivityCounts() {
+      let completed = 0, inProgress = 0, restrictions = 0;
+      document.querySelectorAll('#tbl-activities .act-status').forEach(sel => {
+        if (sel.value === 'Concluído') completed++;
+        else if (sel.value === 'Em curso') inProgress++;
+        else if (sel.value === 'Suspenso' || sel.value === 'Atrasado') restrictions++;
+      });
+      document.getElementById('f-act-completed').value = completed;
+      document.getElementById('f-act-progress').value = inProgress;
+      document.getElementById('f-restrictions').value = restrictions;
+    }
+
+    // ─── Resources table ─────────────────────────────────────────────────────
+    function buildResourcesTable(data) {
+      const tbody = document.getElementById('tbl-resources');
+      tbody.innerHTML = DISCIPLINES.map(disc => {
+        const row = data.find(r => r.discipline === disc) || {};
+        return `<tr class="border-b border-gray-100">
+          <td class="py-1 pr-2 text-xs text-gray-700">${disc}</td>
+          <td class="py-1 pr-2"><input type="number" min="0" value="${row.quantity ?? 0}" onchange="updatePersonnelTotal()" class="td-input w-20 border border-gray-200 rounded" data-disc="${disc}" /></td>
+          <td class="py-1"><input type="text" value="${escVal(row.observations)}" class="td-input border border-gray-200 rounded w-full" /></td>
+        </tr>`;
+      }).join('');
+      updatePersonnelTotal();
+    }
+
+    function updatePersonnelTotal() {
+      const inputs = document.querySelectorAll('#tbl-resources input[type="number"]');
+      const total = Array.from(inputs).reduce((s, i) => s + (parseInt(i.value) || 0), 0);
+      document.getElementById('total-resources').textContent = total;
+      document.getElementById('f-total-personnel').value = total;
+    }
+
+    // ─── Materials table ───────────────────────────────────────────────────────
+    function addMaterialRow(m) {
+      const e = m || {};
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-100';
+      tr.innerHTML = `
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.material_name)}" placeholder="Material" class="td-input border border-gray-200 rounded w-full" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.unit)}" placeholder="un" class="td-input border border-gray-200 rounded w-16" /></td>
+        <td class="py-1 pr-1"><input type="number" step="any" value="${e.qty_received??0}" oninput="updateMaterialBalances()" class="td-input border border-gray-200 rounded w-24 mat-recv" /></td>
+        <td class="py-1 pr-1"><input type="number" step="any" value="${e.qty_applied??0}" oninput="updateMaterialBalances()" class="td-input border border-gray-200 rounded w-24 mat-appl" /></td>
+        <td class="py-1 pr-1"><span class="mat-balance text-xs text-blue-600 font-medium px-1">${((e.balance??0)).toFixed(2)}</span></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.observations)}" placeholder="Obs." class="td-input border border-gray-200 rounded w-full" /></td>
+        <td class="py-1"><button onclick="this.closest('tr').remove();updateMaterialBalances()" class="text-red-400 hover:text-red-600 text-xs px-1">✕</button></td>
+      `;
+      document.getElementById('tbl-materials').appendChild(tr);
+    }
+
+    function buildMaterialsTable(data) {
+      document.getElementById('tbl-materials').innerHTML = '';
+      data.forEach(m => addMaterialRow(m));
+      updateMaterialBalances();
+    }
+
+    function updateMaterialBalances() {
+      document.querySelectorAll('#tbl-materials tr').forEach(tr => {
+        const recv = parseFloat(tr.querySelector('.mat-recv')?.value || 0);
+        const appl = parseFloat(tr.querySelector('.mat-appl')?.value || 0);
+        const span = tr.querySelector('.mat-balance');
+        if (span) span.textContent = (recv - appl).toFixed(2);
+      });
+    }
+
+    // ─── Occurrences table ────────────────────────────────────────────────────
+    function addOccurrenceRow(o) {
+      const e = o || {};
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-100';
+      tr.innerHTML = `
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.occurrence_type)}" placeholder="Tipo" class="td-input border border-gray-200 rounded w-full occ-type" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.description)}" placeholder="Descrição" class="td-input border border-gray-200 rounded w-full occ-desc" /></td>
+        <td class="py-1 pr-1"><select class="td-input border border-gray-200 rounded w-full occ-impact" onchange="applyStatusStyle(this, {'Baixo':'ok','Médio':'warn','Alto':'bad'})">
+          <option value="">—</option>
+          <option ${e.impact==='Baixo'?'selected':''}>Baixo</option>
+          <option ${e.impact==='Médio'?'selected':''}>Médio</option>
+          <option ${e.impact==='Alto'?'selected':''}>Alto</option>
+        </select></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.corrective_action)}" placeholder="Ação" class="td-input border border-gray-200 rounded w-full occ-action" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.responsible)}" placeholder="Responsável" class="td-input border border-gray-200 rounded w-full occ-resp" /></td>
+        <td class="py-1 pr-1"><input type="date" value="${e.deadline||''}" class="td-input border border-gray-200 rounded w-full occ-deadline" /></td>
+        <td class="py-1"><button onclick="this.closest('tr').remove()" class="text-red-400 hover:text-red-600 text-xs px-1">✕</button></td>
+      `;
+      document.getElementById('tbl-occurrences').appendChild(tr);
+      applyStatusStyle(tr.querySelector('.occ-impact'), {'Baixo':'ok','Médio':'warn','Alto':'bad'});
+    }
+
+    function buildOccurrencesTable(data) {
+      document.getElementById('tbl-occurrences').innerHTML = '';
+      data.forEach(o => addOccurrenceRow(o));
+    }
+
+    // ─── Quality table ────────────────────────────────────────────────────────
+    function buildQualityTable(data) {
+      const tbody = document.getElementById('tbl-quality');
+      tbody.innerHTML = Object.keys(QUALITY_LABELS).map(ct => {
+        const row = data.find(q => q.check_type === ct) || {};
+        return `<tr class="border-b border-gray-100">
+          <td class="py-1.5 pr-2 text-sm">${QUALITY_LABELS[ct]}</td>
+          <td class="py-1.5 pr-2">
+            <select class="td-input border border-gray-200 rounded w-28" data-check="${ct}">
+              <option value="">—</option>
+              <option value="true" ${row.result===true?'selected':''}>Sim</option>
+              <option value="false" ${row.result===false?'selected':''}>Não</option>
+            </select>
+          </td>
+          <td class="py-1.5"><input type="text" value="${escVal(row.observations)}" class="td-input border border-gray-200 rounded w-full" /></td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ─── Photos ───────────────────────────────────────────────────────────────
+    function buildPhotosGrid(photos) {
+      document.getElementById('photos-grid').innerHTML = photos.map(p => `
+        <div class="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+          ${p.url ? `<img src="${p.url}" alt="Foto ${p.photo_number}" class="w-full h-24 object-cover" />` : '<div class="h-24 flex items-center justify-center text-gray-400 text-xs">Sem preview</div>'}
+          <div class="p-1.5">
+            <p class="text-xs font-medium text-gray-700">Foto ${p.photo_number}</p>
+            <p class="text-xs text-gray-500 truncate">${p.description || '—'}</p>
+          </div>
+        </div>`).join('');
+    }
+
+    async function uploadPhotos(input) {
+      if (!currentReportId) { showToast('Salve o RDO antes de fazer upload de fotos.', 'error'); return; }
+      document.getElementById('photo-status').textContent = 'Enviando...';
+      for (const file of input.files) {
+        const fd = new FormData(); fd.append('file', file);
+        const res = await fetch(`/civil/reports/${currentReportId}/photos`, { method: 'POST', body: fd });
+        if (!res.ok) showToast('Erro ao enviar: ' + file.name, 'error');
+      }
+      input.value = '';
+      const r = await (await fetch(`/civil/reports/${currentReportId}`)).json();
+      buildPhotosGrid(r.photos || []);
+      document.getElementById('photo-status').textContent = '';
+      showToast('Foto(s) enviada(s) com sucesso!');
+    }
+
+    // ─── Plans table ──────────────────────────────────────────────────────────
+    function addPlanRow(n) {
+      const e = n || {};
+      const tr = document.createElement('tr');
+      tr.className = 'border-b border-gray-100';
+      tr.innerHTML = `
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.front_site)}" placeholder="Frente" class="td-input border border-gray-200 rounded w-full" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.planned_activity)}" placeholder="Atividade" class="td-input border border-gray-200 rounded w-full" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.responsible)}" placeholder="Responsável" class="td-input border border-gray-200 rounded w-full" /></td>
+        <td class="py-1 pr-1"><input type="text" value="${escVal(e.dependency)}" placeholder="Dependência" class="td-input border border-gray-200 rounded w-full" /></td>
+        <td class="py-1"><button onclick="this.closest('tr').remove()" class="text-red-400 hover:text-red-600 text-xs px-1">✕</button></td>
+      `;
+      document.getElementById('tbl-plans').appendChild(tr);
+    }
+
+    function buildPlansTable(data) {
+      document.getElementById('tbl-plans').innerHTML = '';
+      data.forEach(n => addPlanRow(n));
+    }
+
+    // ─── Signatures table ─────────────────────────────────────────────────────
+    function buildSignaturesTable(data) {
+      document.getElementById('tbl-signatures').innerHTML = Object.entries(SIG_LABELS).map(([role, label]) => {
+        const sig = data.find(s => s.role === role) || {};
+        return `<tr class="border-b border-gray-100">
+          <td class="py-1.5 pr-2 text-sm font-medium text-gray-700">${label}</td>
+          <td class="py-1.5 pr-2"><input type="text" value="${escVal(sig.name)}" class="td-input border border-gray-200 rounded w-full" data-role="${role}" /></td>
+          <td class="py-1.5 text-xs text-gray-400">${sig.confirmed_at ? new Date(sig.confirmed_at).toLocaleString('pt-BR') : '—'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ─── Render / clear ───────────────────────────────────────────────────────
+    function renderReport(r) {
+      currentReportId = r.id;
+      currentSiteId = r.site_id;
+      document.getElementById('current-site-id').value = r.site_id;
+
+      document.getElementById('f-province').value = r.province || '';
+      document.getElementById('f-local-site').value = r.local_site || '';
+      document.getElementById('f-responsible').value = r.responsible || '';
+      document.getElementById('f-contractor').value = r.contractor || '';
+      document.getElementById('f-supervisor').value = r.supervisor || '';
+      setSelectCI('f-weather', r.weather_conditions);
+      setSelectCI('f-situation', r.general_situation);
+      document.getElementById('f-start-time').value = r.start_time || '';
+      document.getElementById('f-end-time').value = r.end_time || '';
+      document.getElementById('f-fronts').value = r.active_fronts ?? 0;
+      document.getElementById('f-total-personnel').value = r.total_personnel ?? 0;
+      setSelectCI('f-safety', r.safety_situation);
+      setSelectCI('f-quality', r.quality_situation);
+      document.getElementById('f-comment').value = r.short_comment || '';
+      document.getElementById('f-conclusion').value = r.daily_conclusion || '';
+
+      buildResourcesTable(r.resources || []);
+      buildActivitiesTable(r.activities || []);
+      buildMaterialsTable(r.materials || []);
+      buildOccurrencesTable(r.occurrences || []);
+      buildQualityTable(r.quality_checks || []);
+      buildPhotosGrid(r.photos || []);
+      buildPlansTable(r.next_day_plans || []);
+      buildSignaturesTable(r.signatures || []);
+
+      document.getElementById('btn-pdf').disabled = false;
+      document.getElementById('btn-xlsx').disabled = false;
+      showBadge(`RDO nº ${r.report_number} — ${r.date} — id ${r.id}`, 'green');
+      // reapply colour coding after data load
+      applyWeatherStyle(document.getElementById('f-weather'));
+      applyStatusStyle(document.getElementById('f-situation'), {'Normal':'ok','Atenção':'warn','Crítico':'bad'});
+      applyStatusStyle(document.getElementById('f-safety'), {'Sem ocorrências':'ok','Incidente leve':'warn','Incidente grave':'bad'});
+      applyStatusStyle(document.getElementById('f-quality'), {'Conforme':'ok','Com ressalvas':'warn','Não conforme':'bad'});
+      document.getElementById('rdo-form').classList.remove('hidden');
+    }
+
+    function clearForm() {
+      ['f-province','f-local-site','f-responsible','f-contractor','f-supervisor','f-comment','f-conclusion'].forEach(id => document.getElementById(id).value = '');
+      ['f-weather','f-situation','f-safety','f-quality'].forEach(id => document.getElementById(id).value = '');
+      ['f-start-time','f-end-time'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('f-fronts').value = 0;
+      document.getElementById('f-total-personnel').value = 0;
+      buildResourcesTable([]); buildActivitiesTable([]); buildMaterialsTable([]);
+      buildOccurrencesTable([]); buildQualityTable([]); buildPhotosGrid([]);
+      buildPlansTable([]); buildSignaturesTable([]);
+      document.getElementById('report-badge').classList.add('hidden');
+    }
+
+    // ─── Collect & Save ────────────────────────────────────────────────────────
+    function collectFormData() {
+      const siteId = parseInt(document.getElementById('current-site-id').value) || currentSiteId;
+      const date = document.getElementById('sel-date').value;
+
+      const resources = [];
+      document.querySelectorAll('#tbl-resources tr').forEach(tr => {
+        const numIn = tr.querySelector('input[type="number"]');
+        const obsIn = tr.querySelector('input[type="text"]');
+        if (!numIn) return;
+        resources.push({ discipline: numIn.dataset.disc, quantity: parseInt(numIn.value)||0, observations: obsIn?.value||null });
+      });
+
+      const activities = [];
+      document.querySelectorAll('#tbl-activities tr').forEach(tr => {
+        const defId = tr.dataset.actdefid ? parseInt(tr.dataset.actdefid) : null;
+        const isCatalog = defId && defId > 0;
+        const catalogSel = tr.querySelector('.act-sel');
+        let desc;
+        if (isCatalog) {
+          const opt = catalogSel?.options[catalogSel.selectedIndex];
+          desc = opt?.text || '';
+        } else {
+          desc = tr.querySelector('.act-desc')?.value?.trim() || '';
+        }
+        if (!desc) return;
+        activities.push({
+          activity_def_id: defId || null,
+          front_site: tr.querySelector('.act-front')?.value || null,
+          civil_category: tr.querySelector('.act-category')?.value || null,
+          activity_description: desc,
+          unit: tr.querySelector('.act-unit')?.value || null,
+          qty_day: parseFloat(tr.querySelector('.act-qty')?.value) || null,
+          status: tr.querySelector('.act-status')?.value || null,
+          observations: tr.querySelector('.act-obs')?.value || null,
+        });
+      });
+
+      const materials = [];
+      document.querySelectorAll('#tbl-materials tr').forEach(tr => {
+        const inputs = tr.querySelectorAll('input');
+        const name = inputs[0]?.value?.trim();
+        if (!name) return;
+        materials.push({ material_name: name, unit: inputs[1]?.value||null, qty_received: parseFloat(inputs[2]?.value)||0, qty_applied: parseFloat(inputs[3]?.value)||0, observations: inputs[5]?.value||null });
+      });
+
+      const occurrences = [];
+      document.querySelectorAll('#tbl-occurrences tr').forEach(tr => {
+        const desc = tr.querySelector('.occ-desc')?.value?.trim();
+        if (!desc) return;
+        occurrences.push({
+          occurrence_type: tr.querySelector('.occ-type')?.value || null,
+          description: desc,
+          impact: tr.querySelector('.occ-impact')?.value || null,
+          corrective_action: tr.querySelector('.occ-action')?.value || null,
+          responsible: tr.querySelector('.occ-resp')?.value || null,
+          deadline: tr.querySelector('.occ-deadline')?.value || null,
+        });
+      });
+
+      const quality_checks = [];
+      document.querySelectorAll('#tbl-quality tr').forEach(tr => {
+        const sel = tr.querySelector('select');
+        if (!sel) return;
+        quality_checks.push({ check_type: sel.dataset.check, result: sel.value===''?null:sel.value==='true', observations: tr.querySelector('input')?.value||null });
+      });
+
+      const next_day_plans = [];
+      document.querySelectorAll('#tbl-plans tr').forEach(tr => {
+        const inputs = tr.querySelectorAll('input');
+        const act = inputs[1]?.value?.trim();
+        if (!act) return;
+        next_day_plans.push({ front_site: inputs[0]?.value||null, planned_activity: act, responsible: inputs[2]?.value||null, dependency: inputs[3]?.value||null });
+      });
+
+      const signatures = [];
+      document.querySelectorAll('#tbl-signatures tr').forEach(tr => {
+        const inp = tr.querySelector('input[data-role]');
+        if (!inp) return;
+        signatures.push({ role: inp.dataset.role, name: inp.value||null });
+      });
+
+      return {
+        site_id: siteId, date,
+        province: document.getElementById('f-province').value||null,
+        local_site: document.getElementById('f-local-site').value||null,
+        responsible: document.getElementById('f-responsible').value||null,
+        contractor: document.getElementById('f-contractor').value||null,
+        supervisor: document.getElementById('f-supervisor').value||null,
+        weather_conditions: document.getElementById('f-weather').value||null,
+        general_situation: document.getElementById('f-situation').value||null,
+        start_time: document.getElementById('f-start-time').value||null,
+        end_time: document.getElementById('f-end-time').value||null,
+        active_fronts: parseInt(document.getElementById('f-fronts').value)||0,
+        activities_completed: parseInt(document.getElementById('f-act-completed').value)||0,
+        activities_in_progress: parseInt(document.getElementById('f-act-progress').value)||0,
+        restrictions_count: parseInt(document.getElementById('f-restrictions').value)||0,
+        safety_situation: document.getElementById('f-safety').value||null,
+        quality_situation: document.getElementById('f-quality').value||null,
+        short_comment: document.getElementById('f-comment').value||null,
+        daily_conclusion: document.getElementById('f-conclusion').value||null,
+        resources, activities, materials, occurrences, quality_checks, next_day_plans, signatures,
+      };
+    }
+
+    async function saveReport() {
+      const btn = document.getElementById('btn-save');
+      const status = document.getElementById('save-status');
+      btn.disabled = true; btn.textContent = 'Salvando...'; status.textContent = '';
+      try {
+        const data = collectFormData();
+        let res;
+        if (currentReportId) {
+          res = await fetch(`/civil/reports/${currentReportId}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        } else {
+          res = await fetch('/civil/reports', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+        }
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.detail || 'Erro desconhecido');
+        renderReport(result);
+        showToast('RDO salvo com sucesso!');
+        status.textContent = `Salvo em ${new Date().toLocaleTimeString('pt-BR')}`;
+
+        // Atualiza número do relatório na aba
+        const tab = document.getElementById(`tab-${result.site_id}`);
+        if (tab) {
+          const ds = daySites.find(s => s.site_id === result.site_id);
+          if (ds) { ds.report_id = result.id; ds.report_number = result.report_number; }
+          tab.innerHTML = `${escHtml(daySites.find(s=>s.site_id===result.site_id)?.site_name||'Site')}<span class="ml-1 opacity-60">#${result.report_number}</span>`;
+        }
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error');
+        status.textContent = 'Erro ao salvar.';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Salvar RDO';
+      }
+    }
+
+    async function newProject() {
+      const name = prompt('Nome do novo projeto:');
+      if (!name?.trim()) return;
+      const res = await fetch('/civil/projects', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: name.trim() }) });
+      if (res.ok) { await loadProjects(); showToast('Projeto criado!'); }
+      else showToast('Erro ao criar projeto.', 'error');
+    }
+
+    // ─── PDF Downloads ────────────────────────────────────────────────────────
+    async function downloadPDF() {
+      if (!currentReportId) return;
+      try {
+        const res = await fetch(`/civil/reports/${currentReportId}/pdf`);
+        if (!res.ok) { showToast('Erro ao gerar PDF.', 'error'); return; }
+        const blob = await res.blob();
+        const cd = res.headers.get('content-disposition') || '';
+        const fn = (cd.match(/filename="([^"]+)"/) || [])[1] || `RDO_${currentReportId}.pdf`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fn;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('PDF descarregado!');
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+    }
+
+    async function downloadWeeklyPDF() {
+      if (!currentSiteId) return;
+      const date = document.getElementById('sel-date').value;
+      try {
+        const res = await fetch(`/civil/reports/pdf/weekly?site_id=${currentSiteId}&date=${date}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.detail || 'Nenhum RDO encontrado para a semana.', 'error');
+          return;
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get('content-disposition') || '';
+        const fn = (cd.match(/filename="([^"]+)"/) || [])[1] || 'RDO_Semanal.pdf';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fn;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Relatório semanal descarregado!');
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+    }
+
+    async function downloadXlsx() {
+      if (!currentReportId) return;
+      try {
+        const res = await fetch(`/civil/reports/${currentReportId}/xlsx`);
+        if (!res.ok) { showToast('Erro ao gerar Excel.', 'error'); return; }
+        const blob = await res.blob();
+        const cd = res.headers.get('content-disposition') || '';
+        const fn = (cd.match(/filename="([^"]+)"/) || [])[1] || `RDO_${currentReportId}.xlsx`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fn;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Excel descarregado!');
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+    }
+
+    async function downloadWeeklyXlsx() {
+      if (!currentSiteId) return;
+      const date = document.getElementById('sel-date').value;
+      try {
+        const res = await fetch(`/civil/reports/xlsx/weekly?site_id=${currentSiteId}&date=${date}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.detail || 'Nenhum RDO encontrado para a semana.', 'error');
+          return;
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get('content-disposition') || '';
+        const fn = (cd.match(/filename="([^"]+)"/) || [])[1] || 'RDO_Semanal.xlsx';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fn;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Relatório semanal (Excel) descarregado!');
+      } catch (e) { showToast('Erro: ' + e.message, 'error'); }
+    }
+
+    // ─── Utils ────────────────────────────────────────────────────────────────
+    function escHtml(s) {
+      return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function escVal(s) { return escHtml(s||''); }
+
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${type==='error'?'bg-red-600 text-white':'bg-green-600 text-white'}`;
+      toast.textContent = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3500);
+    }
+
+    // ─── Sidebar: Relatórios do espaço + Atualizar Cache (igual às outras páginas) ──
+    function _exportWithSpinner(btnId, url) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg class="w-4 h-4 animate-spin inline mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Gerando...';
+      btn.disabled = true;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 6000);
+    }
+
+    let _reportLang = 'pt';
+    function setReportLang(lang) {
+      _reportLang = lang;
+      const active = 'px-2 py-0.5 text-xs rounded font-semibold transition-colors bg-blue-600 text-white';
+      const idle = 'px-2 py-0.5 text-xs rounded font-semibold transition-colors text-gray-400 hover:text-white';
+      document.getElementById('lang-pt').className = lang === 'pt' ? active : idle;
+      document.getElementById('lang-en').className = lang === 'en' ? active : idle;
+    }
+
+    function exportPDF() { _exportWithSpinner('btn-pdf-executivo', `/reports/pdf?lang=${_reportLang}`); }
+    function exportDiario() { _exportWithSpinner('btn-pdf-diario', `/reports/pdf/daily?lang=${_reportLang}`); }
+    function exportSemanal() { _exportWithSpinner('btn-pdf-semanal', `/reports/pdf/weekly?lang=${_reportLang}`); }
+
+    // ─── Exportação em .xlsx (mesmos dados, formato planilha) ──────────────────
+    function _exportCompact(btnId, url) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.textContent;
+      btn.textContent = '...';
+      btn.disabled = true;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+    }
+
+    function exportPDFXlsx() { _exportCompact('btn-xlsx-executivo', `/reports/xlsx?lang=${_reportLang}`); }
+    function exportDiarioXlsx() { _exportCompact('btn-xlsx-diario', `/reports/xlsx/daily?lang=${_reportLang}`); }
+    function exportSemanalXlsx() { _exportCompact('btn-xlsx-semanal', `/reports/xlsx/weekly?lang=${_reportLang}`); }
+    function exportProvinciaXlsx(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      const a = document.createElement('a');
+      a.href = `/reports/xlsx/provincia?folder_id=${folderId}&lang=${_reportLang}`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    let _provinciasLoaded = false;
+    let _submenuOpen = false;
+
+    async function toggleProvinciaMenu() {
+      _submenuOpen = !_submenuOpen;
+      const submenu = document.getElementById('provincia-submenu');
+      const chevron = document.getElementById('provincia-chevron');
+      submenu.style.maxHeight = _submenuOpen ? '800px' : '0';
+      chevron.style.transform = _submenuOpen ? 'rotate(180deg)' : '';
+
+      if (_submenuOpen && !_provinciasLoaded) {
+        try {
+          const res = await fetch('/reports/folders');
+          const folders = await res.json();
+          const list = document.getElementById('provincia-list');
+          if (!folders.length) {
+            list.innerHTML = '<div class="px-3 py-1.5 text-xs text-gray-500">Nenhuma área encontrada</div>';
+          } else {
+            list.innerHTML = folders.map(f =>
+              `<div class="flex items-center gap-1">
+                <button onclick="exportProvincia('${f.folder_id}','${f.name.replace(/'/g, "\\'")}')"
+                  class="flex-1 text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors">
+                  ${f.name}
+                </button>
+                <button onclick="exportProvinciaXlsx('${f.folder_id}')" title="Exportar em Excel (.xlsx)"
+                  class="shrink-0 px-1.5 py-1 mr-1 rounded text-[9px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+              </div>`
+            ).join('');
+          }
+          _provinciasLoaded = true;
+        } catch (e) {
+          document.getElementById('provincia-list').innerHTML =
+            '<div class="px-3 py-1.5 text-xs text-red-400">Erro ao carregar</div>';
+        }
+      }
+    }
+
+    function exportProvincia(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      _exportWithSpinner('btn-pdf-provincia', `/reports/pdf/provincia?folder_id=${folderId}&lang=${_reportLang}`);
+    }
+
+    async function triggerRefresh() {
+      const btn = document.getElementById('refresh-btn');
+      const lbl = document.getElementById('refresh-label');
+      if (btn) btn.disabled = true;
+      if (lbl) lbl.textContent = 'Aguarde…';
+      try {
+        await fetch('/dashboard/refresh', { method: 'POST' });
+        showToast('Refresh iniciado! Os dados serão atualizados em breve.');
+      } catch (e) {
+        showToast('Falha ao disparar refresh: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+        if (lbl) lbl.textContent = 'Atualizar Cache';
+      }
+    }
+  </script>
+  <script src="/static/sse.js?v=30"></script>
+</body>
+</html>

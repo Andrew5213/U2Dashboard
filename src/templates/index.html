@@ -57,6 +57,28 @@
       </a>
       {% endif %}
 
+      <!-- Divisor + Obra Civil -->
+      <div class="pt-3 pb-1">
+        <div class="border-t border-gray-700 mb-3"></div>
+        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 mb-2">Obra Civil</p>
+      </div>
+
+      <a href="/rdo"
+        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+        </svg>
+        RDO Diário
+      </a>
+
+      <a href="/progresso-civil"
+        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+        </svg>
+        Controle de Progresso
+      </a>
+
       <!-- Divisor + label Relatórios -->
       <div class="pt-3 pb-1">
         <div class="border-t border-gray-700 mb-3"></div>
@@ -72,34 +94,43 @@
       </div>
 
       <!-- PDF Diário -->
-      <button id="btn-pdf-diario" onclick="exportDiario()"
-        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
-        </svg>
-        PDF Diário
-      </button>
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-diario" onclick="exportDiario()"
+          class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+          PDF Diário
+        </button>
+        <button id="btn-xlsx-diario" onclick="exportDiarioXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
 
       <!-- PDF Semanal -->
-      <button id="btn-pdf-semanal" onclick="exportSemanal()"
-        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5m.75-9 3-3 2.148 2.148A12.061 12.061 0 0 1 16.5 7.605" />
-        </svg>
-        PDF Semanal
-      </button>
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-semanal" onclick="exportSemanal()"
+          class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5m.75-9 3-3 2.148 2.148A12.061 12.061 0 0 1 16.5 7.605" />
+          </svg>
+          PDF Semanal
+        </button>
+        <button id="btn-xlsx-semanal" onclick="exportSemanalXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
 
       <!-- PDF Executivo -->
-      <button id="btn-pdf-executivo" onclick="exportPDF()"
-        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        </svg>
-        PDF Executivo
-      </button>
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-executivo" onclick="exportPDF()"
+          class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+          PDF Executivo
+        </button>
+        <button id="btn-xlsx-executivo" onclick="exportPDFXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
 
       <!-- PDF Por Província (expansível) -->
       <div>
@@ -209,6 +240,35 @@
     function exportDiario() { _exportWithSpinner('btn-pdf-diario', `/reports/pdf/daily?lang=${_reportLang}`); }
     function exportSemanal() { _exportWithSpinner('btn-pdf-semanal', `/reports/pdf/weekly?lang=${_reportLang}`); }
 
+    // ─── Exportação em .xlsx (mesmos dados, formato planilha) ──────────────────
+    function _exportCompact(btnId, url) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.textContent;
+      btn.textContent = '...';
+      btn.disabled = true;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+    }
+
+    function exportPDFXlsx() { _exportCompact('btn-xlsx-executivo', `/reports/xlsx?lang=${_reportLang}`); }
+    function exportDiarioXlsx() { _exportCompact('btn-xlsx-diario', `/reports/xlsx/daily?lang=${_reportLang}`); }
+    function exportSemanalXlsx() { _exportCompact('btn-xlsx-semanal', `/reports/xlsx/weekly?lang=${_reportLang}`); }
+    function exportProvinciaXlsx(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      const a = document.createElement('a');
+      a.href = `/reports/xlsx/provincia?folder_id=${folderId}&lang=${_reportLang}`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
     let _provinciasLoaded = false;
     let _submenuOpen = false;
 
@@ -228,10 +288,14 @@
             list.innerHTML = '<div class="px-3 py-1.5 text-xs text-gray-500">Nenhuma área encontrada</div>';
           } else {
             list.innerHTML = folders.map(f =>
-              `<button onclick="exportProvincia('${f.folder_id}','${f.name.replace(/'/g, "\\'")}')"
-                class="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors block">
-                ${f.name}
-              </button>`
+              `<div class="flex items-center gap-1">
+                <button onclick="exportProvincia('${f.folder_id}','${f.name.replace(/'/g, "\\'")}')"
+                  class="flex-1 text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors">
+                  ${f.name}
+                </button>
+                <button onclick="exportProvinciaXlsx('${f.folder_id}')" title="Exportar em Excel (.xlsx)"
+                  class="shrink-0 px-1.5 py-1 mr-1 rounded text-[9px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+              </div>`
             ).join('');
           }
           _provinciasLoaded = true;

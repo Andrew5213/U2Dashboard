@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>U2 Broadcast — Controle de Progresso Civil</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+
+  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+  <aside class="w-56 flex-shrink-0 bg-gray-900 flex flex-col z-30 h-screen overflow-hidden">
+    <div class="px-0 py-0 border-b border-gray-700 flex-shrink-0">
+      <img src="/img/Logo Branca.png" alt="U2 Broadcast" class="h-36 w-auto" />
+    </div>
+    <nav class="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
+      <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" /></svg>
+        Visão Geral
+      </a>
+
+      {% if chat_enabled %}
+      <a href="/assistente" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+        Assistente IA
+      </a>
+      {% endif %}
+
+      <div class="pt-3 pb-1"><div class="border-t border-gray-700 mb-3"></div>
+        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 mb-2">Obra Civil</p>
+      </div>
+      <a href="/rdo" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+        RDO Diário
+      </a>
+      <a href="/progresso-civil" class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-medium">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+        Controle de Progresso
+      </a>
+
+      <div class="pt-3 pb-1">
+        <div class="border-t border-gray-700 mb-3"></div>
+        <div class="flex items-center justify-between px-3 mb-2">
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Relatórios</p>
+          <div class="flex items-center gap-0.5 bg-gray-800 rounded p-0.5">
+            <button id="lang-pt" onclick="setReportLang('pt')" class="px-2 py-0.5 text-xs rounded font-semibold transition-colors bg-blue-600 text-white">PT</button>
+            <button id="lang-en" onclick="setReportLang('en')" class="px-2 py-0.5 text-xs rounded font-semibold transition-colors text-gray-400 hover:text-white">EN</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-diario" onclick="exportDiario()" class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+          PDF Diário
+        </button>
+        <button id="btn-xlsx-diario" onclick="exportDiarioXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-semanal" onclick="exportSemanal()" class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5m.75-9 3-3 2.148 2.148A12.061 12.061 0 0 1 16.5 7.605" /></svg>
+          PDF Semanal
+        </button>
+        <button id="btn-xlsx-semanal" onclick="exportSemanalXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
+
+      <div class="flex items-center gap-1">
+        <button id="btn-pdf-executivo" onclick="exportPDF()" class="flex-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+          PDF Executivo
+        </button>
+        <button id="btn-xlsx-executivo" onclick="exportPDFXlsx()" title="Exportar em Excel (.xlsx)" class="shrink-0 px-2 py-2.5 rounded-lg text-[10px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+      </div>
+
+      <div>
+        <button id="btn-pdf-provincia" onclick="toggleProvinciaMenu()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c-.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
+          <span class="flex-1">PDF Província</span>
+          <svg id="provincia-chevron" class="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+        </button>
+        <div id="provincia-submenu" style="max-height:0;overflow:hidden;transition:max-height 0.25s ease">
+          <div id="provincia-list" class="ml-8 mt-1 mb-1 space-y-0.5">
+            <div class="px-3 py-1.5 text-xs text-gray-500">Carregando...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3">
+        <div class="border-t border-gray-700 mb-3"></div>
+      </div>
+
+      <button onclick="triggerRefresh()" id="refresh-btn" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium text-left">
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+        <span id="refresh-label">Atualizar Cache</span>
+      </button>
+    </nav>
+
+    <div class="px-4 py-3 border-t border-gray-700 flex-shrink-0">
+      <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span id="sse-dot" class="w-2 h-2 rounded-full bg-gray-600 transition-colors flex-shrink-0"></span>
+        <span id="sse-label">offline</span>
+      </div>
+      <span id="last-refresh" class="text-xs text-gray-500 mt-1 block truncate"></span>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════ CONTEÚDO ═══════════════════ -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <header class="bg-white border-b border-gray-200 flex-shrink-0 h-14 flex items-center px-6 shadow-sm gap-4">
+      <h1 class="text-sm font-semibold text-gray-700 flex-1">Controle de Progresso Civil</h1>
+      <!-- Tabs -->
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <button onclick="switchTab('resumo')" id="tab-resumo" class="tab-btn active-tab px-3 py-1.5 text-xs font-medium rounded-md transition-colors">Resumo Global</button>
+        <button onclick="switchTab('medicoes')" id="tab-medicoes" class="tab-btn px-3 py-1.5 text-xs font-medium rounded-md transition-colors text-gray-600 hover:text-gray-800">Medições</button>
+        <button onclick="switchTab('config')" id="tab-config" class="tab-btn px-3 py-1.5 text-xs font-medium rounded-md transition-colors text-gray-600 hover:text-gray-800">Configurações</button>
+      </div>
+    </header>
+
+    <main class="flex-1 overflow-auto">
+      <div class="max-w-6xl mx-auto px-4 py-6 space-y-4">
+
+        <!-- ── TAB: Resumo Global ───────────────────────────────────────────── -->
+        <div id="panel-resumo" class="space-y-4">
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-gray-600">Data:</label>
+            <input type="date" id="summary-date" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button onclick="loadSummary()" class="bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700">Calcular</button>
+          </div>
+
+          <!-- KPIs globais -->
+          <div id="global-kpis" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+
+          <!-- Tabela de sites -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            <table class="w-full text-sm">
+              <thead><tr class="bg-gray-50 text-left text-xs text-gray-500 border-b">
+                <th class="px-4 py-3">Site</th>
+                <th class="px-4 py-3">Perfil</th>
+                <th class="px-4 py-3 w-32">% Ontem</th>
+                <th class="px-4 py-3 w-24">Avanço Dia</th>
+                <th class="px-4 py-3 w-40">% Acumulado</th>
+                <th class="px-4 py-3 w-12"></th>
+              </tr></thead>
+              <tbody id="summary-sites"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── TAB: Medições ──────────────────────────────────────────────── -->
+        <div id="panel-medicoes" class="hidden space-y-4">
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <div class="flex flex-wrap gap-3 items-end">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Site</label>
+                <select id="med-site" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">Selecione...</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Data</label>
+                <input type="date" id="med-date" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <button onclick="loadMeasurements()" class="bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700">Carregar</button>
+            </div>
+          </div>
+
+          <div id="med-form" class="hidden space-y-3">
+            <div id="med-categories"></div>
+            <div class="flex justify-end gap-3">
+              <span id="med-status" class="text-sm text-gray-500 self-center"></span>
+              <button onclick="saveMeasurements()" class="bg-blue-600 text-white px-6 py-2 rounded-md text-sm font-semibold hover:bg-blue-700">Salvar Medições</button>
+            </div>
+          </div>
+          <div id="med-empty" class="hidden text-sm text-gray-500 bg-white rounded-lg border border-gray-200 p-6 text-center">
+            Este site não tem perfil configurado. Configure um perfil em <a href="#" onclick="switchTab('config');return false;" class="text-blue-600 hover:underline">Configurações</a>.
+          </div>
+        </div>
+
+        <!-- ── TAB: Configurações ─────────────────────────────────────────── -->
+        <div id="panel-config" class="hidden space-y-4">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <!-- Perfis -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold text-gray-700">Perfis de Site</h3>
+                <button onclick="createProfile()" class="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">+ Novo</button>
+              </div>
+              <div id="profiles-list" class="space-y-1 text-sm text-gray-600">Carregando...</div>
+            </div>
+
+            <!-- Detalhes do perfil selecionado -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 id="profile-detail-title" class="text-sm font-semibold text-gray-700">Categorias e Atividades</h3>
+                <button onclick="addCategory()" id="btn-add-cat" class="hidden text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">+ Categoria</button>
+              </div>
+              <div id="profile-detail" class="text-sm text-gray-500">Selecione um perfil ao lado.</div>
+            </div>
+          </div>
+
+          <!-- Atribuição de sites a perfis + quantidades -->
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Atribuir Perfil e Quantidades aos Sites</h3>
+            <div id="sites-config" class="space-y-3"></div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden max-w-sm"></div>
+
+  <style>
+    .active-tab { @apply bg-white text-gray-800 shadow-sm; }
+    .td-input { @apply border border-gray-200 rounded px-1.5 py-0.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-blue-400; }
+  </style>
+
+  <script>
+    let selectedProfileId = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('summary-date').value = today;
+      document.getElementById('med-date').value = today;
+      loadSummary();
+      loadAllSites();
+    });
+
+    // ─── Tabs ──────────────────────────────────────────────────────────────────
+    function switchTab(tab) {
+      ['resumo', 'medicoes', 'config'].forEach(t => {
+        document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById('tab-' + t);
+        btn.className = t === tab
+          ? 'tab-btn active-tab px-3 py-1.5 text-xs font-medium rounded-md transition-colors bg-white text-gray-800 shadow-sm'
+          : 'tab-btn px-3 py-1.5 text-xs font-medium rounded-md transition-colors text-gray-600 hover:text-gray-800';
+      });
+      if (tab === 'config') { loadProfiles(); loadSitesConfig(); }
+    }
+
+    // ─── Resumo Global ─────────────────────────────────────────────────────────
+    async function loadSummary() {
+      const date = document.getElementById('summary-date').value;
+      const res = await fetch(`/civil/progress/summary?date=${date}`);
+      if (!res.ok) { showToast('Erro ao carregar resumo.', 'error'); return; }
+      const data = await res.json();
+      renderGlobalKPIs(data);
+      renderSitesSummary(data.sites || []);
+    }
+
+    function renderGlobalKPIs(data) {
+      const pct = v => (v * 100).toFixed(1) + '%';
+      const adv = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+      document.getElementById('global-kpis').innerHTML = [
+        { label: 'Progresso Global', value: pct(data.global_progress_today), color: 'blue' },
+        { label: 'Avanço do Dia', value: adv(data.global_day_advance), color: data.global_day_advance >= 0 ? 'green' : 'red' },
+        { label: 'Frentes Ativas', value: data.active_fronts, color: 'indigo' },
+        { label: 'Progresso Ontem', value: pct(data.global_progress_yesterday), color: 'gray' },
+      ].map(k => `
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <p class="text-xs text-gray-500">${k.label}</p>
+          <p class="text-2xl font-bold text-${k.color}-600 mt-1">${k.value}</p>
+        </div>`).join('');
+    }
+
+    function renderSitesSummary(sites) {
+      const tbody = document.getElementById('summary-sites');
+      if (!sites.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-sm text-gray-400">Nenhum site cadastrado.</td></tr>';
+        return;
+      }
+      const pct = v => (v * 100).toFixed(1) + '%';
+      const adv = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+      tbody.innerHTML = sites.map(s => {
+        const pctVal = Math.round(s.progress_today * 100);
+        const advClass = s.day_advance >= 0 ? 'text-green-600' : 'text-red-600';
+        return `<tr class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onclick="toggleSiteDetail(this, ${s.site_id})">
+          <td class="px-4 py-3 font-medium text-gray-800">${s.site_name}</td>
+          <td class="px-4 py-3 text-gray-500">${s.profile_name || '—'}</td>
+          <td class="px-4 py-3 text-gray-600">${pct(s.progress_yesterday)}</td>
+          <td class="px-4 py-3 font-medium ${advClass}">${adv(s.day_advance)}</td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-gray-200 rounded-full h-2">
+                <div class="bg-blue-500 h-2 rounded-full transition-all" style="width:${pctVal}%"></div>
+              </div>
+              <span class="text-xs text-gray-600 w-12 text-right">${pct(s.progress_today)}</span>
+            </div>
+          </td>
+          <td class="px-4 py-3 text-gray-400 text-xs">${s.has_measurements ? '' : 'sem dados'}</td>
+        </tr>
+        <tr id="detail-${s.site_id}" class="hidden bg-blue-50">
+          <td colspan="6" class="px-6 pb-3">
+            <div class="text-xs text-gray-600 mt-2 space-y-1">
+              ${(s.activities || []).map(a => `
+                <div class="flex justify-between border-b border-blue-100 py-1">
+                  <span class="w-48 truncate">${a.category_name}</span>
+                  <span class="flex-1 truncate text-gray-700">${a.activity_name}</span>
+                  <span class="w-24 text-right">${a.total_qty > 0 ? (a.qty_today + ' / ' + a.total_qty + ' ' + (a.unit||'')) : (a.marco !== null ? 'Marco ' + a.marco : '—')}</span>
+                  <span class="w-20 text-right font-medium text-blue-700">${(a.pct_today * 100).toFixed(1)}%</span>
+                </div>`).join('')}
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function toggleSiteDetail(tr, siteId) {
+      const detail = document.getElementById('detail-' + siteId);
+      if (detail) detail.classList.toggle('hidden');
+    }
+
+    // ─── Medições ─────────────────────────────────────────────────────────────
+    async function loadAllSites() {
+      const res = await fetch('/civil/sites');
+      const sites = await res.json();
+      const sel = document.getElementById('med-site');
+      sel.innerHTML = '<option value="">Selecione...</option>' +
+        sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    }
+
+    async function loadMeasurements() {
+      const siteId = document.getElementById('med-site').value;
+      const date = document.getElementById('med-date').value;
+      if (!siteId || !date) { showToast('Selecione site e data.', 'error'); return; }
+
+      const res = await fetch(`/civil/progress/sites/${siteId}/activity-table?date=${date}`);
+      const data = await res.json();
+
+      document.getElementById('med-form').classList.add('hidden');
+      document.getElementById('med-empty').classList.add('hidden');
+
+      if (!data.profile_id || !data.categories?.length) {
+        document.getElementById('med-empty').classList.remove('hidden');
+        return;
+      }
+
+      renderMeasurementsForm(data);
+      document.getElementById('med-form').classList.remove('hidden');
+    }
+
+    function renderMeasurementsForm(data) {
+      const container = document.getElementById('med-categories');
+      container.innerHTML = data.categories.map(cat => `
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-3">
+          <div class="bg-gray-50 px-4 py-2 flex justify-between items-center border-b border-gray-200">
+            <span class="text-sm font-semibold text-gray-700">${cat.category_name}</span>
+            <span class="text-xs text-gray-400">Peso: ${(cat.weight * 100).toFixed(0)}%</span>
+          </div>
+          <table class="w-full text-sm">
+            <thead><tr class="text-left text-xs text-gray-500 border-b bg-gray-50">
+              <th class="px-3 py-2">Atividade</th>
+              <th class="px-3 py-2 w-16">Un.</th>
+              <th class="px-3 py-2 w-24">Qty Total</th>
+              <th class="px-3 py-2 w-28">Qty Ontem</th>
+              <th class="px-3 py-2 w-28">Qty Hoje</th>
+              <th class="px-3 py-2 w-20 text-blue-600">% Hoje</th>
+              <th class="px-3 py-2 w-24 text-green-600">Avanço</th>
+              <th class="px-3 py-2 w-16">Marco</th>
+            </tr></thead>
+            <tbody>
+              ${cat.activities.map(a => `
+                <tr class="border-b border-gray-100" data-act-id="${a.activity_def_id}">
+                  <td class="px-3 py-2 text-gray-700">${a.name}</td>
+                  <td class="px-3 py-2 text-gray-500">${a.unit || '—'}</td>
+                  <td class="px-3 py-2 text-gray-600">${a.total_qty || '—'}</td>
+                  <td class="px-3 py-2"><input type="number" step="any" min="0" value="${a.qty_yesterday}" class="td-input qty-y" data-total="${a.total_qty}" onchange="recalcRow(this)" /></td>
+                  <td class="px-3 py-2"><input type="number" step="any" min="0" value="${a.qty_today}" class="td-input qty-t" data-total="${a.total_qty}" onchange="recalcRow(this)" /></td>
+                  <td class="px-3 py-2 font-medium text-blue-600 pct-today">${a.total_qty > 0 ? (Math.min(a.qty_today / a.total_qty, 1) * 100).toFixed(1) + '%' : '—'}</td>
+                  <td class="px-3 py-2 font-medium text-green-600 adv-day">${a.total_qty > 0 ? ((Math.min(a.qty_today / a.total_qty, 1) - Math.min(a.qty_yesterday / a.total_qty, 1)) * 100).toFixed(2) + '%' : '—'}</td>
+                  <td class="px-3 py-2"><select class="td-input marco-sel w-16">
+                    <option value="">—</option>
+                    <option value="0" ${a.marco===0?'selected':''}>0</option>
+                    <option value="1" ${a.marco===1?'selected':''}>1</option>
+                    <option value="2" ${a.marco===2?'selected':''}>2</option>
+                    <option value="3" ${a.marco===3?'selected':''}>3</option>
+                    <option value="4" ${a.marco===4?'selected':''}>4</option>
+                  </select></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`).join('');
+    }
+
+    function recalcRow(input) {
+      const tr = input.closest('tr');
+      const total = parseFloat(tr.querySelector('.qty-t').dataset.total) || 0;
+      if (total <= 0) return;
+      const qy = parseFloat(tr.querySelector('.qty-y').value) || 0;
+      const qt = parseFloat(tr.querySelector('.qty-t').value) || 0;
+      const py = Math.min(qy / total, 1);
+      const pt = Math.min(qt / total, 1);
+      tr.querySelector('.pct-today').textContent = (pt * 100).toFixed(1) + '%';
+      const adv = pt - py;
+      const advEl = tr.querySelector('.adv-day');
+      advEl.textContent = (adv >= 0 ? '+' : '') + (adv * 100).toFixed(2) + '%';
+      advEl.className = `px-3 py-2 font-medium ${adv >= 0 ? 'text-green-600' : 'text-red-600'} adv-day`;
+    }
+
+    async function saveMeasurements() {
+      const siteId = document.getElementById('med-site').value;
+      const date = document.getElementById('med-date').value;
+      const measurements = [];
+
+      document.querySelectorAll('#med-categories tr[data-act-id]').forEach(tr => {
+        const actId = parseInt(tr.dataset.actId);
+        const qy = parseFloat(tr.querySelector('.qty-y')?.value) || 0;
+        const qt = parseFloat(tr.querySelector('.qty-t')?.value) || 0;
+        const marcoVal = tr.querySelector('.marco-sel')?.value;
+        measurements.push({
+          activity_def_id: actId,
+          qty_yesterday: qy,
+          qty_today: qt,
+          marco: marcoVal === '' ? null : parseInt(marcoVal),
+        });
+      });
+
+      const status = document.getElementById('med-status');
+      status.textContent = 'Salvando...';
+      const res = await fetch('/civil/progress/measurements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: parseInt(siteId), date, measurements }),
+      });
+      if (res.ok) {
+        status.textContent = `Salvo em ${new Date().toLocaleTimeString('pt-BR')}`;
+        showToast('Medições salvas!');
+      } else {
+        const err = await res.json();
+        status.textContent = 'Erro ao salvar.';
+        showToast('Erro: ' + (err.detail || 'desconhecido'), 'error');
+      }
+    }
+
+    // ─── Configurações ────────────────────────────────────────────────────────
+    async function loadProfiles() {
+      const res = await fetch('/civil/progress/profiles');
+      const profiles = await res.json();
+      const list = document.getElementById('profiles-list');
+      if (!profiles.length) {
+        list.innerHTML = '<p class="text-xs text-gray-400">Nenhum perfil criado.</p>';
+        return;
+      }
+      list.innerHTML = profiles.map(p => `
+        <button onclick="selectProfile(${p.id}, '${p.name.replace(/'/g, "\\'")}', ${JSON.stringify(p).replace(/</g, '\\u003c')})"
+          class="w-full text-left px-3 py-2 rounded hover:bg-blue-50 transition-colors ${selectedProfileId === p.id ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}">
+          ${p.name}
+          <span class="text-xs text-gray-400 ml-1">(${p.categories.length} cat.)</span>
+        </button>`).join('');
+    }
+
+    async function createProfile() {
+      const name = prompt('Nome do novo perfil (ex: Site TX c/ torre):');
+      if (!name?.trim()) return;
+      const res = await fetch('/civil/progress/profiles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (res.ok) { await loadProfiles(); showToast('Perfil criado!'); }
+      else { const e = await res.json(); showToast('Erro: ' + e.detail, 'error'); }
+    }
+
+    function selectProfile(id, name, profileData) {
+      selectedProfileId = id;
+      document.getElementById('profile-detail-title').textContent = name;
+      document.getElementById('btn-add-cat').classList.remove('hidden');
+      renderProfileDetail(profileData);
+      loadProfiles();
+    }
+
+    function renderProfileDetail(profile) {
+      const container = document.getElementById('profile-detail');
+      if (!profile.categories.length) {
+        container.innerHTML = '<p class="text-xs text-gray-400">Nenhuma categoria. Clique em "+ Categoria" para adicionar.</p>';
+        return;
+      }
+      const totalWeight = profile.categories.reduce((s, c) => s + c.weight, 0);
+      container.innerHTML = `
+        <div class="mb-2 text-xs ${Math.abs(totalWeight - 1) < 0.001 ? 'text-green-600' : 'text-amber-600'}">
+          Soma dos pesos: ${(totalWeight * 100).toFixed(1)}% ${Math.abs(totalWeight - 1) < 0.001 ? '✓' : '⚠ deve ser 100%'}
+        </div>` +
+        profile.categories.map(c => `
+          <div class="border border-gray-200 rounded-lg mb-2 overflow-hidden">
+            <div class="bg-gray-50 px-3 py-2 flex items-center justify-between">
+              <span class="text-xs font-semibold text-gray-700">${c.name}</span>
+              <div class="flex items-center gap-2">
+                <input type="number" step="0.01" min="0" max="1" value="${c.weight}"
+                  onchange="updateCatWeight(${c.id}, this.value)"
+                  class="border border-gray-300 rounded px-1.5 py-0.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                <button onclick="addActivityToCat(${c.id})" class="text-xs text-blue-600 hover:text-blue-800">+ Atividade</button>
+                <button onclick="deleteCat(${c.id})" class="text-xs text-red-400 hover:text-red-600">✕</button>
+              </div>
+            </div>
+            <ul class="divide-y divide-gray-100">
+              ${c.activities.map(a => `
+                <li class="px-3 py-1.5 flex items-center justify-between text-xs text-gray-700">
+                  <span>${a.name} ${a.unit ? '<span class="text-gray-400">('+a.unit+')</span>' : ''}</span>
+                  <button onclick="deleteActivity(${a.id})" class="text-red-300 hover:text-red-500 ml-2">✕</button>
+                </li>`).join('')}
+            </ul>
+          </div>`).join('');
+    }
+
+    async function addCategory() {
+      if (!selectedProfileId) return;
+      const name = prompt('Nome da categoria:');
+      if (!name?.trim()) return;
+      const weightStr = prompt('Peso (0.0 a 1.0, ex: 0.20):');
+      const weight = parseFloat(weightStr);
+      if (isNaN(weight) || weight < 0 || weight > 1) { showToast('Peso inválido.', 'error'); return; }
+      const res = await fetch(`/civil/progress/profiles/${selectedProfileId}/categories`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), weight }),
+      });
+      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      else showToast('Erro ao criar categoria.', 'error');
+    }
+
+    async function updateCatWeight(catId, val) {
+      const weight = parseFloat(val);
+      if (isNaN(weight)) return;
+      const res = await fetch(`/civil/progress/categories/${catId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weight }),
+      });
+      if (res.ok) showToast('Peso atualizado!');
+      else showToast('Erro ao atualizar peso.', 'error');
+    }
+
+    async function deleteCat(catId) {
+      if (!confirm('Excluir categoria? Isso remove todas as atividades associadas.')) return;
+      const res = await fetch(`/civil/progress/categories/${catId}`, { method: 'DELETE' });
+      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      else showToast('Erro ao excluir.', 'error');
+    }
+
+    async function addActivityToCat(catId) {
+      const name = prompt('Nome da atividade:');
+      if (!name?.trim()) return;
+      const unit = prompt('Unidade (m², m³, un, etc.):') || null;
+      const res = await fetch(`/civil/progress/categories/${catId}/activities`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), unit }),
+      });
+      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+      else showToast('Erro ao criar atividade.', 'error');
+    }
+
+    async function deleteActivity(actId) {
+      if (!confirm('Excluir atividade?')) return;
+      const res = await fetch(`/civil/progress/activities/${actId}`, { method: 'DELETE' });
+      if (res.ok) { const p = await fetch(`/civil/progress/profiles/${selectedProfileId}`); selectProfile(selectedProfileId, '', await p.json()); }
+    }
+
+    // ─── Sites Config ─────────────────────────────────────────────────────────
+    async function loadSitesConfig() {
+      const [sitesRes, profilesRes] = await Promise.all([
+        fetch('/civil/sites'),
+        fetch('/civil/progress/profiles'),
+      ]);
+      const sites = await sitesRes.json();
+      const profiles = await profilesRes.json();
+
+      const container = document.getElementById('sites-config');
+      if (!sites.length) { container.innerHTML = '<p class="text-sm text-gray-400">Nenhum site cadastrado.</p>'; return; }
+
+      const profileOpts = '<option value="">Sem perfil</option>' + profiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      container.innerHTML = sites.map(s => `
+        <div class="flex flex-wrap items-center gap-3 border-b border-gray-100 pb-3">
+          <span class="text-sm font-medium text-gray-700 w-40">${s.name}</span>
+          <select onchange="assignProfile(${s.id}, this.value)" class="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            ${profileOpts.replace(`value="${s.profile_id}"`, `value="${s.profile_id}" selected`)}
+          </select>
+          <button onclick="openQtyModal(${s.id}, '${s.name.replace(/'/g, "\\'")}', ${s.profile_id || 'null'})"
+            class="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded hover:bg-gray-200">
+            Definir Quantidades
+          </button>
+        </div>`).join('');
+    }
+
+    async function assignProfile(siteId, profileId) {
+      await fetch(`/civil/sites/${siteId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId ? parseInt(profileId) : null }),
+      });
+      showToast('Perfil atualizado!');
+    }
+
+    async function openQtyModal(siteId, siteName, profileId) {
+      if (!profileId) { showToast('Atribua um perfil ao site primeiro.', 'error'); return; }
+      const [profileRes, qtyRes] = await Promise.all([
+        fetch('/civil/progress/profiles/' + profileId),
+        fetch('/civil/progress/sites/' + siteId + '/quantities'),
+      ]);
+      const profile = await profileRes.json();
+      const existingQtys = await qtyRes.json();
+      const qtyMap = {};
+      existingQtys.forEach(q => qtyMap[q.activity_def_id] = q.total_qty);
+
+      const allActivities = profile.categories.flatMap(c => c.activities.map(a => ({ ...a, cat: c.name })));
+      if (!allActivities.length) { showToast('Perfil não tem atividades definidas.', 'error'); return; }
+
+      const rows = allActivities.map(a => `
+        <tr class="border-b border-gray-100">
+          <td class="px-2 py-1.5 text-xs text-gray-500">${a.cat}</td>
+          <td class="px-2 py-1.5 text-sm">${a.name}</td>
+          <td class="px-2 py-1.5 text-xs text-gray-500">${a.unit || '—'}</td>
+          <td class="px-2 py-1.5"><input type="number" step="any" min="0" value="${qtyMap[a.id] ?? 0}" data-act="${a.id}" class="border border-gray-300 rounded px-1.5 py-0.5 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-blue-400" /></td>
+        </tr>`).join('');
+
+      const modal = document.createElement('div');
+      modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+      modal.innerHTML = `
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-screen overflow-auto">
+          <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="font-semibold text-gray-800">Quantidades — ${siteName}</h3>
+            <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          </div>
+          <div class="p-6">
+            <table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 border-b">
+              <th class="pb-2">Categoria</th><th class="pb-2">Atividade</th>
+              <th class="pb-2">Un.</th><th class="pb-2 w-28">Qty Total</th>
+            </tr></thead><tbody>${rows}</tbody></table>
+          </div>
+          <div class="px-6 pb-4 flex justify-end gap-2">
+            <button onclick="this.closest('.fixed').remove()" class="border border-gray-300 text-gray-600 px-4 py-2 rounded-md text-sm hover:bg-gray-50">Cancelar</button>
+            <button onclick="saveQtys(${siteId}, this)" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700">Salvar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+    }
+
+    async function saveQtys(siteId, btn) {
+      const modal = btn.closest('.fixed');
+      const quantities = Array.from(modal.querySelectorAll('input[data-act]')).map(inp => ({
+        activity_def_id: parseInt(inp.dataset.act),
+        total_qty: parseFloat(inp.value) || 0,
+      }));
+      const res = await fetch(`/civil/progress/sites/${siteId}/quantities`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantities }),
+      });
+      if (res.ok) { modal.remove(); showToast('Quantidades salvas!'); }
+      else showToast('Erro ao salvar quantidades.', 'error');
+    }
+
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`;
+      toast.textContent = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3500);
+    }
+
+    // ─── Sidebar: Relatórios do espaço + Atualizar Cache (igual às outras páginas) ──
+    function _exportWithSpinner(btnId, url) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg class="w-4 h-4 animate-spin inline mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Gerando...';
+      btn.disabled = true;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 6000);
+    }
+
+    let _reportLang = 'pt';
+    function setReportLang(lang) {
+      _reportLang = lang;
+      const active = 'px-2 py-0.5 text-xs rounded font-semibold transition-colors bg-blue-600 text-white';
+      const idle = 'px-2 py-0.5 text-xs rounded font-semibold transition-colors text-gray-400 hover:text-white';
+      document.getElementById('lang-pt').className = lang === 'pt' ? active : idle;
+      document.getElementById('lang-en').className = lang === 'en' ? active : idle;
+    }
+
+    function exportPDF() { _exportWithSpinner('btn-pdf-executivo', `/reports/pdf?lang=${_reportLang}`); }
+    function exportDiario() { _exportWithSpinner('btn-pdf-diario', `/reports/pdf/daily?lang=${_reportLang}`); }
+    function exportSemanal() { _exportWithSpinner('btn-pdf-semanal', `/reports/pdf/weekly?lang=${_reportLang}`); }
+
+    // ─── Exportação em .xlsx (mesmos dados, formato planilha) ──────────────────
+    function _exportCompact(btnId, url) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.textContent;
+      btn.textContent = '...';
+      btn.disabled = true;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 4000);
+    }
+
+    function exportPDFXlsx() { _exportCompact('btn-xlsx-executivo', `/reports/xlsx?lang=${_reportLang}`); }
+    function exportDiarioXlsx() { _exportCompact('btn-xlsx-diario', `/reports/xlsx/daily?lang=${_reportLang}`); }
+    function exportSemanalXlsx() { _exportCompact('btn-xlsx-semanal', `/reports/xlsx/weekly?lang=${_reportLang}`); }
+    function exportProvinciaXlsx(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      const a = document.createElement('a');
+      a.href = `/reports/xlsx/provincia?folder_id=${folderId}&lang=${_reportLang}`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    let _provinciasLoaded = false;
+    let _submenuOpen = false;
+
+    async function toggleProvinciaMenu() {
+      _submenuOpen = !_submenuOpen;
+      const submenu = document.getElementById('provincia-submenu');
+      const chevron = document.getElementById('provincia-chevron');
+      submenu.style.maxHeight = _submenuOpen ? '800px' : '0';
+      chevron.style.transform = _submenuOpen ? 'rotate(180deg)' : '';
+
+      if (_submenuOpen && !_provinciasLoaded) {
+        try {
+          const res = await fetch('/reports/folders');
+          const folders = await res.json();
+          const list = document.getElementById('provincia-list');
+          if (!folders.length) {
+            list.innerHTML = '<div class="px-3 py-1.5 text-xs text-gray-500">Nenhuma área encontrada</div>';
+          } else {
+            list.innerHTML = folders.map(f =>
+              `<div class="flex items-center gap-1">
+                <button onclick="exportProvincia('${f.folder_id}','${f.name.replace(/'/g, "\\'")}')"
+                  class="flex-1 text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors">
+                  ${f.name}
+                </button>
+                <button onclick="exportProvinciaXlsx('${f.folder_id}')" title="Exportar em Excel (.xlsx)"
+                  class="shrink-0 px-1.5 py-1 mr-1 rounded text-[9px] font-bold text-gray-500 hover:bg-gray-800 hover:text-emerald-400 transition-colors">XLS</button>
+              </div>`
+            ).join('');
+          }
+          _provinciasLoaded = true;
+        } catch (e) {
+          document.getElementById('provincia-list').innerHTML =
+            '<div class="px-3 py-1.5 text-xs text-red-400">Erro ao carregar</div>';
+        }
+      }
+    }
+
+    function exportProvincia(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      _exportWithSpinner('btn-pdf-provincia', `/reports/pdf/provincia?folder_id=${folderId}&lang=${_reportLang}`);
+    }
+
+    async function triggerRefresh() {
+      const btn = document.getElementById('refresh-btn');
+      const lbl = document.getElementById('refresh-label');
+      if (btn) btn.disabled = true;
+      if (lbl) lbl.textContent = 'Aguarde…';
+      try {
+        await fetch('/dashboard/refresh', { method: 'POST' });
+        showToast('Refresh iniciado! Os dados serão atualizados em breve.');
+      } catch (e) {
+        showToast('Falha ao disparar refresh: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+        if (lbl) lbl.textContent = 'Atualizar Cache';
+      }
+    }
+  </script>
+  <script src="/static/sse.js?v=30"></script>
+</body>
+</html>

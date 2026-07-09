@@ -1112,6 +1112,11 @@ class ReportService:
         data = await self._build_data(space_id, lang)
         return await asyncio.to_thread(self._render_pdf, data)
 
+    async def generate_xlsx(self, space_id: str, lang: str = "pt") -> bytes:
+        from src.services.report_xlsx_service import render_executive_xlsx
+        data = await self._build_data(space_id, lang)
+        return await asyncio.to_thread(render_executive_xlsx, data)
+
     async def _build_data(self, space_id: str, lang: str = "pt") -> dict:
         t = get_strings(lang)
         space = await self._repo.get_space(space_id)
@@ -1215,6 +1220,11 @@ class ProvinceReportService:
     async def generate_pdf(self, folder_id: str, lang: str = "pt") -> bytes:
         data = await self._build_data(folder_id, lang)
         return await asyncio.to_thread(self._render_pdf, data)
+
+    async def generate_xlsx(self, folder_id: str, lang: str = "pt") -> bytes:
+        from src.services.report_xlsx_service import render_province_xlsx
+        data = await self._build_data(folder_id, lang)
+        return await asyncio.to_thread(render_province_xlsx, data)
 
     async def _build_data(self, folder_id: str, lang: str = "pt") -> dict:
         t = get_strings(lang)
@@ -1672,6 +1682,25 @@ class PeriodicReportService:
         )
         data = await self._build_data(space_id, since, now, report_type, period_label, lang)
         return await asyncio.to_thread(self._render_pdf, data)
+
+    async def generate_daily_xlsx(self, space_id: str, lang: str = "pt") -> bytes:
+        from datetime import timedelta
+        from src.services.report_xlsx_service import render_periodic_xlsx
+        t = get_strings(lang)
+        now = datetime.utcnow()
+        since = now - timedelta(days=1)
+        data = await self._build_data(space_id, since, now, t["daily_type"], t["daily_period"].format(date=now.strftime("%d/%m/%Y")), lang)
+        return await asyncio.to_thread(render_periodic_xlsx, data)
+
+    async def generate_weekly_xlsx(self, space_id: str, lang: str = "pt") -> bytes:
+        from datetime import timedelta
+        from src.services.report_xlsx_service import render_periodic_xlsx
+        t = get_strings(lang)
+        now = datetime.utcnow()
+        since = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        period_label = t["weekly_period"].format(start=since.strftime("%d/%m/%Y"), end=now.strftime("%d/%m/%Y"))
+        data = await self._build_data(space_id, since, now, t["weekly_type"], period_label, lang)
+        return await asyncio.to_thread(render_periodic_xlsx, data)
 
     async def _build_data(self, space_id: str, since: datetime, until: datetime,
                           report_type: str, period_label: str, lang: str = "pt") -> dict:
