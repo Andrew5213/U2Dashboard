@@ -4,7 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from src.core.config import settings
 
-engine = create_async_engine(settings.database_url, echo=False)
+# pool_pre_ping evita erros de "connection closed" quando o Postgres gerenciado
+# (Railway) derruba conexões ociosas — sem custo perceptível para SQLite local.
+engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -21,6 +23,18 @@ def _set_sqlite_pragmas(dbapi_conn, _):
 
 class Base(DeclarativeBase):
     pass
+
+
+def db_insert(table):
+    """Retorna o construct de INSERT com suporte a ON CONFLICT (upsert) correto
+    para o dialeto configurado (sqlite localmente, postgresql em produção).
+    Os dois dialetos aceitam a mesma sintaxe de on_conflict_do_update(index_elements=...),
+    então os call sites não precisam saber qual dialeto está ativo."""
+    if engine.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        return pg_insert(table)
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    return sqlite_insert(table)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

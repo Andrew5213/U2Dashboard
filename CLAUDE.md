@@ -46,14 +46,16 @@ python scripts/register_webhook.py --space-id <SPACE_ID> --url https://your-doma
 
 ```
 src/
-├── main.py              # FastAPI app + lifespan (init_db, start polling, start cache worker)
+├── main.py              # FastAPI app + lifespan (init_db, start polling, start cache worker, start email worker)
 ├── static/              # Served at /static (CSS, JS for dashboard UI)
 ├── img/                 # Served at /img (images for dashboard UI)
 ├── templates/
 │   ├── index.html         # Jinja2 dashboard UI (served at GET / — desktop)
 │   ├── index_mobile.html  # Mobile variant — selected by UA detection in main.py
 │   ├── chat.html          # AI assistant page (served at GET /assistente — desktop)
-│   └── chat_mobile.html   # Mobile variant
+│   ├── chat_mobile.html   # Mobile variant
+│   ├── rdo.html           # RDO form (served at GET /rdo)
+│   └── progress_civil.html # Civil progress view (served at GET /progresso-civil)
 ├── core/
 │   ├── config.py        # Settings via pydantic-settings (reads .env)
 │   ├── database.py      # Async SQLAlchemy engine, Base, get_db, init_db
@@ -63,10 +65,13 @@ src/
 │   ├── sync_map.py          # SQLAlchemy ORM: TaskSyncMap, AgreementSyncMap, SyncLog
 │   ├── cache_models.py      # SQLAlchemy ORM: ClickUpSpaceCache, FolderCache, ListCache, TaskCache, UserCache, CacheRefreshLog, DisciplineWeight
 │   ├── dashboard_schemas.py # Pydantic response schemas for dashboard API
-│   └── chat_schemas.py      # Pydantic DTOs: ChatRequest, ChatResponse, ChartPayload
+│   ├── chat_schemas.py      # Pydantic DTOs: ChatRequest, ChatResponse, ChartPayload
+│   ├── civil_models.py      # ORM: CivilProject, CivilSite + 9 child tables (report, resource, activity, material, occurrence, quality_check, photo, next_day_plan, signature)
+│   └── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
-│   └── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
+│   ├── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
+│   └── civil_repository.py  # DB access for all civil + progress tables (shared by civil.py, progress_civil.py, civil_service.py)
 ├── services/
 │   ├── airbox_client.py     # httpx async client for Airbox API
 │   ├── clickup_client.py    # httpx async client for ClickUp REST API v2
@@ -80,7 +85,11 @@ src/
 │   ├── translation.py       # Static PT→EN dict for ClickUp field names (disciplines, activities, statuses) via translate()
 │   ├── weights_config.py    # EVM weight constants + compute_province_progress / compute_list_progress / build_province_evolution
 │   ├── chat_service.py      # Agentic loop: Claude Haiku + tool use → ChatResponse (with optional ChartPayload)
-│   └── chat_tools.py        # TOOL_DEFINITIONS (9 tools) + dispatch_tool() routing to DashboardService/CacheRepository
+│   ├── chat_tools.py        # TOOL_DEFINITIONS (9 tools) + dispatch_tool() routing to DashboardService/CacheRepository
+│   ├── email_service.py     # EmailService: builds MIME email, attaches PT+EN PDFs, sends via SMTP (asyncio.to_thread)
+│   ├── civil_service.py     # CivilService: orchestrates RDO creation (nested children, sequential numbering, auto-fill measurements)
+│   ├── progress_service.py  # ProgressService + pure EVM functions (pct, activity_contribution, global_progress)
+│   └── rdo_pdf_service.py   # generate_rdo_pdf(report, site_name) → bytes — fpdf2-based RDO PDF
 ├── api/
 │   ├── health.py            # GET /health
 │   ├── sync.py              # POST /sync/trigger, GET /sync/status|logs, GET+POST /sync/mappings/agreements
@@ -90,11 +99,15 @@ src/
 │   │                        #   POST /dashboard/refresh
 │   ├── dashboard_stream.py  # GET /dashboard/stream (Server-Sent Events)
 │   ├── reports.py           # GET /reports/pdf, /reports/pdf/provincia, /reports/pdf/daily, /reports/pdf/weekly, /reports/folders
+│   │                        #   POST /reports/email/send — manual trigger for weekly email (fires in background)
 │   ├── disciplines.py       # GET/POST/DELETE /disciplines/folder/{folder_id}
-│   └── chat.py              # POST /chat, GET /chat/status
+│   ├── chat.py              # POST /chat, GET /chat/status
+│   ├── civil.py             # /civil/* — Projects, Sites, DailyReports (RDO), photo upload
+│   └── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
 └── workers/
     ├── polling_worker.py    # APScheduler: ClickUp → Airbox sync on interval
-    └── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
+    ├── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
+    └── email_worker.py      # APScheduler: sends weekly PDF report via email on configured weekday/hour UTC
 ```
 
 ## Sync Flows
@@ -195,6 +208,60 @@ Folder (Province)
 
 **Evolution curve** (`build_province_evolution`): reconstructs a temporal weighted-progress series from `date_closed` of each completed task. Used by `GET /dashboard/evolution` → `DashboardService.get_evolution_data()`. Each point is `{date: ISO, progress: float}` representing cumulative weighted progress at that moment. The series always starts at 0.0 (first task creation date) and ends with today's current value.
 
+## Civil Works Module (RDO)
+
+The civil works module is independent of the ClickUp↔Airbox sync and manages construction site daily reports (RDO — *Relatório Diário de Obra*).
+
+**Domain hierarchy:**
+```
+CivilProject
+  └─ CivilSite (linked to a CivilProgressProfile for EVM tracking)
+       └─ CivilDailyReport (one per site per date — enforced by unique constraint)
+            ├─ CivilResource      (personnel by discipline)
+            ├─ CivilActivity      (work executed; optional link to ActivityDef feeds measurements)
+            ├─ CivilMaterial      (received/applied; balance computed in response)
+            ├─ CivilOccurrence    (incidents, blockers, risks)
+            ├─ CivilQualityCheck  (5 fixed items from CIVIL_QUALITY_CHECKS — auto-created)
+            ├─ CivilPhoto         (files stored on disk, path in DB)
+            ├─ CivilNextDayPlan   (planned activities for the following day)
+            └─ CivilSignature     (3 fixed roles from CIVIL_SIGNATURE_ROLES — auto-created)
+```
+
+**Auto-behaviors in `CivilService.create_report`:**
+- `report_number` is assigned sequentially per site (max + 1)
+- Missing `quality_check` rows are auto-created for all 5 fixed `check_type` values
+- Missing `signature` rows are auto-created for all 3 fixed `role` values
+- Activities with `activity_def_id` + `qty_day` trigger `_auto_fill_measurements()` which upserts a `CivilProgressMeasurement` (cumulative: yesterday's measurement + today's qty_day, wins only if greater than existing)
+
+**Photo upload:** `POST /civil/reports/{id}/photos` — multipart, max 20 MB, stored at `settings.civil_uploads_dir/<report_id>_<uuid>.<ext>`, served at `/uploads/<stored_name>`.
+
+**PDF export:** `generate_rdo_pdf(report_dict, site_name)` in `rdo_pdf_service.py`. Same `_s()` Latin-1 sanitizer and fpdf2 pattern as `report_service.py`.
+
+## Civil Progress (EVM for Construction)
+
+Independent EVM system for civil works — separate from the ClickUp-based EVM in `weights_config.py`.
+
+**Hierarchy:**
+```
+CivilProgressProfile  (e.g. "Site TX com torre", "Luanda")
+  └─ CivilProgressCategory (weight, sort_order)
+       └─ CivilProgressActivityDef (unit, sort_order)
+
+CivilSite.profile_id → CivilProgressProfile
+CivilSiteActivityQty  (site_id, activity_def_id, total_qty — planned quantity)
+CivilProgressMeasurement (site_id, activity_def_id, date, qty_yesterday, qty_today)
+```
+
+**Calculation (`progress_service.py`):**
+- `pct(qty, total)` → `min(qty / total, 1.0)` — clamped percentage
+- `activity_contribution = category_weight × pct`
+- `site_progress = Σ contributions` across all activities of the site's profile
+- `global_progress = mean(site_progress)` for sites that have measurements on the given date
+
+**Key endpoint:** `GET /civil/progress/site/{site_id}?date=YYYY-MM-DD` returns `SiteProgressResult` (dataclass serialized via `dataclasses.asdict`). `GET /civil/progress/summary` returns `GlobalProgressResult`.
+
+**FK note:** `CivilSite.profile_id` references `civil_progress_profile`. Both `civil_models` and `progress_models` **must be imported** in `main.py` before `init_db()` runs — the current import order in `main.py` handles this correctly. Reordering these imports will cause FK errors at table creation.
+
 ## Agreement ↔ List Matching
 
 Lists and agreements are matched **by name** (case-insensitive). If names don't match:
@@ -203,7 +270,11 @@ Lists and agreements are matched **by name** (case-insensitive). If names don't 
 
 ## Database
 
-SQLite by default (`sync.db`). Schema is auto-created at startup via `Base.metadata.create_all`. **If you change ORM models, delete `sync.db` to recreate.** `alembic` is listed in `requirements.txt` but is not used — do not create migrations.
+SQLite by default locally (`sync.db`). **Production (Railway) uses Postgres** via `DATABASE_URL`. Schema is auto-created at startup via `Base.metadata.create_all` on either backend — this only creates missing tables, it never alters existing ones (no migrations); `alembic` is listed in `requirements.txt` but is not used. **If you change ORM models in local dev, delete `sync.db` to recreate.** In production, a schema change to an existing table (new column, changed type) requires a manual `ALTER TABLE` against the Railway Postgres instance, since there's no migration tooling.
+
+`src/core/config.py::Settings._normalize_database_url` rewrites `postgres://` / `postgresql://` (the format Railway's Postgres plugin injects) to `postgresql+asyncpg://` automatically — no manual URL editing needed when wiring up `DATABASE_URL` on Railway. `asyncpg` is the async Postgres driver (in `requirements.txt`).
+
+**Upserts (`INSERT ... ON CONFLICT`) must go through `src/core/database.py::db_insert(table)`**, not `sqlalchemy.dialects.sqlite.insert` or `sqlalchemy.dialects.postgresql.insert` directly — `db_insert()` picks the correct dialect construct at runtime based on the active engine, so the same repository code works against SQLite locally and Postgres in production. Existing call sites: `cache_repository.py` (space/folder/list/task/user cache + discipline weights) and `civil_repository.py` (site activity quantities + progress measurements).
 
 The `import src.models.cache_models  # noqa: F401` in `main.py` is an intentional side-effect import: SQLAlchemy only registers cache tables with `Base.metadata` if the module is imported before `init_db()` runs. Removing or reordering that import will silently drop the cache tables on startup.
 
@@ -219,6 +290,14 @@ Tables:
 - `cache_refresh_log` — tracks each refresh run (trigger, duration_ms, counts, errors)
 - `discipline_weights` — per-list EVM weights set via `POST /disciplines/folder/{id}` (FK to `clickup_list_cache.list_id`)
 
+**Civil works tables** (in `civil_models.py` + `progress_models.py`, both imported in `main.py`):
+- `civil_project`, `civil_site` — top-level entities; `civil_site.profile_id` FK → `civil_progress_profile`
+- `civil_daily_report` — one per (site, date); auto-sequential `report_number` per site
+- `civil_resource`, `civil_activity`, `civil_material`, `civil_occurrence`, `civil_quality_check`, `civil_photo`, `civil_next_day_plan`, `civil_signature` — all cascade-delete from `civil_daily_report`
+- `civil_progress_profile`, `civil_progress_category`, `civil_progress_activity_def` — EVM profile catalog
+- `civil_site_activity_qty` — planned totals per (site, activity_def); unique on (site_id, activity_def_id)
+- `civil_progress_measurement` — daily measurements; unique on (site_id, activity_def_id, date)
+
 ## Key Configuration
 
 | Variable | Purpose | Default |
@@ -230,7 +309,7 @@ Tables:
 | `AIRBOX_API_KEY` | API Key do AltoQI Visus Workflow (required) | — |
 | `AIRBOX_BASE_URL` | Airbox API base URL — use `https://workflow-api.altoqivisus.com.br` in production | `https://api.airbox.tech` |
 | `AIRBOX_DEFAULT_ENTITY_TYPE` | Entity type when creating Airbox tasks | `Agreement` |
-| `DATABASE_URL` | SQLAlchemy async URL | `sqlite+aiosqlite:///./sync.db` |
+| `DATABASE_URL` | SQLAlchemy async URL. Accepts `postgres://`/`postgresql://` (auto-normalized to `postgresql+asyncpg://`) or `sqlite+aiosqlite://` | `sqlite+aiosqlite:///./sync.db` |
 | `POLLING_INTERVAL_SECONDS` | ClickUp → Airbox sync interval | `60` |
 | `SYNC_ENABLED` | Set to `false` to disable polling worker | `true` |
 | `DASHBOARD_ENABLED` | Enable dashboard cache worker | `true` |
@@ -245,6 +324,7 @@ Tables:
 | `CHAT_MODEL` | Claude model used by the agent | `claude-haiku-4-5-20251001` |
 | `CHAT_MAX_ITERATIONS` | Max tool-use iterations per request | `5` |
 | `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
+| `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads` | `./uploads` |
 | `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
 | `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
 | `EMAIL_SMTP_PORT` | Porta SMTP (STARTTLS) | `587` |
@@ -279,7 +359,9 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 
 `railway.toml`: builder `nixpacks`, healthcheck at `/health` (timeout 300s), restart policy `on_failure` (max 10 retries).
 
-For persistent SQLite on Railway, mount a volume at `/data` and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`.
+**Database**: production uses a Railway Postgres plugin, referenced via `DATABASE_URL` (e.g. `${{Postgres.DATABASE_URL}}`) on the web service's environment variables. Postgres is a managed, persistent addon — no volume mount needed for the database itself (unlike SQLite, which would need one).
+
+**Uploads are NOT yet persistent**: `CIVIL_UPLOADS_DIR` (RDO photos) still writes to local container disk, which Railway wipes on every redeploy. This is a known gap — RDO *data* (all tables, including photo metadata/paths) survives in Postgres, but the photo *files* themselves do not. Fixing this requires object storage (S3/R2/Railway volume) and is not yet implemented.
 
 ## Airbox API
 
@@ -303,6 +385,10 @@ Unit tests:
 - `test_event_broadcaster.py` — asyncio pub/sub broadcast logic
 - `test_cache_service.py` — CacheService refresh and webhook patch logic
 - `test_cache_repository.py` — CacheRepository upsert and query methods
+
+Unit tests:
+- `test_civil_progress.py` — pure EVM calculation functions from `progress_service.py` (pct, contribution, site/global progress)
+- `test_rdo_feeds_progress.py` — verifies that creating a RDO with `activity_def_id` automatically upserts measurements
 
 Integration tests:
 - `test_webhook_cache_update.py` — full webhook → cache → SSE path against a real in-memory DB

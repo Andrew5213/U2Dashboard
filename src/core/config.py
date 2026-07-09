@@ -1,8 +1,13 @@
+import os
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=os.environ.get("APP_ENV_FILE", ".env"),
+        env_file_encoding="utf-8",
+    )
 
     # ClickUp
     clickup_api_token: str
@@ -18,6 +23,18 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./sync.db"
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_database_url(cls, v: str) -> str:
+        """Railway (e outros hosts) fornecem a URL do Postgres como 'postgres://' ou
+        'postgresql://', sem driver async. Normaliza para 'postgresql+asyncpg://'
+        para funcionar com o SQLAlchemy async engine sem exigir configuração manual."""
+        if v.startswith("postgres://"):
+            return "postgresql+asyncpg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     # App
     app_env: str = "development"
@@ -40,6 +57,9 @@ class Settings(BaseSettings):
     chat_model: str = "claude-haiku-4-5-20251001"
     chat_max_iterations: int = 5
     chat_max_tokens: int = 1024
+
+    # Civil works — uploads directory for photos
+    civil_uploads_dir: str = "./uploads"
 
     # Email (relatórios semanais automáticos)
     email_enabled: bool = False
