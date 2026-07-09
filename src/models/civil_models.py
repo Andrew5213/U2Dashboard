@@ -54,6 +54,9 @@ class CivilSite(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     province: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ID da pasta (provincia) no ClickUp que originou este site — sites sao criados
+    # a partir das provincias do ClickUp, nao digitados livremente
+    clickup_folder_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     # FK resolved at runtime; civil_progress_profile is imported in main.py
     profile_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("civil_progress_profile.id", ondelete="SET NULL"), nullable=True

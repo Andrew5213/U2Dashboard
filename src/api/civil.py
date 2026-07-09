@@ -77,14 +77,23 @@ async def update_project(project_id: int, body: dict, db: AsyncSession = Depends
 
 # ─── Sites ───────────────────────────────────────────────────────────────────
 
+def _site_out(s) -> dict:
+    return {
+        "id": s.id, "project_id": s.project_id, "name": s.name, "province": s.province,
+        "profile_id": s.profile_id, "clickup_folder_id": s.clickup_folder_id,
+    }
+
+
 @router.get("/projects/{project_id}/sites")
 async def list_sites(project_id: int, repo: CivilRepository = Depends(_repo)):
     sites = await repo.list_sites(project_id)
-    return [{"id": s.id, "name": s.name, "province": s.province, "profile_id": s.profile_id} for s in sites]
+    return [_site_out(s) for s in sites]
 
 
 @router.post("/projects/{project_id}/sites", status_code=201)
 async def create_site(project_id: int, body: dict, db: AsyncSession = Depends(get_db)):
+    """Cria um site a partir de uma provincia (Folder) do ClickUp — name/province
+    vem do nome da provincia; clickup_folder_id guarda a referencia de origem."""
     repo = CivilRepository(db)
     proj = await repo.get_project(project_id)
     if not proj:
@@ -92,15 +101,23 @@ async def create_site(project_id: int, body: dict, db: AsyncSession = Depends(ge
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name é obrigatório")
-    site = await repo.create_site(project_id, name, body.get("province"), body.get("profile_id"))
+    clickup_folder_id = body.get("clickup_folder_id")
+    if not clickup_folder_id:
+        raise HTTPException(status_code=400, detail="clickup_folder_id é obrigatório — sites são criados a partir de uma província do ClickUp")
+    site = await repo.create_site(
+        project_id, name,
+        province=body.get("province") or name,
+        profile_id=body.get("profile_id"),
+        clickup_folder_id=clickup_folder_id,
+    )
     await db.commit()
-    return {"id": site.id, "name": site.name, "province": site.province, "profile_id": site.profile_id}
+    return _site_out(site)
 
 
 @router.get("/sites")
 async def list_all_sites(repo: CivilRepository = Depends(_repo)):
     sites = await repo.list_all_sites()
-    return [{"id": s.id, "project_id": s.project_id, "name": s.name, "province": s.province, "profile_id": s.profile_id} for s in sites]
+    return [_site_out(s) for s in sites]
 
 
 @router.put("/sites/{site_id}")
@@ -115,7 +132,7 @@ async def update_site(site_id: int, body: dict, db: AsyncSession = Depends(get_d
     if not site:
         raise HTTPException(status_code=404, detail="Site não encontrado")
     await db.commit()
-    return {"id": site.id, "name": site.name, "province": site.province, "profile_id": site.profile_id}
+    return _site_out(site)
 
 
 # ─── Reports ─────────────────────────────────────────────────────────────────

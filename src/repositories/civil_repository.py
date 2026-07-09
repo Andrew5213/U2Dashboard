@@ -46,8 +46,12 @@ class CivilRepository:
     async def create_site(
         self, project_id: int, name: str,
         province: str | None = None, profile_id: int | None = None,
+        clickup_folder_id: str | None = None,
     ) -> CivilSite:
-        site = CivilSite(project_id=project_id, name=name, province=province, profile_id=profile_id)
+        site = CivilSite(
+            project_id=project_id, name=name, province=province,
+            profile_id=profile_id, clickup_folder_id=clickup_folder_id,
+        )
         self._db.add(site)
         await self._db.flush()
         return site
