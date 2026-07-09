@@ -270,11 +270,11 @@ Lists and agreements are matched **by name** (case-insensitive). If names don't 
 
 ## Database
 
-SQLite by default locally (`sync.db`). **Production (Railway) uses Postgres** via `DATABASE_URL`. Schema is auto-created at startup via `Base.metadata.create_all` on either backend — this only creates missing tables, it never alters existing ones (no migrations); `alembic` is listed in `requirements.txt` but is not used. **If you change ORM models in local dev, delete `sync.db` to recreate.** In production, a schema change to an existing table (new column, changed type) requires a manual `ALTER TABLE` against the Railway Postgres instance, since there's no migration tooling.
+SQLite (`sync.db`), both locally and in production. No Postgres — schema is auto-created at startup via `Base.metadata.create_all`, which only creates missing tables, it never alters existing ones (no migrations); `alembic` is listed in `requirements.txt` but is not used. **If you change ORM models, delete `sync.db` (or `dev.db` locally) to recreate.** A schema change to an existing table (new column, changed type) in production requires either deleting the file (losing data) or a manual `ALTER TABLE`, since there's no migration tooling.
 
-`src/core/config.py::Settings._normalize_database_url` rewrites `postgres://` / `postgresql://` (the format Railway's Postgres plugin injects) to `postgresql+asyncpg://` automatically — no manual URL editing needed when wiring up `DATABASE_URL` on Railway. `asyncpg` is the async Postgres driver (in `requirements.txt`).
+**Production persistence (Railway) requires a mounted Volume** — Railway's container filesystem is wiped on every redeploy. Without a Volume, `sync.db` (and therefore every RDO, project, site, and ClickUp cache row) is lost on the next deploy. Mount a Volume at `/data` on the web service and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db` (four slashes: `sqlite+aiosqlite://` + absolute path `/data/sync.db`). Also point `CIVIL_UPLOADS_DIR=/data/uploads` at the same volume so RDO photo files survive redeploys too — see `.env.example`.
 
-**Upserts (`INSERT ... ON CONFLICT`) must go through `src/core/database.py::db_insert(table)`**, not `sqlalchemy.dialects.sqlite.insert` or `sqlalchemy.dialects.postgresql.insert` directly — `db_insert()` picks the correct dialect construct at runtime based on the active engine, so the same repository code works against SQLite locally and Postgres in production. Existing call sites: `cache_repository.py` (space/folder/list/task/user cache + discipline weights) and `civil_repository.py` (site activity quantities + progress measurements).
+Upserts (`INSERT ... ON CONFLICT`) use `sqlalchemy.dialects.sqlite.insert` directly in `cache_repository.py` and `civil_repository.py` — this only works against SQLite; if the backend ever changes, these call sites need to change too.
 
 The `import src.models.cache_models  # noqa: F401` in `main.py` is an intentional side-effect import: SQLAlchemy only registers cache tables with `Base.metadata` if the module is imported before `init_db()` runs. Removing or reordering that import will silently drop the cache tables on startup.
 
@@ -309,7 +309,7 @@ Tables:
 | `AIRBOX_API_KEY` | API Key do AltoQI Visus Workflow (required) | — |
 | `AIRBOX_BASE_URL` | Airbox API base URL — use `https://workflow-api.altoqivisus.com.br` in production | `https://api.airbox.tech` |
 | `AIRBOX_DEFAULT_ENTITY_TYPE` | Entity type when creating Airbox tasks | `Agreement` |
-| `DATABASE_URL` | SQLAlchemy async URL. Accepts `postgres://`/`postgresql://` (auto-normalized to `postgresql+asyncpg://`) or `sqlite+aiosqlite://` | `sqlite+aiosqlite:///./sync.db` |
+| `DATABASE_URL` | SQLAlchemy async URL (SQLite only). In production, point at the mounted Volume: `sqlite+aiosqlite:////data/sync.db` | `sqlite+aiosqlite:///./sync.db` |
 | `POLLING_INTERVAL_SECONDS` | ClickUp → Airbox sync interval | `60` |
 | `SYNC_ENABLED` | Set to `false` to disable polling worker | `true` |
 | `DASHBOARD_ENABLED` | Enable dashboard cache worker | `true` |
@@ -324,7 +324,7 @@ Tables:
 | `CHAT_MODEL` | Claude model used by the agent | `claude-haiku-4-5-20251001` |
 | `CHAT_MAX_ITERATIONS` | Max tool-use iterations per request | `5` |
 | `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
-| `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads` | `./uploads` |
+| `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads`. In production, point at the mounted Volume: `/data/uploads` | `./uploads` |
 | `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
 | `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
 | `EMAIL_SMTP_PORT` | Porta SMTP (STARTTLS) | `587` |
@@ -357,11 +357,13 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 
 `Procfile`: `web: uvicorn src.main:app --host 0.0.0.0 --port $PORT`
 
-`railway.toml`: builder `nixpacks`, healthcheck at `/health` (timeout 300s), restart policy `on_failure` (max 10 retries).
+`railway.toml`: builder `nixpacks`, healthcheck at `/health` (timeout 300s), restart policy `on_failure` (max 10 retries). Volumes cannot be declared in `railway.toml` — they must be added via the Railway dashboard (Service → Settings → Volumes) or the Railway CLI (`railway volume add`).
 
-**Database**: production uses a Railway Postgres plugin, referenced via `DATABASE_URL` (e.g. `${{Postgres.DATABASE_URL}}`) on the web service's environment variables. Postgres is a managed, persistent addon — no volume mount needed for the database itself (unlike SQLite, which would need one).
+**Database persistence — required setup, not automatic**: add a Volume mounted at `/data` on the web service, then set on that service's environment variables:
+- `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`
+- `CIVIL_UPLOADS_DIR=/data/uploads`
 
-**Uploads are NOT yet persistent**: `CIVIL_UPLOADS_DIR` (RDO photos) still writes to local container disk, which Railway wipes on every redeploy. This is a known gap — RDO *data* (all tables, including photo metadata/paths) survives in Postgres, but the photo *files* themselves do not. Fixing this requires object storage (S3/R2/Railway volume) and is not yet implemented.
+Without the Volume, the app still runs (SQLite creates the file happily on local disk), but every RDO, project, site, and cached ClickUp row is wiped the next time Railway redeploys the container — there is no warning, the app just starts fresh and empty.
 
 ## Airbox API
 

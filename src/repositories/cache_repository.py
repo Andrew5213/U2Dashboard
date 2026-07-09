@@ -1,8 +1,8 @@
 import json
 from datetime import datetime, timezone
 from sqlalchemy import select, delete, func, case, and_
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.database import db_insert
 from src.models.cache_models import (
     ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache,
     ClickUpTaskCache, ClickUpUserCache, CacheRefreshLog, DisciplineWeight,
@@ -25,7 +25,7 @@ class CacheRepository:
     # ─── Upserts ─────────────────────────────────────────────────────────────
 
     async def upsert_space(self, space: dict) -> None:
-        stmt = db_insert(ClickUpSpaceCache).values(
+        stmt = sqlite_insert(ClickUpSpaceCache).values(
             space_id=str(space["id"]),
             name=space.get("name", ""),
             private=bool(space.get("private", False)),
@@ -37,7 +37,7 @@ class CacheRepository:
         ))
 
     async def upsert_folder(self, folder: dict, space_id: str) -> None:
-        stmt = db_insert(ClickUpFolderCache).values(
+        stmt = sqlite_insert(ClickUpFolderCache).values(
             folder_id=str(folder["id"]),
             space_id=space_id,
             name=folder.get("name", ""),
@@ -58,7 +58,7 @@ class CacheRepository:
     async def upsert_list(self, list_data: dict, space_id: str, folder_id: str | None) -> None:
         status_obj = list_data.get("status") or {}
         status_text = status_obj.get("status") if isinstance(status_obj, dict) else None
-        stmt = db_insert(ClickUpListCache).values(
+        stmt = sqlite_insert(ClickUpListCache).values(
             list_id=str(list_data["id"]),
             space_id=space_id,
             folder_id=folder_id,
@@ -103,7 +103,7 @@ class CacheRepository:
         actual_list = task.get("list") or {}
         actual_list_id = str(actual_list.get("id", list_id)) if actual_list else list_id
 
-        stmt = db_insert(ClickUpTaskCache).values(
+        stmt = sqlite_insert(ClickUpTaskCache).values(
             task_id=str(task["id"]),
             list_id=actual_list_id,
             parent_task_id=parent_task_id,
@@ -144,7 +144,7 @@ class CacheRepository:
         uid = user.get("id")
         if not uid:
             return
-        stmt = db_insert(ClickUpUserCache).values(
+        stmt = sqlite_insert(ClickUpUserCache).values(
             user_id=str(uid),
             username=user.get("username") or user.get("email", "sem nome"),
             email=user.get("email"),
@@ -894,7 +894,7 @@ class CacheRepository:
 
     async def set_discipline_weights(self, weights: dict[str, float]) -> None:
         for list_id, weight in weights.items():
-            stmt = db_insert(DisciplineWeight).values(
+            stmt = sqlite_insert(DisciplineWeight).values(
                 list_id=list_id, weight=weight, updated_at=datetime.utcnow()
             )
             await self._db.execute(stmt.on_conflict_do_update(

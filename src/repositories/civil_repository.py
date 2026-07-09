@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from sqlalchemy import select, func, delete, and_
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.database import db_insert
 from src.models.civil_models import (
     CivilProject, CivilSite, CivilDailyReport,
     CivilResource, CivilActivity, CivilMaterial, CivilOccurrence,
@@ -353,7 +353,7 @@ class CivilRepository:
     async def upsert_site_activity_qty(
         self, site_id: int, activity_def_id: int, total_qty: float,
     ) -> None:
-        stmt = db_insert(CivilSiteActivityQty).values(
+        stmt = sqlite_insert(CivilSiteActivityQty).values(
             site_id=site_id, activity_def_id=activity_def_id, total_qty=total_qty,
         )
         await self._db.execute(stmt.on_conflict_do_update(
@@ -374,7 +374,7 @@ class CivilRepository:
         qty_yesterday: float, qty_today: float,
         marco: int | None = None, notes: str | None = None,
     ) -> None:
-        stmt = db_insert(CivilProgressMeasurement).values(
+        stmt = sqlite_insert(CivilProgressMeasurement).values(
             site_id=site_id,
             activity_def_id=activity_def_id,
             date=mdate,

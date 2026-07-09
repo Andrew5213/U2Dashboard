@@ -1,5 +1,4 @@
 import os
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,18 +22,6 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./sync.db"
-
-    @field_validator("database_url")
-    @classmethod
-    def _normalize_database_url(cls, v: str) -> str:
-        """Railway (e outros hosts) fornecem a URL do Postgres como 'postgres://' ou
-        'postgresql://', sem driver async. Normaliza para 'postgresql+asyncpg://'
-        para funcionar com o SQLAlchemy async engine sem exigir configuração manual."""
-        if v.startswith("postgres://"):
-            return "postgresql+asyncpg://" + v[len("postgres://"):]
-        if v.startswith("postgresql://"):
-            return "postgresql+asyncpg://" + v[len("postgresql://"):]
-        return v
 
     # App
     app_env: str = "development"
