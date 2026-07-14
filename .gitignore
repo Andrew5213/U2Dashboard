@@ -1,6 +1,8 @@
 .env
 .env.dev
 *.db
+uploads/
+documents/
 *.db-shm
 *.db-wal
 __pycache__/

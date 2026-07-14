@@ -55,7 +55,8 @@ src/
 │   ├── chat.html          # AI assistant page (served at GET /assistente — desktop)
 │   ├── chat_mobile.html   # Mobile variant
 │   ├── rdo.html           # RDO form (served at GET /rdo)
-│   └── progress_civil.html # Civil progress view (served at GET /progresso-civil)
+│   ├── progress_civil.html # Civil progress view (served at GET /progresso-civil)
+│   └── documentacoes.html # Document library UI (served at GET /documentacoes)
 ├── core/
 │   ├── config.py        # Settings via pydantic-settings (reads .env)
 │   ├── database.py      # Async SQLAlchemy engine, Base, get_db, init_db
@@ -67,11 +68,13 @@ src/
 │   ├── dashboard_schemas.py # Pydantic response schemas for dashboard API
 │   ├── chat_schemas.py      # Pydantic DTOs: ChatRequest, ChatResponse, ChartPayload
 │   ├── civil_models.py      # ORM: CivilProject, CivilSite + 9 child tables (report, resource, activity, material, occurrence, quality_check, photo, next_day_plan, signature)
-│   └── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
+│   ├── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
+│   └── document_models.py   # ORM: Document (PDF metadata for the Documentações module)
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
 │   ├── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
-│   └── civil_repository.py  # DB access for all civil + progress tables (shared by civil.py, progress_civil.py, civil_service.py)
+│   ├── civil_repository.py  # DB access for all civil + progress tables (shared by civil.py, progress_civil.py, civil_service.py)
+│   └── document_repository.py # DB access for the document table (create, list, get, delete)
 ├── services/
 │   ├── airbox_client.py     # httpx async client for Airbox API
 │   ├── clickup_client.py    # httpx async client for ClickUp REST API v2
@@ -89,7 +92,8 @@ src/
 │   ├── email_service.py     # EmailService: builds MIME email, attaches PT+EN PDFs, sends via SMTP (asyncio.to_thread)
 │   ├── civil_service.py     # CivilService: orchestrates RDO creation (nested children, sequential numbering, auto-fill measurements)
 │   ├── progress_service.py  # ProgressService + pure EVM functions (pct, activity_contribution, global_progress)
-│   └── rdo_pdf_service.py   # generate_rdo_pdf(report, site_name) → bytes — fpdf2-based RDO PDF
+│   ├── rdo_pdf_service.py   # generate_rdo_pdf(report, site_name) → bytes — fpdf2-based RDO PDF
+│   └── document_service.py  # DocumentService: saves/deletes PDF files on disk + document table rows
 ├── api/
 │   ├── health.py            # GET /health
 │   ├── sync.py              # POST /sync/trigger, GET /sync/status|logs, GET+POST /sync/mappings/agreements
@@ -103,7 +107,8 @@ src/
 │   ├── disciplines.py       # GET/POST/DELETE /disciplines/folder/{folder_id}
 │   ├── chat.py              # POST /chat, GET /chat/status
 │   ├── civil.py             # /civil/* — Projects, Sites, DailyReports (RDO), photo upload
-│   └── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
+│   ├── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
+│   └── documents.py         # /documents/* — folders (dropdown), list, upload, download, delete PDFs
 └── workers/
     ├── polling_worker.py    # APScheduler: ClickUp → Airbox sync on interval
     ├── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
@@ -262,6 +267,23 @@ CivilProgressMeasurement (site_id, activity_def_id, date, qty_yesterday, qty_tod
 
 **FK note:** `CivilSite.profile_id` references `civil_progress_profile`. Both `civil_models` and `progress_models` **must be imported** in `main.py` before `init_db()` runs — the current import order in `main.py` handles this correctly. Reordering these imports will cause FK errors at table creation.
 
+## Documentações Module (Document Library)
+
+Independent PDF document library, separate from the ClickUp↔Airbox sync and from the civil works RDO tables. Lets users upload, list, download, and delete PDF files, each tied to a ClickUp Folder (province).
+
+**Storage:** files are written to disk under `settings.documents_dir` (env `DOCUMENTS_DIR`, default `./documents`; production should point at the same Railway Volume used for RDO photos, e.g. `/data/documents` — see the Database section for the Volume setup). Each file is renamed to `<uuid4>.pdf` on disk (`document.stored_filename`); the original filename is preserved only in the DB (`document.original_filename`) and re-applied via `Content-Disposition` on download. Unlike RDO photos (served statically at `/uploads`), documents are **not** mounted as static files — downloads always go through `GET /documents/{id}/download`, which streams a `FileResponse` with the original filename restored.
+
+**Data model** (`document_models.py`): single table `document` — `folder_id`/`folder_name` (denormalized from `clickup_folder_cache` at upload time, same pattern as `CivilSite.clickup_folder_id`+`name`), `original_filename`, `stored_filename`, `file_size`, optional `description`, `uploaded_at`.
+
+**Endpoints** (`api/documents.py`, prefix `/documents`):
+- `GET /documents/folders` — provinces available for the upload dropdown (reuses `CacheRepository.get_all_folders`, same data as `GET /reports/folders`)
+- `GET /documents?folder_id=<id>` — list documents, optionally filtered by province
+- `POST /documents` — multipart upload (`folder_id`, `file`, optional `description`); rejects non-`.pdf` filenames and files over 50 MB; resolves `folder_name` server-side via `CacheRepository.get_folder_by_id` rather than trusting the client
+- `GET /documents/{id}/download` — streams the PDF with the original filename
+- `DELETE /documents/{id}` — deletes both the DB row and the file on disk
+
+**UI**: served at `GET /documentacoes` via `src/templates/documentacoes.html`, linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil` (mobile templates and `/assistente` do not have this sidebar and were not updated, consistent with the existing desktop-only sidebar unification).
+
 ## Agreement ↔ List Matching
 
 Lists and agreements are matched **by name** (case-insensitive). If names don't match:
@@ -272,7 +294,7 @@ Lists and agreements are matched **by name** (case-insensitive). If names don't 
 
 SQLite (`sync.db`), both locally and in production. No Postgres — schema is auto-created at startup via `Base.metadata.create_all`, which only creates missing tables, it never alters existing ones (no migrations); `alembic` is listed in `requirements.txt` but is not used. **If you change ORM models, delete `sync.db` (or `dev.db` locally) to recreate.** A schema change to an existing table (new column, changed type) in production requires either deleting the file (losing data) or a manual `ALTER TABLE`, since there's no migration tooling.
 
-**Production persistence (Railway) requires a mounted Volume** — Railway's container filesystem is wiped on every redeploy. Without a Volume, `sync.db` (and therefore every RDO, project, site, and ClickUp cache row) is lost on the next deploy. Mount a Volume at `/data` on the web service and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db` (four slashes: `sqlite+aiosqlite://` + absolute path `/data/sync.db`). Also point `CIVIL_UPLOADS_DIR=/data/uploads` at the same volume so RDO photo files survive redeploys too — see `.env.example`.
+**Production persistence (Railway) requires a mounted Volume** — Railway's container filesystem is wiped on every redeploy. Without a Volume, `sync.db` (and therefore every RDO, project, site, and ClickUp cache row) is lost on the next deploy. Mount a Volume at `/data` on the web service and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db` (four slashes: `sqlite+aiosqlite://` + absolute path `/data/sync.db`). Also point `CIVIL_UPLOADS_DIR=/data/uploads` and `DOCUMENTS_DIR=/data/documents` at the same volume so RDO photo files and uploaded PDFs survive redeploys too — see `.env.example`.
 
 Upserts (`INSERT ... ON CONFLICT`) use `sqlalchemy.dialects.sqlite.insert` directly in `cache_repository.py` and `civil_repository.py` — this only works against SQLite; if the backend ever changes, these call sites need to change too.
 
@@ -297,6 +319,9 @@ Tables:
 - `civil_progress_profile`, `civil_progress_category`, `civil_progress_activity_def` — EVM profile catalog
 - `civil_site_activity_qty` — planned totals per (site, activity_def); unique on (site_id, activity_def_id)
 - `civil_progress_measurement` — daily measurements; unique on (site_id, activity_def_id, date)
+
+**Document table** (in `document_models.py`, imported in `main.py`):
+- `document` — one row per uploaded PDF; `folder_id`/`folder_name` denormalized from `clickup_folder_cache` at upload time; `stored_filename` is a random UUID, `original_filename` is restored on download
 
 ## Key Configuration
 
@@ -325,6 +350,7 @@ Tables:
 | `CHAT_MAX_ITERATIONS` | Max tool-use iterations per request | `5` |
 | `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
 | `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads`. In production, point at the mounted Volume: `/data/uploads` | `./uploads` |
+| `DOCUMENTS_DIR` | Directory for Documentações PDF uploads; served only via `GET /documents/{id}/download` (not a static mount). In production, point at the mounted Volume: `/data/documents` | `./documents` |
 | `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
 | `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
 | `EMAIL_SMTP_PORT` | Porta SMTP (STARTTLS) | `587` |
@@ -362,8 +388,9 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 **Database persistence — required setup, not automatic**: add a Volume mounted at `/data` on the web service, then set on that service's environment variables:
 - `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`
 - `CIVIL_UPLOADS_DIR=/data/uploads`
+- `DOCUMENTS_DIR=/data/documents`
 
-Without the Volume, the app still runs (SQLite creates the file happily on local disk), but every RDO, project, site, and cached ClickUp row is wiped the next time Railway redeploys the container — there is no warning, the app just starts fresh and empty.
+Without the Volume, the app still runs (SQLite creates the file happily on local disk), but every RDO, project, site, uploaded document, and cached ClickUp row is wiped the next time Railway redeploys the container — there is no warning, the app just starts fresh and empty.
 
 ## Airbox API
 
@@ -395,3 +422,13 @@ Unit tests:
 Integration tests:
 - `test_webhook_cache_update.py` — full webhook → cache → SSE path against a real in-memory DB
 - `test_dashboard_endpoints.py` — `/dashboard/*` endpoint responses with seeded cache data
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

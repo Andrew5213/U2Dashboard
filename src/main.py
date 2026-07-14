@@ -9,7 +9,7 @@ from src.core.logging import setup_logging
 from src.core.config import settings
 from src.api import health, webhooks, sync
 from src.api import dashboard, dashboard_stream, reports, disciplines, chat
-from src.api import civil, progress_civil
+from src.api import civil, progress_civil, documents
 from src.workers.polling_worker import start_polling, stop_polling
 from src.workers.cache_worker import start_cache_worker, stop_cache_worker
 from src.workers.email_worker import start_email_worker, stop_email_worker
@@ -17,6 +17,7 @@ from src.workers.email_worker import start_email_worker, stop_email_worker
 import src.models.cache_models  # noqa: F401
 import src.models.civil_models  # noqa: F401
 import src.models.progress_models  # noqa: F401
+import src.models.document_models  # noqa: F401
 
 
 @asynccontextmanager
@@ -48,6 +49,7 @@ app = FastAPI(
 )
 
 os.makedirs(settings.civil_uploads_dir, exist_ok=True)
+os.makedirs(settings.documents_dir, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="src/static"), name="static")
 app.mount("/img", StaticFiles(directory="src/img"), name="img")
@@ -64,6 +66,7 @@ app.include_router(disciplines.router)
 app.include_router(chat.router)
 app.include_router(civil.router)
 app.include_router(progress_civil.router)
+app.include_router(documents.router)
 
 
 _MOBILE_UA_KEYWORDS = ("mobile", "android", "iphone", "ipad", "ipod")
@@ -111,4 +114,12 @@ async def progress_civil_page(request: Request):
     chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
     return templates.TemplateResponse(
         request=request, name="progress_civil.html", context={"chat_enabled": chat_enabled},
+    )
+
+
+@app.get("/documentacoes", response_class=HTMLResponse)
+async def documentacoes_page(request: Request):
+    chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
+    return templates.TemplateResponse(
+        request=request, name="documentacoes.html", context={"chat_enabled": chat_enabled},
     )

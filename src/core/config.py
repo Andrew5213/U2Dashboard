@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Civil works — uploads directory for photos
     civil_uploads_dir: str = "./uploads"
 
+    # Documentações — uploads directory for PDFs
+    documents_dir: str = "./documents"
+
     # Email (relatórios semanais automáticos)
     email_enabled: bool = False
     email_smtp_host: str = "smtp.gmail.com"
