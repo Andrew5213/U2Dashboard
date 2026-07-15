@@ -64,8 +64,9 @@ app.include_router(dashboard_stream.router)
 app.include_router(reports.router)
 app.include_router(disciplines.router)
 app.include_router(chat.router)
-app.include_router(civil.router)
-app.include_router(progress_civil.router)
+if settings.rdo_module_enabled:
+    app.include_router(civil.router)
+    app.include_router(progress_civil.router)
 app.include_router(documents.router)
 
 
@@ -89,7 +90,7 @@ async def dashboard_home(request: Request):
     return templates.TemplateResponse(
         request=request,
         name=template,
-        context={"chat_enabled": chat_enabled},
+        context={"chat_enabled": chat_enabled, "rdo_module_enabled": settings.rdo_module_enabled},
     )
 
 
@@ -103,6 +104,8 @@ async def chat_page(request: Request):
 
 @app.get("/rdo", response_class=HTMLResponse)
 async def rdo_page(request: Request):
+    if not settings.rdo_module_enabled:
+        return HTMLResponse("<h2>Módulo de RDO temporariamente desativado.</h2>", status_code=503)
     chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
     return templates.TemplateResponse(
         request=request, name="rdo.html", context={"chat_enabled": chat_enabled},
@@ -111,6 +114,8 @@ async def rdo_page(request: Request):
 
 @app.get("/progresso-civil", response_class=HTMLResponse)
 async def progress_civil_page(request: Request):
+    if not settings.rdo_module_enabled:
+        return HTMLResponse("<h2>Módulo de RDO temporariamente desativado.</h2>", status_code=503)
     chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
     return templates.TemplateResponse(
         request=request, name="progress_civil.html", context={"chat_enabled": chat_enabled},
@@ -121,5 +126,6 @@ async def progress_civil_page(request: Request):
 async def documentacoes_page(request: Request):
     chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
     return templates.TemplateResponse(
-        request=request, name="documentacoes.html", context={"chat_enabled": chat_enabled},
+        request=request, name="documentacoes.html",
+        context={"chat_enabled": chat_enabled, "rdo_module_enabled": settings.rdo_module_enabled},
     )

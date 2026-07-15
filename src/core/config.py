@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Civil works — uploads directory for photos
     civil_uploads_dir: str = "./uploads"
 
+    # Feature flag: RDO Diário + Controle de Progresso (temporariamente desativado)
+    rdo_module_enabled: bool = False
+
     # Documentações — uploads directory for PDFs
     documents_dir: str = "./documents"
 

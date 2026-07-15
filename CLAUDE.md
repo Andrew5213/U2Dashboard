@@ -215,6 +215,8 @@ Folder (Province)
 
 ## Civil Works Module (RDO)
 
+**⚠ Temporarily disabled** via `RDO_MODULE_ENABLED=false` (default). While disabled: `main.py` does not register `civil.router`/`progress_civil.router` (all `/civil/*` and `/civil/progress/*` endpoints 404), `GET /rdo` and `GET /progresso-civil` return a 503 placeholder instead of rendering, and the "RDO Diário"/"Controle de Progresso" sidebar links are hidden (`{% if rdo_module_enabled %}` in `index.html` and `documentacoes.html`; `rdo.html`/`progress_civil.html` still contain their own copies of these links but those pages are unreachable while the flag is off). Set `RDO_MODULE_ENABLED=true` to restore full access — no code changes needed, the module itself was not touched.
+
 The civil works module is independent of the ClickUp↔Airbox sync and manages construction site daily reports (RDO — *Relatório Diário de Obra*).
 
 **Domain hierarchy:**
@@ -350,6 +352,7 @@ Tables:
 | `CHAT_MAX_ITERATIONS` | Max tool-use iterations per request | `5` |
 | `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
 | `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads`. In production, point at the mounted Volume: `/data/uploads` | `./uploads` |
+| `RDO_MODULE_ENABLED` | Feature flag for RDO Diário + Controle de Progresso (temporarily disabled — see Civil Works Module section). Set `true` to re-enable | `false` |
 | `DOCUMENTS_DIR` | Directory for Documentações PDF uploads; served only via `GET /documents/{id}/download` (not a static mount). In production, point at the mounted Volume: `/data/documents` | `./documents` |
 | `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
 | `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
