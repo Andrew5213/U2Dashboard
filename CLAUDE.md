@@ -146,6 +146,8 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. `GET /`, `GET /assistente`, and `GET /documentacoes` follow this pattern. `/rdo` and `/progresso-civil` do not have mobile variants (no mobile UI was ever built for the RDO module).
 
+**Mobile navigation**: all three mobile templates (`index_mobile.html`, `chat_mobile.html`, `documentacoes_mobile.html`) share the same hamburger-menu pattern instead of a persistent bottom tab bar (a bottom nav was tried first but conflicted with chat's fixed input bar, so it was replaced everywhere for consistency). Each page has a `.mob-menu-btn` in the header that calls `openMenu()`, opening a `.mob-drawer#main-menu` with links to Dashboard, Assistente IA (conditional on `chat_enabled`), Documentações, plus buttons for Relatórios (closes the menu and opens the reports drawer) and Atualizar Cache. The reports drawer itself (`#reports-drawer` + `openDrawer`/`closeDrawer`/`setReportLang`/`exportPDF`/`exportDiario`/`exportSemanal`/`toggleProvinciaDrawer`/`exportProvincia`) and `triggerRefresh()` are duplicated verbatim into all three templates — same copy-per-page convention already used for the desktop sidebar, since there's no shared-partial/include mechanism in this template-per-page architecture. `chat_mobile.html` did not have `#mob-toast`/`showToast()` before this and needed them added for `triggerRefresh()`'s feedback.
+
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
 ## PDF Reports
@@ -285,7 +287,7 @@ Independent PDF document library, separate from the ClickUp↔Airbox sync and fr
 - `GET /documents/{id}/download` — streams the PDF with the original filename
 - `DELETE /documents/{id}` — deletes both the DB row and the file on disk
 
-**UI**: `GET /documentacoes` serves `documentacoes.html` (desktop) or `documentacoes_mobile.html` (mobile, via `_is_mobile()`) — both call the same `/documents/*` API, so upload/list/download/delete work identically on phone. Desktop is linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil`. Mobile is linked from the bottom nav ("Documentos") in `index_mobile.html` — a standalone page reached via full navigation, not a hash-route inside the dashboard SPA (same pattern as "Assistente" → `/assistente`).
+**UI**: `GET /documentacoes` serves `documentacoes.html` (desktop) or `documentacoes_mobile.html` (mobile, via `_is_mobile()`) — both call the same `/documents/*` API, so upload/list/download/delete work identically on phone. Desktop is linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil`. Mobile is linked from the hamburger menu (see "Mobile navigation" below) — a standalone page reached via full navigation, not a hash-route inside the dashboard SPA (same pattern as "Assistente" → `/assistente`).
 
 ## Agreement ↔ List Matching
 

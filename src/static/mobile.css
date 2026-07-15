@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════════
    mobile.css — Estilos exclusivos das páginas mobile
-   Usado por: index_mobile.html  e  chat_mobile.html
+   Usado por: index_mobile.html, chat_mobile.html, documentacoes_mobile.html
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Reset / Base ────────────────────────────────────────────────── */
@@ -11,42 +11,6 @@ body {
   -webkit-text-size-adjust: 100%;
   overscroll-behavior: none;
 }
-
-/* ── Bottom Navigation ───────────────────────────────────────────── */
-.mob-nav {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: 60px;
-  background: #fff;
-  border-top: 1px solid #e2e8f0;
-  display: flex;
-  z-index: 50;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.mob-nav-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #94a3b8;
-  cursor: pointer;
-  border: none;
-  background: none;
-  padding: 0;
-  transition: color .15s;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mob-nav-item.active,
-.mob-nav-item:active { color: #1e40af; }
-
-.mob-nav-item svg { width: 22px; height: 22px; }
 
 /* ── Header mobile ───────────────────────────────────────────────── */
 .mob-header {
@@ -87,7 +51,7 @@ body {
 
 .mob-header-action:active { background: #1f2937; color: #e2e8f0; }
 
-.mob-back-btn {
+.mob-back-btn, .mob-menu-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -101,7 +65,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   text-decoration: none;
 }
-.mob-back-btn:active { background: #1f2937; }
+.mob-back-btn:active, .mob-menu-btn:active { background: #1f2937; }
 
 /* ── Breadcrumb pill mobile ──────────────────────────────────────── */
 #mob-breadcrumb {
@@ -128,7 +92,7 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  padding: 12px 12px 76px; /* 76 = bottom-nav 60 + margin 16 */
+  padding: 12px 12px 24px;
 }
 
 /* ── Progress bar ────────────────────────────────────────────────── */
