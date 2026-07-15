@@ -53,6 +53,8 @@ class Settings(BaseSettings):
 
     # Documentações — uploads directory for PDFs
     documents_dir: str = "./documents"
+    # Senha exigida para excluir documentos (a app não tem autenticação de usuário)
+    documents_delete_password: str = "u2dashboard2026"
 
     # Email (relatórios semanais automáticos)
     email_enabled: bool = False

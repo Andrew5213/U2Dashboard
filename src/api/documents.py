@@ -1,6 +1,7 @@
 import os
+import secrets
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,7 +87,13 @@ async def download_document(document_id: int, db: AsyncSession = Depends(get_db)
 
 
 @router.delete("/{document_id}", summary="Excluir documento")
-async def delete_document(document_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_document(
+    document_id: int,
+    x_delete_password: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    if not secrets.compare_digest(x_delete_password, settings.documents_delete_password):
+        raise HTTPException(status_code=403, detail="Senha incorreta")
     deleted = await DocumentService(db).delete_document(document_id, settings.documents_dir)
     if not deleted:
         raise HTTPException(status_code=404, detail="Documento não encontrado")

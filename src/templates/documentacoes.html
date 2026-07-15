@@ -285,9 +285,17 @@
     });
 
     async function deleteDocument(id) {
-      if (!confirm('Tem certeza que deseja excluir este documento?')) return;
+      const password = prompt('Digite a senha para excluir este documento:');
+      if (password === null) return;
       try {
-        const res = await fetch(`/documents/${id}`, { method: 'DELETE' });
+        const res = await fetch(`/documents/${id}`, {
+          method: 'DELETE',
+          headers: { 'X-Delete-Password': password },
+        });
+        if (res.status === 403) {
+          showToast('Senha incorreta.', 'error');
+          return;
+        }
         if (!res.ok) throw new Error('Falha ao excluir');
         showToast('Documento excluído.');
         loadDocuments();

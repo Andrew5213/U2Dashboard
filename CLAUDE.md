@@ -285,7 +285,7 @@ Independent PDF document library, separate from the ClickUp↔Airbox sync and fr
 - `GET /documents?folder_id=<id>` — list documents, optionally filtered by province
 - `POST /documents` — multipart upload (`folder_id`, `file`, optional `description`); rejects non-`.pdf` filenames and files over 50 MB; resolves `folder_name` server-side via `CacheRepository.get_folder_by_id` rather than trusting the client
 - `GET /documents/{id}/download` — streams the PDF with the original filename
-- `DELETE /documents/{id}` — deletes both the DB row and the file on disk
+- `DELETE /documents/{id}` — requires header `X-Delete-Password` matching `settings.documents_delete_password` (compared with `secrets.compare_digest`, 403 if missing/wrong); deletes both the DB row and the file on disk. This is a shared PIN, not per-user auth — the app has no login system, so this is the only gate on the single destructive action in this module. Both `documentacoes.html` and `documentacoes_mobile.html` prompt for it via `prompt()` before calling delete.
 
 **UI**: `GET /documentacoes` serves `documentacoes.html` (desktop) or `documentacoes_mobile.html` (mobile, via `_is_mobile()`) — both call the same `/documents/*` API, so upload/list/download/delete work identically on phone. Desktop is linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil`. Mobile is linked from the hamburger menu (see "Mobile navigation" below) — a standalone page reached via full navigation, not a hash-route inside the dashboard SPA (same pattern as "Assistente" → `/assistente`).
 
@@ -357,6 +357,7 @@ Tables:
 | `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads`. In production, point at the mounted Volume: `/data/uploads` | `./uploads` |
 | `RDO_MODULE_ENABLED` | Feature flag for RDO Diário + Controle de Progresso (temporarily disabled — see Civil Works Module section). Set `true` to re-enable | `false` |
 | `DOCUMENTS_DIR` | Directory for Documentações PDF uploads; served only via `GET /documents/{id}/download` (not a static mount). In production, point at the mounted Volume: `/data/documents` | `./documents` |
+| `DOCUMENTS_DELETE_PASSWORD` | Shared password required (via `X-Delete-Password` header) to delete a document in `/documentacoes` | `u2dashboard2026` |
 | `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
 | `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
 | `EMAIL_SMTP_PORT` | Porta SMTP (STARTTLS) | `587` |

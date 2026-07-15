@@ -51,13 +51,13 @@ body {
 
 .mob-header-action:active { background: #1f2937; color: #e2e8f0; }
 
-.mob-back-btn, .mob-menu-btn {
+.mob-menu-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px; height: 36px;
   border-radius: 10px;
-  color: #d1d5db;
+  color: #fff;
   border: none;
   background: none;
   cursor: pointer;
@@ -65,7 +65,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   text-decoration: none;
 }
-.mob-back-btn:active, .mob-menu-btn:active { background: #1f2937; }
+.mob-menu-btn:active { background: #1f2937; }
 
 /* ── Breadcrumb pill mobile ──────────────────────────────────────── */
 #mob-breadcrumb {
