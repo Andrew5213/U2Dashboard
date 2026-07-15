@@ -56,7 +56,8 @@ src/
 │   ├── chat_mobile.html   # Mobile variant
 │   ├── rdo.html           # RDO form (served at GET /rdo)
 │   ├── progress_civil.html # Civil progress view (served at GET /progresso-civil)
-│   └── documentacoes.html # Document library UI (served at GET /documentacoes)
+│   ├── documentacoes.html # Document library UI (served at GET /documentacoes — desktop)
+│   └── documentacoes_mobile.html # Mobile variant — selected by UA detection in main.py
 ├── core/
 │   ├── config.py        # Settings via pydantic-settings (reads .env)
 │   ├── database.py      # Async SQLAlchemy engine, Base, get_db, init_db
@@ -143,7 +144,7 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **Dashboard UI**: served at `GET /` via `src/templates/index.html` (or `index_mobile.html`). The frontend calls `/dashboard/*` REST endpoints and connects to `/dashboard/stream` for live updates.
 
-**Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. Both `GET /` and `GET /assistente` follow this pattern.
+**Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. `GET /`, `GET /assistente`, and `GET /documentacoes` follow this pattern. `/rdo` and `/progresso-civil` do not have mobile variants (no mobile UI was ever built for the RDO module).
 
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
@@ -284,7 +285,7 @@ Independent PDF document library, separate from the ClickUp↔Airbox sync and fr
 - `GET /documents/{id}/download` — streams the PDF with the original filename
 - `DELETE /documents/{id}` — deletes both the DB row and the file on disk
 
-**UI**: served at `GET /documentacoes` via `src/templates/documentacoes.html`, linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil` (mobile templates and `/assistente` do not have this sidebar and were not updated, consistent with the existing desktop-only sidebar unification).
+**UI**: `GET /documentacoes` serves `documentacoes.html` (desktop) or `documentacoes_mobile.html` (mobile, via `_is_mobile()`) — both call the same `/documents/*` API, so upload/list/download/delete work identically on phone. Desktop is linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil`. Mobile is linked from the bottom nav ("Documentos") in `index_mobile.html` — a standalone page reached via full navigation, not a hash-route inside the dashboard SPA (same pattern as "Assistente" → `/assistente`).
 
 ## Agreement ↔ List Matching
 

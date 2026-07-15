@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Documentações — U2 Broadcast</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/mobile.css" />
+</head>
+<body class="bg-gray-100" style="padding-top:env(safe-area-inset-top)">
+
+  <!-- ═══ HEADER ═══ -->
+  <header class="mob-header">
+    <a href="/" class="mob-back-btn" aria-label="Voltar ao dashboard">
+      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+      </svg>
+    </a>
+    <div class="mob-header-title">Documentações</div>
+  </header>
+
+  <!-- ═══ MAIN ═══ -->
+  <main class="mob-main">
+
+    <!-- Upload -->
+    <div class="mob-table-wrap" style="padding:14px">
+      <div class="mob-section-title" style="margin-top:0">Enviar novo documento</div>
+      <form id="upload-form">
+        <label class="mob-field-label" for="upload-folder">Província</label>
+        <select id="upload-folder" class="mob-select" required>
+          <option value="">Carregando...</option>
+        </select>
+
+        <label class="mob-field-label" for="upload-file">Arquivo PDF</label>
+        <input id="upload-file" type="file" accept="application/pdf,.pdf" class="mob-file-input" required />
+
+        <label class="mob-field-label" for="upload-description">Descrição (opcional)</label>
+        <input id="upload-description" type="text" maxlength="500" class="mob-input" placeholder="Ex: Planta baixa v2" />
+
+        <button type="submit" id="upload-btn" class="mob-btn-primary">Enviar</button>
+      </form>
+      <p id="upload-error" class="mob-field-error hidden"></p>
+    </div>
+
+    <!-- Filtro -->
+    <label class="mob-field-label" for="filter-folder">Filtrar por província</label>
+    <select id="filter-folder" class="mob-select" style="margin-bottom:14px">
+      <option value="">Todas as províncias</option>
+    </select>
+
+    <!-- Lista -->
+    <div class="mob-section-title">Documentos enviados</div>
+    <div id="doc-list">
+      <div class="mob-loading" style="padding:32px 0">
+        <div class="mob-spinner"></div>
+        <span style="font-size:13px">Carregando…</span>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="mob-toast"></div>
+
+  <script>
+    function showToast(msg, type) {
+      const el = document.getElementById('mob-toast');
+      const colors = {
+        success:'background:#f0fdf4;color:#166534;border:1px solid #bbf7d0',
+        error:  'background:#fef2f2;color:#991b1b;border:1px solid #fecaca',
+        info:   'background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe',
+      };
+      el.setAttribute('style', (colors[type]||colors.info)+';display:block');
+      el.textContent = msg;
+      setTimeout(()=>{ el.style.display='none'; }, 3200);
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function fmtSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '';
+      const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+      return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function loadDocFolders() {
+      try {
+        const res = await fetch('/documents/folders');
+        const folders = await res.json();
+        const opts = folders.map(f => `<option value="${f.folder_id}">${esc(f.name)}</option>`).join('');
+        document.getElementById('upload-folder').innerHTML = '<option value="">Selecione...</option>' + opts;
+        document.getElementById('filter-folder').innerHTML = '<option value="">Todas as províncias</option>' + opts;
+      } catch (e) {
+        document.getElementById('upload-folder').innerHTML = '<option value="">Erro ao carregar</option>';
+      }
+    }
+
+    async function loadDocuments() {
+      const folderId = document.getElementById('filter-folder').value;
+      const url = folderId ? `/documents?folder_id=${folderId}` : '/documents';
+      const list = document.getElementById('doc-list');
+      list.innerHTML = '<div class="mob-loading" style="padding:32px 0"><div class="mob-spinner"></div><span style="font-size:13px">Carregando…</span></div>';
+      try {
+        const res = await fetch(url);
+        const docs = await res.json();
+        if (!docs.length) {
+          list.innerHTML = '<div style="text-align:center;padding:32px 0;font-size:12px;color:#94a3b8">Nenhum documento enviado ainda</div>';
+          return;
+        }
+        list.innerHTML = docs.map(d => `
+          <div class="mob-doc-card">
+            <div class="mob-doc-card-header">
+              <svg class="mob-doc-icon" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+              <div class="mob-doc-info">
+                <div class="mob-doc-name">${esc(d.original_filename)}</div>
+                <div class="mob-doc-meta">${esc(d.folder_name)} · ${fmtSize(d.file_size)} · ${fmtDate(d.uploaded_at)}${d.description ? ' · ' + esc(d.description) : ''}</div>
+              </div>
+            </div>
+            <div class="mob-doc-actions">
+              <a href="/documents/${d.id}/download" class="mob-doc-btn mob-doc-btn-download">Baixar</a>
+              <button onclick="deleteDocument(${d.id})" class="mob-doc-btn mob-doc-btn-delete">Excluir</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        list.innerHTML = '<div style="text-align:center;padding:32px 0;font-size:12px;color:#ef4444">Erro ao carregar documentos</div>';
+      }
+    }
+
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const folderId = document.getElementById('upload-folder').value;
+      const fileInput = document.getElementById('upload-file');
+      const description = document.getElementById('upload-description').value;
+      const errorEl = document.getElementById('upload-error');
+      errorEl.classList.add('hidden');
+
+      if (!folderId || !fileInput.files.length) return;
+
+      const file = fileInput.files[0];
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        errorEl.textContent = 'Apenas arquivos PDF são permitidos.';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      const btn = document.getElementById('upload-btn');
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+
+      const formData = new FormData();
+      formData.append('folder_id', folderId);
+      formData.append('file', file);
+      if (description) formData.append('description', description);
+
+      try {
+        const res = await fetch('/documents', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Falha ao enviar documento');
+        }
+        document.getElementById('upload-form').reset();
+        showToast('Documento enviado com sucesso!', 'success');
+        loadDocuments();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Enviar';
+      }
+    });
+
+    async function deleteDocument(id) {
+      if (!confirm('Tem certeza que deseja excluir este documento?')) return;
+      try {
+        const res = await fetch(`/documents/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Falha ao excluir');
+        showToast('Documento excluído.', 'success');
+        loadDocuments();
+      } catch (e) {
+        showToast('Erro ao excluir documento: ' + e.message, 'error');
+      }
+    }
+
+    document.getElementById('filter-folder').addEventListener('change', loadDocuments);
+
+    loadDocFolders().then(loadDocuments);
+  </script>
+</body>
+</html>

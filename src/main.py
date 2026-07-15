@@ -124,6 +124,8 @@ async def progress_civil_page(request: Request):
 
 @app.get("/documentacoes", response_class=HTMLResponse)
 async def documentacoes_page(request: Request):
+    if _is_mobile(request):
+        return templates.TemplateResponse(request=request, name="documentacoes_mobile.html")
     chat_enabled = settings.chat_enabled and bool(settings.anthropic_api_key)
     return templates.TemplateResponse(
         request=request, name="documentacoes.html",
