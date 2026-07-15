@@ -299,7 +299,11 @@
     // Baixa via blob em vez de navegar direto para a URL: alguns navegadores
     // (Safari, webviews mobile) abrem o PDF inline e ignoram o header
     // Content-Disposition: attachment numa navegação de página inteira.
-    // Buscar como blob e disparar via <a download> força o salvamento do arquivo.
+    // No iOS/Safari, clicar num <a download> de blob: URL costuma cair no share
+    // sheet nativo — e esse share sheet, sem Web Share API, inclui a URL da
+    // página junto do arquivo. Por isso preferimos navigator.share() com um
+    // File explícito (só files, sem title/text/url) quando disponível: isso
+    // garante que só o PDF apareça no compartilhamento, nunca um link.
     async function downloadDocument(id, filename, btn) {
       const orig = btn.textContent;
       btn.textContent = '...';
@@ -308,15 +312,22 @@
         const res = await fetch(`/documents/${id}/download`);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const file = new File([blob], filename, { type: 'application/pdf' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
       } catch (e) {
+        if (e.name === 'AbortError') return; // usuário cancelou o compartilhamento
         showToast('Erro ao baixar documento: ' + e.message, 'error');
       } finally {
         btn.textContent = orig;
