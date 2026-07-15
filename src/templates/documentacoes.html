@@ -231,7 +231,7 @@
               <p class="text-sm font-medium text-gray-800 truncate">${_escapeHtml(d.original_filename)}</p>
               <p class="text-xs text-gray-500 truncate">${_escapeHtml(d.folder_name)} · ${fmtSize(d.file_size)} · ${fmtDate(d.uploaded_at)}${d.description ? ' · ' + _escapeHtml(d.description) : ''}</p>
             </div>
-            <a href="/documents/${d.id}/download" class="shrink-0 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">Baixar</a>
+            <button type="button" class="shrink-0 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" data-download-id="${d.id}" data-filename="${_escapeHtml(d.original_filename)}">Baixar</button>
             <button onclick="deleteDocument(${d.id})" class="shrink-0 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">Excluir</button>
           </div>
         `).join('');
@@ -295,6 +295,40 @@
         showToast('Erro ao excluir documento: ' + e.message, 'error');
       }
     }
+
+    // Baixa via blob em vez de navegar direto para a URL: alguns navegadores
+    // (Safari, webviews mobile) abrem o PDF inline e ignoram o header
+    // Content-Disposition: attachment numa navegação de página inteira.
+    // Buscar como blob e disparar via <a download> força o salvamento do arquivo.
+    async function downloadDocument(id, filename, btn) {
+      const orig = btn.textContent;
+      btn.textContent = '...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/documents/${id}/download`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        showToast('Erro ao baixar documento: ' + e.message, 'error');
+      } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('doc-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-download-id]');
+      if (!btn) return;
+      downloadDocument(btn.dataset.downloadId, btn.dataset.filename, btn);
+    });
 
     document.getElementById('filter-folder').addEventListener('change', loadDocuments);
 

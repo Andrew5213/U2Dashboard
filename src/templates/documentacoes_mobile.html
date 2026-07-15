@@ -127,7 +127,7 @@
               </div>
             </div>
             <div class="mob-doc-actions">
-              <a href="/documents/${d.id}/download" class="mob-doc-btn mob-doc-btn-download">Baixar</a>
+              <button type="button" class="mob-doc-btn mob-doc-btn-download" data-download-id="${d.id}" data-filename="${esc(d.original_filename)}">Baixar</button>
               <button onclick="deleteDocument(${d.id})" class="mob-doc-btn mob-doc-btn-delete">Excluir</button>
             </div>
           </div>
@@ -192,6 +192,40 @@
         showToast('Erro ao excluir documento: ' + e.message, 'error');
       }
     }
+
+    // Baixa via blob em vez de navegar direto para a URL: navegadores mobile
+    // (principalmente iOS/Safari e alguns webviews) costumam abrir PDF inline
+    // e ignoram o header Content-Disposition: attachment em navegação de página.
+    // Buscar como blob e disparar via <a download> força o salvamento do arquivo.
+    async function downloadDocument(id, filename, btn) {
+      const orig = btn.textContent;
+      btn.textContent = '...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/documents/${id}/download`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        showToast('Erro ao baixar documento: ' + e.message, 'error');
+      } finally {
+        btn.textContent = orig;
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('doc-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-download-id]');
+      if (!btn) return;
+      downloadDocument(btn.dataset.downloadId, btn.dataset.filename, btn);
+    });
 
     document.getElementById('filter-folder').addEventListener('change', loadDocuments);
 
