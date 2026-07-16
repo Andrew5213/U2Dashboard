@@ -163,6 +163,13 @@ const Charts = (function () {
       return { name: name, value: value, itemStyle: { color: color } };
     });
 
+    // "Planejando" vem desativado por padrão (oculto do donut), mas o usuário
+    // pode reativar clicando na legenda — comportamento nativo do ECharts.
+    var legendSelected = {};
+    data.forEach(function (d) {
+      if (d.name.toLowerCase() === 'planejando') legendSelected[d.name] = false;
+    });
+
     chart.setOption({
       tooltip: {
         trigger: 'item',
@@ -175,6 +182,7 @@ const Charts = (function () {
         itemWidth: 10,
         itemHeight: 10,
         textStyle: { fontSize: 10 },
+        selected: legendSelected,
         formatter: function (name) {
           var item = data.find(function (d) { return d.name === name; });
           return item ? name + ' (' + item.value + ')' : name;
