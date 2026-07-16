@@ -87,7 +87,7 @@ def render_executive_xlsx(data: dict) -> bytes:
                            col_widths=[24, 12, 12, 12, 10, 12])
         _apply_pct_col(ws, header_row + 1, row - 1, 6)
 
-    write_footer(ws, row, f"Documento gerado automaticamente em {data['generated_at']} | Ultima atualizacao do cache: {data.get('last_refresh_at', '')}")
+    write_footer(ws, row, f"Documento gerado automaticamente em {data['generated_at']}")
     return _to_bytes(wb)
 
 
@@ -158,7 +158,7 @@ def render_province_xlsx(data: dict) -> bytes:
                            col_widths=[24, 12, 12, 12, 10, 12])
         _apply_pct_col(ws, header_row + 1, row - 1, 6)
 
-    write_footer(ws, row, f"Documento gerado automaticamente em {data['generated_at']} | Ultima atualizacao do cache: {data.get('last_refresh_at', '')}")
+    write_footer(ws, row, f"Documento gerado automaticamente em {data['generated_at']}")
     return _to_bytes(wb)
 
 
@@ -205,5 +205,5 @@ def render_periodic_xlsx(data: dict) -> bytes:
     else:
         row = write_section(ws, row, "Sem atualizacoes no periodo")
 
-    write_footer(ws, row, f"Documento gerado automaticamente em {data['generated_at']} | Ultima atualizacao do cache: {data.get('last_refresh_at', '')}")
+    write_footer(ws, row, f"Documento gerado automaticamente em {data['generated_at']}")
     return _to_bytes(wb)
