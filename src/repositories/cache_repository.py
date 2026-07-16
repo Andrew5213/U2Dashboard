@@ -166,11 +166,19 @@ class CacheRepository:
     async def delete_task(self, task_id: str) -> None:
         await self._db.execute(delete(ClickUpTaskCache).where(ClickUpTaskCache.task_id == task_id))
 
-    async def mark_tasks_stale(self, list_id: str, seen_ids: set[str]) -> int:
+    async def get_task_list_id(self, task_id: str) -> str | None:
         result = await self._db.execute(
-            select(ClickUpTaskCache.task_id).where(
-                and_(ClickUpTaskCache.list_id == list_id, ClickUpTaskCache.parent_task_id.is_(None))
-            )
+            select(ClickUpTaskCache.list_id).where(ClickUpTaskCache.task_id == task_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def mark_tasks_stale(self, list_id: str, seen_ids: set[str]) -> int:
+        # Sem filtro de parent_task_id: `seen_ids` já inclui subtasks (get_tasks
+        # busca com subtasks=true), então tasks E subtasks apagadas no ClickUp
+        # precisam ser consideradas aqui, senão subtasks deletadas nunca são
+        # removidas do cache mesmo num refresh completo.
+        result = await self._db.execute(
+            select(ClickUpTaskCache.task_id).where(ClickUpTaskCache.list_id == list_id)
         )
         existing = {row[0] for row in result.fetchall()}
         stale = existing - seen_ids

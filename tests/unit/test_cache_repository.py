@@ -164,6 +164,46 @@ async def test_mark_tasks_stale_removes_orphans(repo, db, seed_list):
     assert await db.get(ClickUpTaskCache, "t1") is not None
 
 
+@pytest.mark.asyncio
+async def test_mark_tasks_stale_removes_deleted_subtasks(repo, db, seed_list):
+    # Task pai + duas subtasks — uma delas foi apagada no ClickUp e não vem mais em `seen_ids`
+    await repo.upsert_task({"id": "parent", "name": "Pai", "list": {"id": "l1"}}, "l1")
+    await repo.upsert_task({"id": "sub1", "name": "Sub 1", "list": {"id": "l1"}, "parent": "parent"}, "l1")
+    await repo.upsert_task({"id": "sub2", "name": "Sub 2", "list": {"id": "l1"}, "parent": "parent"}, "l1")
+    await db.commit()
+
+    removed = await repo.mark_tasks_stale("l1", {"parent", "sub1"})
+    await db.commit()
+
+    assert removed == 1
+    assert await db.get(ClickUpTaskCache, "sub2") is None
+    assert await db.get(ClickUpTaskCache, "sub1") is not None
+    assert await db.get(ClickUpTaskCache, "parent") is not None
+
+
+# ─── get_task_list_id / delete_task ───────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_task_list_id(repo, db, seed_list):
+    await repo.upsert_task({"id": "t1", "name": "t1", "list": {"id": "l1"}}, "l1")
+    await db.commit()
+    assert await repo.get_task_list_id("t1") == "l1"
+
+
+@pytest.mark.asyncio
+async def test_get_task_list_id_missing(repo, db, seed_list):
+    assert await repo.get_task_list_id("nao-existe") is None
+
+
+@pytest.mark.asyncio
+async def test_delete_task(repo, db, seed_list):
+    await repo.upsert_task({"id": "t1", "name": "t1", "list": {"id": "l1"}}, "l1")
+    await db.commit()
+    await repo.delete_task("t1")
+    await db.commit()
+    assert await db.get(ClickUpTaskCache, "t1") is None
+
+
 # ─── get_overview_kpis ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

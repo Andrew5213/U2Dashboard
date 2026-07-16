@@ -215,14 +215,17 @@ class SyncService:
     async def _handle_task_updated(
         self, event: str, task_id: str, history_items: list[dict]
     ) -> SyncResult:
-        """Atualizações de task no ClickUp — registradas no log até Airbox liberar PATCH /tasks."""
+        """Atualizações/exclusões de task no ClickUp — registradas no log até Airbox liberar PATCH/DELETE /tasks."""
         mapping = await self._repo.get_task_map_by_clickup(task_id)
         if not mapping:
             return SyncResult(success=False, entity_type="task", entity_id=task_id, action=event,
                               message="Task não mapeada — sem correspondente no Airbox")
 
-        await self._repo.log("to_airbox", "task", task_id, event, "skipped",
-                             "Airbox public API não suporta PATCH /tasks")
+        reason = (
+            "Airbox public API não suporta DELETE /tasks" if event == "taskDeleted"
+            else "Airbox public API não suporta PATCH /tasks"
+        )
+        await self._repo.log("to_airbox", "task", task_id, event, "skipped", reason)
         return SyncResult(success=True, entity_type="task", entity_id=task_id, action=event,
                           message="Evento registrado. Atualização no Airbox pendente de suporte da API.")
 

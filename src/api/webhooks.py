@@ -14,6 +14,7 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 HANDLED_EVENTS = {
     "taskCreated",
+    "taskDeleted",
     "taskStatusUpdated",
     "taskUpdated",
     "taskAssigneeUpdated",

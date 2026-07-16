@@ -102,6 +102,37 @@ async def test_apply_webhook_event_success(db):
 
 
 @pytest.mark.asyncio
+async def test_apply_webhook_event_task_deleted_removes_from_cache(db):
+    from src.repositories.cache_repository import CacheRepository
+    repo = CacheRepository(db)
+    await repo.upsert_space({"id": "s1", "name": "S"})
+    await db.commit()
+    await repo.upsert_list({"id": "l1", "name": "L"}, "s1", None)
+    await db.commit()
+    await repo.upsert_task({"id": "t1", "name": "Sera apagada", "list": {"id": "l1"}}, "l1")
+    await db.commit()
+
+    mock_client = _make_clickup_client()
+    with patch("src.services.cache_service.ClickUpClient", return_value=mock_client):
+        svc = CacheService(db)
+        list_id = await svc.apply_webhook_event("taskDeleted", "t1")
+
+    assert list_id == "l1"
+    # Não deve nem tentar buscar a task no ClickUp — ela já não existe lá
+    mock_client.get_task.assert_not_called()
+    assert await repo.get_task_list_id("t1") is None
+
+
+@pytest.mark.asyncio
+async def test_apply_webhook_event_task_deleted_unknown_task(db):
+    mock_client = _make_clickup_client()
+    with patch("src.services.cache_service.ClickUpClient", return_value=mock_client):
+        svc = CacheService(db)
+        list_id = await svc.apply_webhook_event("taskDeleted", "nunca-existiu")
+    assert list_id is None
+
+
+@pytest.mark.asyncio
 async def test_apply_webhook_event_api_error(db):
     mock_client = _make_clickup_client()
     mock_client.get_task = AsyncMock(side_effect=Exception("API error"))

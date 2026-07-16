@@ -148,6 +148,14 @@ class CacheService:
 
     async def apply_webhook_event(self, event: str, task_id: str) -> str | None:
         try:
+            if event == "taskDeleted":
+                # A task não existe mais no ClickUp — buscar de lá não é possível,
+                # só resta remover a linha correspondente do cache local.
+                list_id = await self._repo.get_task_list_id(task_id)
+                await self._repo.delete_task(task_id)
+                await self._db.commit()
+                return list_id
+
             async with ClickUpClient() as clickup:
                 task = await clickup.get_task(task_id)
             list_obj = task.get("list") or {}

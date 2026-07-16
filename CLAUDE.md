@@ -128,8 +128,11 @@ Flow: `ClickUpClient` reads all lists (folderless + inside folders) in the space
 `POST /webhooks/clickup` → verify HMAC-SHA256 signature → dispatch by event type:
 - `taskCreated` → fetches full task from ClickUp, resolves agreement, creates task in Airbox via `POST /tasks`
 - `taskUpdated`, `taskStatusUpdated`, `taskAssigneeUpdated`, `taskDueDateUpdated` → logged but not propagated (**Limitation:** Airbox public API has no `PATCH /tasks` endpoint)
+- `taskDeleted` → logged but not propagated to Airbox (no `DELETE /tasks` either); the local cache row **is** removed (`CacheService.apply_webhook_event` special-cases this event — it skips re-fetching from ClickUp, since the task no longer exists there, and calls `CacheRepository.delete_task` directly)
 
-After each handled webhook event, the cache is updated and an SSE broadcast fires (fire-and-forget — does not block the response).
+After each handled webhook event, the cache is updated and an SSE broadcast fires (fire-and-forget — does not block the response). `HANDLED_EVENTS` in `webhooks.py` must list every event ClickUp is configured to send (see `scripts/register_webhook.py`) — an event ClickUp sends but this set omits is silently dropped with no cache update, which is exactly how `taskDeleted` was missed before this was added: the webhook was already registered for it, the handler just never listened.
+
+**Deleted-task pruning on cache refresh**: `CacheRepository.mark_tasks_stale(list_id, seen_ids)` diffs the full task list against what ClickUp currently returns (which includes subtasks, since `get_tasks()` always passes `subtasks=true`) and deletes any cached row not in that set — this covers both top-level tasks and subtasks with no parent-vs-subtask distinction. (This method used to filter to `parent_task_id IS NULL` only, so a subtask deleted in ClickUp was never pruned by a refresh, only ever by the `taskDeleted` webhook above — the two paths are now consistent.)
 
 ## Dashboard & Cache Layer
 

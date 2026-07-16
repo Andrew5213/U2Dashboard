@@ -87,6 +87,32 @@ async def test_webhook_updates_cache(app_with_db, seeded_session):
 
 
 @pytest.mark.asyncio
+async def test_webhook_task_deleted_is_handled(app_with_db):
+    """taskDeleted não pode mais cair no ramo 'ignored' — precisa disparar o fluxo normal."""
+    with patch("src.api.webhooks.SyncService") as mock_sync, \
+         patch("src.api.webhooks.settings") as mock_settings, \
+         patch("asyncio.create_task") as mock_create_task:
+
+        mock_settings.clickup_webhook_secret = ""
+        mock_sync_instance = AsyncMock()
+        mock_sync_instance.handle_clickup_webhook = AsyncMock(return_value=AsyncMock(success=True, message="ok"))
+        mock_sync.return_value = mock_sync_instance
+
+        async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+            resp = await client.post("/webhooks/clickup", json={
+                "event": "taskDeleted",
+                "task_id": "t1",
+                "history_items": [],
+            })
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    mock_sync_instance.handle_clickup_webhook.assert_called_once_with("taskDeleted", "t1", [])
+    mock_create_task.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_webhook_ignored_event(app_with_db):
     async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
         resp = await client.post("/webhooks/clickup", json={
