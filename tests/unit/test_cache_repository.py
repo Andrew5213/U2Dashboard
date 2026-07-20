@@ -225,6 +225,68 @@ async def test_get_overview_kpis(repo, db, seed_list):
     assert kpis["completion_rate"] == pytest.approx(1 / 3, abs=0.01)
 
 
+@pytest.mark.asyncio
+async def test_get_overview_kpis_counts_subtasks_not_parent(repo, db, seed_list):
+    # Task pai com subtasks: o progresso deve vir das subtasks, não da task pai.
+    await repo.upsert_task(
+        {"id": "parent1", "name": "Pai", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "sub1", "name": "Sub1", "status": {"status": "complete", "type": "closed"},
+         "parent": "parent1", "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "sub2", "name": "Sub2", "status": {"status": "open", "type": "open"},
+         "parent": "parent1", "list": {"id": "l1"}},
+        "l1",
+    )
+    # Task de topo sem subtasks: conta por ela mesma.
+    await repo.upsert_task(
+        {"id": "leaf1", "name": "Leaf", "status": {"status": "complete", "type": "closed"}, "list": {"id": "l1"}},
+        "l1",
+    )
+    await db.commit()
+
+    kpis = await repo.get_overview_kpis("s1")
+    # Unidades: sub1, sub2, leaf1 (parent1 é excluído por ter subtasks)
+    assert kpis["total_tasks"] == 3
+    assert kpis["completed_tasks"] == 2
+    assert kpis["completion_rate"] == pytest.approx(2 / 3, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_get_folder_kpis_counts_subtasks_not_parent(repo, db):
+    await repo.upsert_space({"id": "s1", "name": "S"})
+    await repo.upsert_folder({"id": "f1", "name": "F"}, "s1")
+    await db.commit()
+    await repo.upsert_list({"id": "l1", "name": "L"}, "s1", "f1")
+    await db.commit()
+
+    await repo.upsert_task(
+        {"id": "parent1", "name": "Pai", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "sub1", "name": "Sub1", "status": {"status": "complete", "type": "closed"},
+         "parent": "parent1", "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "sub2", "name": "Sub2", "status": {"status": "open", "type": "open"},
+         "parent": "parent1", "list": {"id": "l1"}},
+        "l1",
+    )
+    await db.commit()
+
+    kpis = await repo.get_folder_kpis("f1")
+    # Unidades: sub1, sub2 (parent1 é excluído por ter subtasks)
+    assert kpis["total_tasks"] == 2
+    assert kpis["completed_tasks"] == 1
+    assert kpis["completion_rate"] == pytest.approx(0.5, abs=0.01)
+
+
 # ─── get_subtask_count_by_parent ─────────────────────────────────────────────
 
 @pytest.mark.asyncio

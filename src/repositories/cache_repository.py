@@ -18,6 +18,19 @@ def _ms_to_dt(ms: str | int | None) -> datetime | None:
         return None
 
 
+def _leaf_tasks_clause():
+    """Filtro para tarefas 'folha' (unidade real de progresso): subtasks, ou tasks de
+    topo sem subtasks. Exclui tasks de topo que possuem subtasks, já que o progresso
+    dessas é representado pelas próprias subtasks."""
+    parent_ids = (
+        select(ClickUpTaskCache.parent_task_id)
+        .where(ClickUpTaskCache.parent_task_id.isnot(None))
+        .distinct()
+        .scalar_subquery()
+    )
+    return ClickUpTaskCache.task_id.notin_(parent_ids)
+
+
 class CacheRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
@@ -208,7 +221,7 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .where(and_(
                 ClickUpListCache.space_id == space_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ))
         )).one()
 
@@ -217,7 +230,7 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .where(and_(
                 ClickUpListCache.space_id == space_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ))
             .group_by(ClickUpTaskCache.status)
         )).fetchall()}
@@ -264,7 +277,7 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id, isouter=True)
             .join(ClickUpTaskCache, and_(
                 ClickUpTaskCache.list_id == ClickUpListCache.list_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ), isouter=True)
             .where(ClickUpFolderCache.space_id == space_id)
             .group_by(ClickUpFolderCache.folder_id, ClickUpFolderCache.name)
@@ -312,7 +325,7 @@ class CacheRepository:
             )
             .join(ClickUpTaskCache, and_(
                 ClickUpTaskCache.list_id == ClickUpListCache.list_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ), isouter=True)
             .where(and_(*conditions))
             .group_by(ClickUpListCache.list_id, ClickUpListCache.name, ClickUpListCache.folder_id)
@@ -370,7 +383,7 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .where(and_(
                 ClickUpListCache.space_id == space_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ))
         )
         tasks = list((await self._db.execute(stmt)).scalars().all())
@@ -471,7 +484,7 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
             .join(ClickUpTaskCache, and_(
                 ClickUpTaskCache.list_id == ClickUpListCache.list_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ))
             .where(ClickUpFolderCache.space_id == space_id)
             .group_by(ClickUpFolderCache.folder_id, ClickUpFolderCache.name)
@@ -564,14 +577,14 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .where(and_(
                 ClickUpListCache.folder_id == folder_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ))
         )).one()
 
         dist = {r[0] or "sem status": r[1] for r in (await self._db.execute(
             select(ClickUpTaskCache.status, func.count(ClickUpTaskCache.task_id))
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
-            .where(and_(ClickUpListCache.folder_id == folder_id, ClickUpTaskCache.parent_task_id.is_(None)))
+            .where(and_(ClickUpListCache.folder_id == folder_id, _leaf_tasks_clause()))
             .group_by(ClickUpTaskCache.status)
         )).fetchall()}
 
@@ -660,7 +673,7 @@ class CacheRepository:
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .where(and_(
                 ClickUpListCache.folder_id == folder_id,
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _leaf_tasks_clause(),
             ))
         )
         tasks = list((await self._db.execute(stmt)).scalars().all())
