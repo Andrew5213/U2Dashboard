@@ -3,7 +3,7 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from src.core.database import Base
 from src.models.cache_models import (
-    ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache, ClickUpTaskCache,
+    ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache, ClickUpTaskCache, DisciplineWeight,
 )
 from src.repositories.cache_repository import CacheRepository, _ms_to_dt
 
@@ -179,6 +179,61 @@ async def test_mark_tasks_stale_removes_deleted_subtasks(repo, db, seed_list):
     assert await db.get(ClickUpTaskCache, "sub2") is None
     assert await db.get(ClickUpTaskCache, "sub1") is not None
     assert await db.get(ClickUpTaskCache, "parent") is not None
+
+
+# ─── mark_lists_stale / mark_folders_stale ────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_mark_lists_stale_removes_deleted_list_and_its_data(repo, db):
+    await repo.upsert_space({"id": "s1", "name": "S"})
+    await db.commit()
+    await repo.upsert_list({"id": "l1", "name": "Fica"}, "s1", None)
+    await repo.upsert_list({"id": "l2", "name": "Apagada no ClickUp"}, "s1", None)
+    await db.commit()
+    await repo.upsert_task({"id": "t1", "name": "t1", "list": {"id": "l2"}}, "l2")
+    await db.commit()
+    await repo.set_discipline_weights({"l2": 0.5})
+    await db.commit()
+
+    removed = await repo.mark_lists_stale("s1", {"l1"})
+    await db.commit()
+
+    assert removed == 1
+    assert await db.get(ClickUpListCache, "l1") is not None
+    assert await db.get(ClickUpListCache, "l2") is None
+    assert await db.get(ClickUpTaskCache, "t1") is None
+    assert (await db.get(DisciplineWeight, "l2")) is None
+
+
+@pytest.mark.asyncio
+async def test_mark_lists_stale_ignores_other_spaces(repo, db):
+    await repo.upsert_space({"id": "s1", "name": "S1"})
+    await repo.upsert_space({"id": "s2", "name": "S2"})
+    await db.commit()
+    await repo.upsert_list({"id": "l1", "name": "Outro space"}, "s2", None)
+    await db.commit()
+
+    removed = await repo.mark_lists_stale("s1", set())
+    await db.commit()
+
+    assert removed == 0
+    assert await db.get(ClickUpListCache, "l1") is not None
+
+
+@pytest.mark.asyncio
+async def test_mark_folders_stale_removes_deleted_folder(repo, db):
+    await repo.upsert_space({"id": "s1", "name": "S"})
+    await db.commit()
+    await repo.upsert_folder({"id": "f1", "name": "Fica"}, "s1")
+    await repo.upsert_folder({"id": "f2", "name": "Apagada no ClickUp"}, "s1")
+    await db.commit()
+
+    removed = await repo.mark_folders_stale("s1", {"f1"})
+    await db.commit()
+
+    assert removed == 1
+    assert await db.get(ClickUpFolderCache, "f1") is not None
+    assert await db.get(ClickUpFolderCache, "f2") is None
 
 
 # ─── get_task_list_id / delete_task ───────────────────────────────────────────

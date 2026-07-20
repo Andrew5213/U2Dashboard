@@ -14,6 +14,8 @@ class CacheRefreshSummary:
     folders_updated: int = 0
     lists_updated: int = 0
     tasks_updated: int = 0
+    folders_removed: int = 0
+    lists_removed: int = 0
     duration_seconds: float = 0.0
     errors: list[str] = field(default_factory=list)
 
@@ -54,15 +56,20 @@ class CacheService:
                 # Todos os dados ficam na sessão e são gravados atomicamente ao final.
                 # Isso impede que o dashboard leia estados parciais (ex: pasta com 0 tasks
                 # porque o commit ocorreu antes de carregar as tasks daquela lista).
+                seen_folder_ids: set[str] = set()
+                seen_list_ids: set[str] = set()
+
                 folders = await clickup.get_folders(space_id)
                 for folder in folders:
                     folder_id = str(folder["id"])
+                    seen_folder_ids.add(folder_id)
                     await self._repo.upsert_folder(folder, space_id)
                     summary.folders_updated += 1
 
                     lists = await clickup.get_lists_in_folder(folder_id)
                     for lst in lists:
                         list_id = str(lst["id"])
+                        seen_list_ids.add(list_id)
                         await self._repo.upsert_list(lst, space_id, folder_id)
                         summary.lists_updated += 1
 
@@ -73,11 +80,16 @@ class CacheService:
                 folderless = await clickup.get_folderless_lists(space_id)
                 for lst in folderless:
                     list_id = str(lst["id"])
+                    seen_list_ids.add(list_id)
                     await self._repo.upsert_list(lst, space_id, None)
                     summary.lists_updated += 1
 
                     await self._load_tasks(clickup, list_id, summary)
                     await asyncio.sleep(0.6)
+
+                # 5) Poda de listas e pastas apagadas no ClickUp (não retornadas mais pela API)
+                summary.lists_removed = await self._repo.mark_lists_stale(space_id, seen_list_ids)
+                summary.folders_removed = await self._repo.mark_folders_stale(space_id, seen_folder_ids)
 
                 # Commit único e atômico — o dashboard só vê dados completos ou o estado anterior
                 await self._db.commit()
@@ -110,6 +122,7 @@ class CacheService:
         logger.info(
             f"Cache refresh [{trigger}]: {summary.folders_updated} folders, "
             f"{summary.lists_updated} listas, {summary.tasks_updated} tasks "
+            f"({summary.folders_removed} folders e {summary.lists_removed} listas removidas) "
             f"em {summary.duration_seconds:.1f}s — status={status}"
         )
         return summary

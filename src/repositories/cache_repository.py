@@ -199,6 +199,34 @@ class CacheRepository:
             await self._db.execute(delete(ClickUpTaskCache).where(ClickUpTaskCache.task_id.in_(stale)))
         return len(stale)
 
+    async def mark_lists_stale(self, space_id: str, seen_ids: set[str]) -> int:
+        """Remove do cache listas apagadas no ClickUp (não retornadas mais pela API),
+        junto com suas tasks/subtasks e pesos de disciplina — SQLite não força FKs
+        aqui, então essa limpeza precisa ser manual, na ordem filho → pai."""
+        result = await self._db.execute(
+            select(ClickUpListCache.list_id).where(ClickUpListCache.space_id == space_id)
+        )
+        existing = {row[0] for row in result.fetchall()}
+        stale = existing - seen_ids
+        if stale:
+            await self._db.execute(delete(ClickUpTaskCache).where(ClickUpTaskCache.list_id.in_(stale)))
+            await self._db.execute(delete(DisciplineWeight).where(DisciplineWeight.list_id.in_(stale)))
+            await self._db.execute(delete(ClickUpListCache).where(ClickUpListCache.list_id.in_(stale)))
+        return len(stale)
+
+    async def mark_folders_stale(self, space_id: str, seen_ids: set[str]) -> int:
+        """Remove do cache pastas apagadas no ClickUp. Listas/tasks dessas pastas já
+        foram removidas por `mark_lists_stale` (a API para de retorná-las junto com a
+        pasta apagada), então aqui só resta a linha da própria pasta."""
+        result = await self._db.execute(
+            select(ClickUpFolderCache.folder_id).where(ClickUpFolderCache.space_id == space_id)
+        )
+        existing = {row[0] for row in result.fetchall()}
+        stale = existing - seen_ids
+        if stale:
+            await self._db.execute(delete(ClickUpFolderCache).where(ClickUpFolderCache.folder_id.in_(stale)))
+        return len(stale)
+
     # ─── Leituras ────────────────────────────────────────────────────────────
 
     async def get_overview_kpis(self, space_id: str) -> dict:

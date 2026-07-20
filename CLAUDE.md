@@ -134,6 +134,8 @@ After each handled webhook event, the cache is updated and an SSE broadcast fire
 
 **Deleted-task pruning on cache refresh**: `CacheRepository.mark_tasks_stale(list_id, seen_ids)` diffs the full task list against what ClickUp currently returns (which includes subtasks, since `get_tasks()` always passes `subtasks=true`) and deletes any cached row not in that set — this covers both top-level tasks and subtasks with no parent-vs-subtask distinction. (This method used to filter to `parent_task_id IS NULL` only, so a subtask deleted in ClickUp was never pruned by a refresh, only ever by the `taskDeleted` webhook above — the two paths are now consistent.)
 
+**Deleted-list/folder pruning on cache refresh**: `CacheService.refresh_cache_full` collects every folder/list ID actually returned by the ClickUp API during the walk, then calls `CacheRepository.mark_lists_stale(space_id, seen_list_ids)` and `mark_folders_stale(space_id, seen_folder_ids)` once at the end to delete any cached folder/list not in those sets. There is no webhook equivalent for list/folder deletion (ClickUp doesn't send one), so a deleted list/folder only disappears from the dashboard/reports after the next full refresh (`cache_worker` interval, `POST /dashboard/refresh`, or app restart) — never immediately. SQLite doesn't enforce foreign keys here, so `mark_lists_stale` manually cascades: it deletes the list's tasks and `discipline_weights` rows before deleting the list row itself.
+
 ## Dashboard & Cache Layer
 
 The app maintains a local SQLite cache of the ClickUp space structure to serve the dashboard UI without hitting the ClickUp API on every page load.

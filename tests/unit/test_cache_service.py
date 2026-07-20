@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from src.core.database import Base
+from src.models.cache_models import ClickUpFolderCache, ClickUpListCache, ClickUpTaskCache
 from src.services.cache_service import CacheService, CacheRefreshSummary
 
 TEST_DB = "sqlite+aiosqlite:///:memory:"
@@ -140,6 +141,34 @@ async def test_apply_webhook_event_api_error(db):
         svc = CacheService(db)
         result = await svc.apply_webhook_event("taskUpdated", "t_bad")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_cache_full_removes_list_and_folder_deleted_in_clickup(db):
+    from src.repositories.cache_repository import CacheRepository
+    repo = CacheRepository(db)
+    await repo.upsert_space({"id": "s1", "name": "Space"})
+    await db.commit()
+    # Pasta e lista que existiam num refresh anterior mas foram apagadas no ClickUp
+    await repo.upsert_folder({"id": "f-old", "name": "Pasta Apagada"}, "s1")
+    await db.commit()
+    await repo.upsert_list({"id": "l-old", "name": "Lista Apagada"}, "s1", "f-old")
+    await db.commit()
+    await repo.upsert_task({"id": "t-old", "name": "Task orfa", "list": {"id": "l-old"}}, "l-old")
+    await db.commit()
+
+    # A API agora só retorna a pasta/lista "f1"/"l1" — f-old/l-old não existem mais lá
+    mock_client = _make_clickup_client()
+    with patch("src.services.cache_service.ClickUpClient", return_value=mock_client), \
+         patch("asyncio.sleep", new_callable=AsyncMock):
+        svc = CacheService(db)
+        summary = await svc.refresh_cache_full("s1", trigger="test")
+
+    assert summary.folders_removed == 1
+    assert summary.lists_removed == 1
+    assert await db.get(ClickUpFolderCache, "f-old") is None
+    assert await db.get(ClickUpListCache, "l-old") is None
+    assert await db.get(ClickUpTaskCache, "t-old") is None
 
 
 @pytest.mark.asyncio
