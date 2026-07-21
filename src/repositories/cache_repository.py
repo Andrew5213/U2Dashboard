@@ -1066,6 +1066,7 @@ class CacheRepository:
                 ClickUpTaskCache,
                 ParentAlias.task_id.label("par_id"),
                 ParentAlias.name.label("par_name"),
+                ParentAlias.status.label("par_status"),
                 ClickUpListCache.name.label("list_name"),
                 ClickUpFolderCache.folder_id.label("folder_id"),
                 ClickUpFolderCache.name.label("folder_name"),
@@ -1081,9 +1082,14 @@ class CacheRepository:
             .order_by(ClickUpFolderCache.name, ClickUpListCache.name, ParentAlias.name, ClickUpTaskCache.name)
         )).all()
 
+        # Containers criados sob demanda para tarefas-pai que não tiveram atualização
+        # reportável própria, mas cujas subtarefas tiveram — mantém a mesma estrutura
+        # aninhada (pai + subtarefas indentadas) em vez de uma linha solta "Pai > Sub".
+        parent_shells: dict[tuple[str, str], dict] = {}
+
         for row in sub_rows:
-            task, par_id, par_name, list_name, folder_id, folder_name = (
-                row[0], row[1], row[2], row[3], row[4], row[5]
+            task, par_id, par_name, par_status, list_name, folder_id, folder_name = (
+                row[0], row[1], row[2], row[3], row[4], row[5], row[6]
             )
             cat_result = _cat(task)
             if cat_result is None:
@@ -1100,21 +1106,26 @@ class CacheRepository:
             if par_id in parents:
                 # Attach to existing parent entry
                 parents[par_id]["subtasks"].append(sub)
-            else:
-                # Orphan subtask: show as "Pai > Subtarefa" in its own row
+                continue
+
+            shell_key = (par_id, cat)
+            if shell_key not in parent_shells:
                 if folder_id not in folders:
                     folders[folder_id] = {"folder_id": folder_id, "folder_name": folder_name or "", "tasks": []}
-                folders[folder_id]["tasks"].append({
-                    "task_id": task.task_id,
-                    "name": f"{par_name or '?'} > {task.name or ''}",
-                    "status": task.status or "",
+                shell = {
+                    "task_id": par_id,
+                    "name": par_name or "",
+                    "status": par_status or "",
                     "list_name": list_name or "",
-                    "assignees_str": _asgn(task),
-                    "description": _desc(task),
+                    "assignees_str": "N/D",
+                    "description": "",
                     "date_ref": date_ref,
                     "category": cat,
                     "subtasks": [],
-                })
+                }
+                parent_shells[shell_key] = shell
+                folders[folder_id]["tasks"].append(shell)
+            parent_shells[shell_key]["subtasks"].append(sub)
 
         return [f for f in folders.values() if f["tasks"]]
 
