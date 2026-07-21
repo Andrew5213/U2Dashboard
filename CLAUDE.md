@@ -163,11 +163,13 @@ Four report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use 
 
 - **`GET /reports/pdf`** — executive report for the full space (cover + summary + project health + overdue + upcoming + team performance). Uses `ReportService`.
 - **`GET /reports/pdf/provincia?folder_id=<id>`** — detailed report for a single folder/province (cover + summary + per-list detail with task-level breakdown). Uses `ProvinceReportService`. Incorporates EVM weighted progress when discipline weights are configured.
-- **`GET /reports/pdf/daily`** — daily updates report (tasks created/completed yesterday and today). Uses `PeriodicReportService`.
+- **`GET /reports/pdf/daily`** — daily updates report (tasks completed/updated yesterday and today). Uses `PeriodicReportService`.
 - **`GET /reports/pdf/weekly`** — weekly updates report (last 7 days). Uses `PeriodicReportService`.
 - **`GET /reports/folders`** — lists folders available for province reports (reads from cache).
 
 Bilingual support: `report_strings.py` holds all UI strings keyed by `get_strings(lang)`. `translation.py` maps normalized Portuguese field names → English equivalents via `translate()` / `translate_task_row()`.
+
+**No "created" category — periodic reports and the AI assistant only show real progress**: `CacheRepository.get_period_updates()` (daily/weekly PDF/XLSX) and `get_recent_changes()` (chat assistant tool) used to have a third "created" bucket for newly-created tasks still sitting in their initial status. That bucket was removed entirely — a task/subtask only appears in these reports if it's either `concluded` (closed in the period) or `updated` with its **current** status normalized to one of `_REPORTABLE_UPDATE_STATUSES` in `cache_repository.py` (`fazendo`, `revisão`, `aprovação`, `concluído`/`complete`). Anything still sitting in `planejando` (or any other status outside that list, e.g. `aguardando`/`bloqueado`/`cancelado`) is silently dropped — it never shows up as a "recent change," no matter when it was created or last touched. This also drives the AI assistant: `get_recent_changes` no longer returns a `created` key at all, and its tool description explicitly tells Claude never to mention newly-created tasks.
 
 ## AI Agent (Chat)
 

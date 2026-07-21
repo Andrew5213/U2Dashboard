@@ -20,7 +20,9 @@ TOOL_DEFINITIONS: list[dict] = [
             "'hoje', 'ontem', 'essa semana', 'este mês', 'últimos X dias', 'recentemente'. "
             "Também usar para: 'o que mudou', 'o que foi concluído', 'quais foram concluídas', "
             "'alterações do dia/semana/mês', 'atividade recente', 'novidades do projeto'. "
-            "Retorna tarefas criadas, concluídas e tarefas ativas agrupadas por status no período."
+            "Retorna tarefas concluídas e tarefas com progresso real (Fazendo/Revisão/"
+            "Aprovação) agrupadas por status no período. NÃO inclui tarefas recém-criadas "
+            "(ainda em planejando) — nunca mencione tarefas apenas criadas nas respostas."
         ),
         "input_schema": {
             "type": "object",
@@ -380,7 +382,6 @@ async def dispatch_tool(
                 if folder_id:
                     folder_obj = await repo.get_folder_by_id(folder_id)
                     fname = folder_obj.name if folder_obj else folder_name
-                    changes["created"] = [t for t in changes["created"] if t["folder_name"] == fname]
                     changes["completed"] = [t for t in changes["completed"] if t["folder_name"] == fname]
                     changes["by_status"] = {
                         s: [t for t in tasks if t["folder_name"] == fname]
@@ -395,10 +396,8 @@ async def dispatch_tool(
             }
             claude_data = {
                 "period": period_labels.get(period, period),
-                "created_count": len(changes["created"]),
                 "completed_count": len(changes["completed"]),
                 "active_statuses": {s: len(t) for s, t in by_status_summary.items()},
-                "created": changes["created"][:20],
                 "completed": changes["completed"][:20],
                 "by_status": by_status_summary,
             }

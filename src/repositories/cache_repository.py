@@ -1,4 +1,5 @@
 import json
+import unicodedata
 from datetime import datetime, timezone
 from sqlalchemy import select, delete, func, case, and_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -7,6 +8,20 @@ from src.models.cache_models import (
     ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache,
     ClickUpTaskCache, ClickUpUserCache, CacheRefreshLog, DisciplineWeight,
 )
+
+
+def _norm_status(status: str | None) -> str:
+    if not status:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", status)
+    return nfkd.encode("ascii", "ignore").decode("ascii").strip().lower()
+
+
+# Status que representam progresso real de uma atividade — usados para filtrar
+# relatórios e o assistente de IA, que não devem mais mostrar tarefas recém-criadas
+# (ainda em "planejando") como se fossem uma "mudança" digna de nota.
+_REPORTABLE_ACTIVE_STATUSES = {"fazendo", "revisao", "em revisao", "aprovacao", "em aprovacao"}
+_REPORTABLE_UPDATE_STATUSES = _REPORTABLE_ACTIVE_STATUSES | {"concluido", "complete"}
 
 
 def _ms_to_dt(ms: str | int | None) -> datetime | None:
@@ -830,7 +845,9 @@ class CacheRepository:
         }
 
     async def get_recent_changes(self, space_id: str, since: datetime, limit: int = 40) -> dict:
-        """Retorna tarefas criadas, concluídas e atualizadas desde `since`.
+        """Retorna tarefas concluídas e tarefas com progresso real (Fazendo/Revisão/
+        Aprovação) desde `since`. Tarefas recém-criadas (ainda em "planejando") nunca
+        aparecem aqui — só mudanças de status que representam progresso.
 
         O ClickUp só preenche date_closed ao arquivar — para capturar conclusões
         usa-se date_updated + status_type 'done'/'closed'.
@@ -866,12 +883,6 @@ class CacheRepository:
                 "url": task.url,
             }
 
-        # Tarefas criadas no período
-        created_rows = (await self._db.execute(
-            base.where(ClickUpTaskCache.date_created >= since)
-            .order_by(ClickUpTaskCache.date_created.desc()).limit(limit)
-        )).all()
-
         # Tarefas concluídas no período (date_updated + status done/closed)
         completed_rows = (await self._db.execute(
             base.where(
@@ -881,7 +892,8 @@ class CacheRepository:
             .order_by(ClickUpTaskCache.date_updated.desc()).limit(limit)
         )).all()
 
-        # Todas as tarefas ativas atualizadas no período (exclui done/closed)
+        # Tarefas ativas atualizadas no período (exclui done/closed) — filtradas
+        # abaixo para só manter status de progresso real
         active_rows = (await self._db.execute(
             base.where(
                 ClickUpTaskCache.date_updated >= since,
@@ -894,11 +906,12 @@ class CacheRepository:
         by_status: dict[str, list[dict]] = {}
         for row in active_rows:
             task = row[0]
+            if _norm_status(task.status) not in _REPORTABLE_ACTIVE_STATUSES:
+                continue
             status_name = (task.status or "sem status").lower()
             by_status.setdefault(status_name, []).append(_row_to_dict(row))
 
         return {
-            "created": [_row_to_dict(r) for r in created_rows],
             "completed": [_row_to_dict(r) for r in completed_rows],
             "by_status": by_status,
         }
@@ -965,18 +978,25 @@ class CacheRepository:
             await self._db.commit()
 
     async def get_period_updates(self, space_id: str, since: datetime, until: datetime) -> list[dict]:
-        """Tasks + subtasks closed/created/updated in period, grouped by folder."""
+        """Tasks + subtasks concluídas ou com progresso real (Fazendo/Revisão/Aprovação/
+        Concluído) no período, agrupadas por pasta. Tarefas recém-criadas que ainda
+        estão em "planejando" (ou qualquer outro status fora dessa lista) são
+        descartadas — não aparecem nos relatórios como se fossem uma atualização."""
         import json as _json
         import re as _re
         from sqlalchemy import or_
         from sqlalchemy.orm import aliased
 
-        def _cat(task) -> tuple[str, object]:
+        def _cat(task) -> tuple[str, object] | None:
             if task.date_closed is not None and since <= task.date_closed <= until:
                 return "concluded", task.date_closed
-            if task.date_created is not None and since <= task.date_created <= until:
-                return "created", task.date_created
-            return "updated", task.date_updated
+            if (
+                _norm_status(task.status) in _REPORTABLE_UPDATE_STATUSES
+                and task.date_updated is not None
+                and since <= task.date_updated <= until
+            ):
+                return "updated", task.date_updated
+            return None
 
         def _asgn(task) -> str:
             try:
@@ -1019,7 +1039,10 @@ class CacheRepository:
 
         for row in parent_rows:
             task, list_name, folder_id, folder_name = row[0], row[1], row[2], row[3]
-            cat, date_ref = _cat(task)
+            cat_result = _cat(task)
+            if cat_result is None:
+                continue
+            cat, date_ref = cat_result
             t = {
                 "task_id": task.task_id,
                 "name": task.name or "",
@@ -1062,7 +1085,10 @@ class CacheRepository:
             task, par_id, par_name, list_name, folder_id, folder_name = (
                 row[0], row[1], row[2], row[3], row[4], row[5]
             )
-            cat, date_ref = _cat(task)
+            cat_result = _cat(task)
+            if cat_result is None:
+                continue
+            cat, date_ref = cat_result
             sub = {
                 "task_id": task.task_id,
                 "name": task.name or "",

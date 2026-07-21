@@ -150,20 +150,42 @@ async def test_recent_changes_excludes_subtasks(populated_db):
 
     all_names = (
         [t["name"] for t in result["completed"]]
-        + [t["name"] for t in result["created"]]
         + [t["name"] for group in result["by_status"].values() for t in group]
     )
     assert "Subtarefa Ignorada" not in all_names, "Subtarefas não devem aparecer"
 
 
 @pytest.mark.asyncio
-async def test_recent_changes_today_finds_created(populated_db):
+async def test_recent_changes_has_no_created_bucket(populated_db):
     repo = CacheRepository(populated_db)
     since = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     result = await repo.get_recent_changes(SPACE_ID, since)
 
-    created_names = [t["name"] for t in result["created"]]
-    assert "Reunião de Kick-off" in created_names, "Tarefa criada hoje deve aparecer em 'created'"
+    assert "created" not in result, "Tarefas criadas nunca devem ser reportadas"
+
+
+@pytest.mark.asyncio
+async def test_recent_changes_ignores_newly_created_planning_task(populated_db):
+    repo = CacheRepository(populated_db)
+    since = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    result = await repo.get_recent_changes(SPACE_ID, since)
+
+    all_names = (
+        [t["name"] for t in result["completed"]]
+        + [t["name"] for group in result["by_status"].values() for t in group]
+    )
+    assert "Reunião de Kick-off" not in all_names, (
+        "Tarefa criada hoje e ainda em 'planejando' não deve aparecer em nenhum bucket"
+    )
+
+
+@pytest.mark.asyncio
+async def test_recent_changes_active_excludes_non_progress_statuses(populated_db):
+    repo = CacheRepository(populated_db)
+    since = datetime.utcnow() - timedelta(days=7)
+    result = await repo.get_recent_changes(SPACE_ID, since)
+
+    assert "planejando" not in result["by_status"]
 
 
 # ─── list_tasks_by_status ─────────────────────────────────────────────────────

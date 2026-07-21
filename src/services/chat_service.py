@@ -369,20 +369,6 @@ class ChatService:
                         title=f"Tarefas ativas por status {period}",
                         data=[{"name": s.capitalize(), "value": len(ts)} for s, ts in active.items()],
                     )
-
-                created = ch.get("created", [])
-                if created:
-                    return ChartPayload(
-                        type="table",
-                        title=f"Tarefas criadas {period}",
-                        data={
-                            "headers": ["Tarefa", "Província", "Módulo", "Responsável"],
-                            "rows": [
-                                [t["name"], t["folder_name"], t["list_name"], ", ".join(t.get("assignees", []))]
-                                for t in created
-                            ],
-                        },
-                    )
                 return None
 
             if tool_name == "get_evolution_curve":

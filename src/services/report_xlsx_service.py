@@ -172,7 +172,6 @@ def render_periodic_xlsx(data: dict) -> bytes:
     row = write_kpis(ws, row, [
         ("Provincias com Atividade", data["n_provinces"], NAVY),
         ("Concluidas", data["n_concluded"], GREEN),
-        ("Criadas", data["n_created"], BLUE),
         ("Atualizadas", data["n_updated"], AMBER),
     ])
 
@@ -196,10 +195,10 @@ def render_periodic_xlsx(data: dict) -> bytes:
 
     if data.get("folders"):
         for folder in data["folders"]:
-            categories = {"concluded": [], "created": [], "updated": []}
+            categories = {"concluded": [], "updated": []}
             for tk in folder["tasks"]:
                 categories.setdefault(tk["category"], []).append(tk)
-            labels = {"concluded": "Concluidas", "created": "Criadas", "updated": "Atualizadas"}
+            labels = {"concluded": "Concluidas", "updated": "Atualizadas"}
             for cat, label in labels.items():
                 _write_tasks_block(f"{folder['folder_name']} - {label}", categories.get(cat, []))
     else:

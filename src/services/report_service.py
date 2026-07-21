@@ -1441,11 +1441,10 @@ class _PeriodicReport(_Report):
         self.set_line_width(0.3)
         self.line(18, 80, 192, 80)
 
-        kw, kh, gap = 40, 22, 3
+        kw, kh, gap = 54, 22, 4
         kpis_cover = [
             (str(data["n_provinces"]), t["periodic_kpi_provinces"]),
             (str(data["n_concluded"]), t["periodic_kpi_concluded"]),
-            (str(data["n_created"]),   t["periodic_kpi_created"]),
             (str(data["n_updated"]),   t["periodic_kpi_updated"]),
         ]
         for i, (val, lbl) in enumerate(kpis_cover):
@@ -1562,7 +1561,6 @@ class _PeriodicReport(_Report):
 
         tasks = folder_data["tasks"]
         concluded = [tk for tk in tasks if tk["category"] == "concluded"]
-        created   = [tk for tk in tasks if tk["category"] == "created"]
         updated   = [tk for tk in tasks if tk["category"] == "updated"]
         n_sub = sum(len(tk.get("subtasks", [])) for tk in tasks)
 
@@ -1570,7 +1568,6 @@ class _PeriodicReport(_Report):
         subtitle_parts = t["prov_updates_subtitle"].format(
             period=_s(period_label),
             concluded=len(concluded),
-            created=len(created),
             updated=len(updated),
         )
         if n_sub:
@@ -1582,7 +1579,6 @@ class _PeriodicReport(_Report):
 
         cat_groups = [
             (concluded, t["cat_concluded"].format(n=len(concluded)), GREEN),
-            (created,   t["cat_created"].format(n=len(created)),    BLUE),
             (updated,   t["cat_updated"].format(n=len(updated)),    AMBER),
         ]
 
@@ -1723,7 +1719,6 @@ class PeriodicReportService:
             folders_data = folders_data_raw
 
         n_concluded = sum(1 for f in folders_data for tk in f["tasks"] if tk["category"] == "concluded")
-        n_created   = sum(1 for f in folders_data for tk in f["tasks"] if tk["category"] == "created")
         n_updated   = sum(1 for f in folders_data for tk in f["tasks"] if tk["category"] == "updated")
 
         last_log = await self._repo.get_last_refresh()
@@ -1737,7 +1732,6 @@ class PeriodicReportService:
             "period_label": period_label,
             "n_provinces": len(folders_data),
             "n_concluded": n_concluded,
-            "n_created": n_created,
             "n_updated": n_updated,
             "folders": folders_data,
             "lang": lang,

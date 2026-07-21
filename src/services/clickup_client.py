@@ -100,6 +100,23 @@ class ClickUpClient:
         logger.info(f"ClickUp list created: {name} (id={data['id']})")
         return data
 
+    async def create_list_in_folder(self, folder_id: str, name: str) -> dict:
+        data = await self._post(f"/folder/{folder_id}/list", {"name": name})
+        logger.info(f"ClickUp list created inside folder {folder_id}: {name} (id={data['id']})")
+        return data
+
+    async def create_custom_field(self, list_id: str, field_def: dict) -> dict:
+        """field_def = {"name": str, "type": str, "type_config": dict}, no formato
+        retornado por GET /list/{id}/field (sem os campos id/date_created/etc)."""
+        payload = {
+            "name": field_def["name"],
+            "type": field_def["type"],
+            "type_config": field_def.get("type_config", {}),
+        }
+        data = await self._post(f"/list/{list_id}/field", payload)
+        logger.info(f"ClickUp custom field created on list {list_id}: {field_def['name']}")
+        return data
+
     async def create_task(self, list_id: str, task: ClickUpTask) -> dict:
         payload: dict = {"name": task.name}
         if task.description:
