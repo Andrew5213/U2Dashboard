@@ -223,7 +223,9 @@ Folder (Province)
 
 **`SUBTASK_WEIGHTS`** — relative weights for activity names, keyed by discipline name. Both keys are normalized (no accents, lowercase, alphanumeric only) via `_norm()`.
 
-**Overriding weights via API**: `POST /disciplines/folder/{folder_id}` saves per-list weights (0.0–1.0, must sum to 1.0) to the `discipline_weights` DB table. `GET /disciplines/folder/{folder_id}` returns current weighted progress. When DB weights exist for a folder's lists, `get_weighted_progress()` uses them instead of the equal-weight fallback.
+**Overriding weights via API**: `POST /disciplines/folder/{folder_id}` saves per-list weights (0.0–1.0, must sum to 1.0) to the `discipline_weights` DB table. `GET /disciplines/folder/{folder_id}` returns current weighted progress (no password needed — read-only). When DB weights exist for a folder's lists, `get_weighted_progress()` uses them instead of the equal-weight fallback.
+
+**Password-gated writes**: both `POST` (set/change weights) and `DELETE /disciplines/folder/{folder_id}` (remove weights) require the header `X-Delete-Password`, checked with `secrets.compare_digest` against the same `settings.documents_delete_password` shared with the Documentações module's delete gate (403 if missing/wrong — see `_check_delete_password()` in `disciplines.py`). The desktop dashboard's weights modal (`saveDisciplineWeights()` in `app.js`) prompts for it via `prompt()` before calling `POST`, same pattern as document deletion. There's no UI wired to the `DELETE` endpoint yet, but it's gated the same way.
 
 **Evolution curve** (`build_province_evolution`): reconstructs a temporal weighted-progress series from `date_closed` of each completed task. Used by `GET /dashboard/evolution` → `DashboardService.get_evolution_data()`. Each point is `{date: ISO, progress: float}` representing cumulative weighted progress at that moment. The series always starts at 0.0 (first task creation date) and ends with today's current value.
 

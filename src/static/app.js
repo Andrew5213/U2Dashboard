@@ -503,12 +503,18 @@
       showToast('A soma dos pesos deve ser 100%. Soma atual: ' + Math.round(sum * 10) / 10 + '%', 'error');
       return;
     }
+    const password = prompt('Digite a senha para alterar os pesos das disciplinas:');
+    if (password === null) return;
     try {
       const res = await fetch('/disciplines/folder/' + folderId, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Delete-Password': password },
         body: JSON.stringify({ weights: weights }),
       });
+      if (res.status === 403) {
+        showToast('Senha incorreta.', 'error');
+        return;
+      }
       const json = await res.json();
       if (!json.success) throw new Error(json.detail || 'Erro ao salvar');
       document.getElementById('disciplines-modal').remove();

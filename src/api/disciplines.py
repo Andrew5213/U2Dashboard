@@ -1,11 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
+import secrets
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.config import settings
 from src.core.database import get_db
 from src.repositories.cache_repository import CacheRepository
 
 router = APIRouter(prefix="/disciplines", tags=["disciplines"])
+
+
+def _check_delete_password(x_delete_password: str) -> None:
+    """Mesma senha compartilhada usada para excluir documentos em /documents —
+    também protege a alteração/remoção de pesos de disciplinas já configurados."""
+    if not secrets.compare_digest(x_delete_password, settings.documents_delete_password):
+        raise HTTPException(status_code=403, detail="Senha incorreta")
 
 
 class WeightEntry(BaseModel):
@@ -43,8 +53,10 @@ async def get_disciplines(folder_id: str, db: AsyncSession = Depends(get_db)):
 async def set_disciplines(
     folder_id: str,
     body: SetWeightsBody,
+    x_delete_password: str = Header(default=""),
     db: AsyncSession = Depends(get_db),
 ):
+    _check_delete_password(x_delete_password)
     repo = CacheRepository(db)
     # Valida que todos os list_ids pertencem a esta pasta
     all_lists = await repo.get_lists_with_metrics(folder_id)
@@ -61,7 +73,12 @@ async def set_disciplines(
 
 
 @router.delete("/folder/{folder_id}", summary="Remover pesos configurados de uma pasta")
-async def delete_disciplines(folder_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_disciplines(
+    folder_id: str,
+    x_delete_password: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    _check_delete_password(x_delete_password)
     repo = CacheRepository(db)
     await repo.delete_discipline_weights(folder_id)
     return JSONResponse({"success": True})
