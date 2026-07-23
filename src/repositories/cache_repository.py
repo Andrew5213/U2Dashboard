@@ -33,6 +33,24 @@ def _ms_to_dt(ms: str | int | None) -> datetime | None:
         return None
 
 
+# Custom fields "Vencimento" e "Data de Conclusão" (tipo date), adicionados pelo
+# usuário a todas as listas do space com o mesmo field id (custom field a nível de
+# Space). Passam a ser a fonte de verdade para due_date/date_closed no cache — têm
+# prioridade sobre os campos nativos do ClickUp (due_date/date_closed), que ficam
+# como fallback apenas para tasks que ainda não foram migradas para os novos campos.
+# Se os fields forem recriados no ClickUp, os ids abaixo precisam ser atualizados
+# (descobertos via GET /list/{id}/field).
+_FIELD_VENCIMENTO_ID = "9c6f3a32-24a2-4163-b833-9f76bf0e900c"
+_FIELD_DATA_CONCLUSAO_ID = "57217afa-f902-485e-bd14-6505c061cd01"
+
+
+def _custom_field_value(task: dict, field_id: str) -> str | int | None:
+    for cf in task.get("custom_fields") or []:
+        if cf.get("id") == field_id:
+            return cf.get("value")
+    return None
+
+
 def _leaf_tasks_clause():
     """Filtro para tarefas 'folha' (unidade real de progresso): subtasks, ou tasks de
     topo sem subtasks. Exclui tasks de topo que possuem subtasks, já que o progresso
@@ -131,6 +149,9 @@ class CacheRepository:
         actual_list = task.get("list") or {}
         actual_list_id = str(actual_list.get("id", list_id)) if actual_list else list_id
 
+        due_date = _custom_field_value(task, _FIELD_VENCIMENTO_ID) or task.get("due_date")
+        date_closed = _custom_field_value(task, _FIELD_DATA_CONCLUSAO_ID) or task.get("date_closed")
+
         stmt = sqlite_insert(ClickUpTaskCache).values(
             task_id=str(task["id"]),
             list_id=actual_list_id,
@@ -142,11 +163,11 @@ class CacheRepository:
             status_color=status_color,
             assignees_json=assignees_json,
             tags_json=tags_json,
-            due_date=_ms_to_dt(task.get("due_date")),
+            due_date=_ms_to_dt(due_date),
             start_date=_ms_to_dt(task.get("start_date")),
             date_created=_ms_to_dt(task.get("date_created")),
             date_updated=_ms_to_dt(task.get("date_updated")),
-            date_closed=_ms_to_dt(task.get("date_closed")),
+            date_closed=_ms_to_dt(date_closed),
             url=task.get("url"),
             last_refreshed_at=datetime.utcnow(),
         )

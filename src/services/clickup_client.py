@@ -39,6 +39,10 @@ class ClickUpClient:
         response.raise_for_status()
         return response.json()
 
+    async def _delete(self, path: str) -> None:
+        response = await self._client.delete(path)
+        response.raise_for_status()
+
     # ─── Leitura ─────────────────────────────────────────────────────────────
 
     async def get_spaces(self, team_id: str) -> list[dict]:
@@ -157,6 +161,10 @@ class ClickUpClient:
 
     async def set_custom_field(self, task_id: str, field_id: str, value: str) -> dict:
         return await self._post(f"/task/{task_id}/field/{field_id}", {"value": value})
+
+    async def delete_task(self, task_id: str) -> None:
+        await self._delete(f"/task/{task_id}")
+        logger.info(f"ClickUp task deleted: {task_id}")
 
     async def create_webhook(self, space_id: str, endpoint_url: str, events: list[str]) -> dict:
         payload = {

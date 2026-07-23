@@ -150,6 +150,65 @@ async def test_upsert_task_idempotent(repo, db, seed_list):
     assert t.name == "Atualizado"
 
 
+# ─── upsert_task — custom fields "Vencimento"/"Data de Conclusão" ────────────
+
+from src.repositories.cache_repository import _FIELD_VENCIMENTO_ID, _FIELD_DATA_CONCLUSAO_ID
+
+
+@pytest.mark.asyncio
+async def test_upsert_task_prefers_vencimento_field_over_native_due_date(repo, db, seed_list):
+    task = {
+        "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
+        "list": {"id": "l1"},
+        "due_date": "1700000000000",  # nativo — deve ser ignorado
+        "custom_fields": [{"id": _FIELD_VENCIMENTO_ID, "value": "1800000000000"}],
+    }
+    await repo.upsert_task(task, "l1")
+    await db.commit()
+    t = await db.get(ClickUpTaskCache, "t1")
+    assert t.due_date == _ms_to_dt("1800000000000")
+
+
+@pytest.mark.asyncio
+async def test_upsert_task_falls_back_to_native_due_date_when_field_unset(repo, db, seed_list):
+    task = {
+        "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
+        "list": {"id": "l1"},
+        "due_date": "1700000000000",
+        "custom_fields": [{"id": _FIELD_VENCIMENTO_ID, "value": None}],
+    }
+    await repo.upsert_task(task, "l1")
+    await db.commit()
+    t = await db.get(ClickUpTaskCache, "t1")
+    assert t.due_date == _ms_to_dt("1700000000000")
+
+
+@pytest.mark.asyncio
+async def test_upsert_task_prefers_data_conclusao_field_over_native_date_closed(repo, db, seed_list):
+    task = {
+        "id": "t1", "name": "Task", "status": {"status": "complete", "type": "done"},
+        "list": {"id": "l1"},
+        "date_closed": "1700000000000",  # nativo — deve ser ignorado
+        "custom_fields": [{"id": _FIELD_DATA_CONCLUSAO_ID, "value": "1800000000000"}],
+    }
+    await repo.upsert_task(task, "l1")
+    await db.commit()
+    t = await db.get(ClickUpTaskCache, "t1")
+    assert t.date_closed == _ms_to_dt("1800000000000")
+
+
+@pytest.mark.asyncio
+async def test_upsert_task_without_custom_fields_key_uses_native_dates(repo, db, seed_list):
+    task = {
+        "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
+        "list": {"id": "l1"}, "due_date": "1700000000000",
+    }
+    await repo.upsert_task(task, "l1")
+    await db.commit()
+    t = await db.get(ClickUpTaskCache, "t1")
+    assert t.due_date == _ms_to_dt("1700000000000")
+
+
 # ─── mark_tasks_stale ────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

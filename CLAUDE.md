@@ -157,6 +157,8 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
+**"Vencimento" / "Data de Conclusão" custom fields override native due date/close date**: the user added two `date`-type custom fields — "Vencimento" and "Data de Conclusão" — to every list in the space, all sharing the same field id (`_FIELD_VENCIMENTO_ID` / `_FIELD_DATA_CONCLUSAO_ID` in `cache_repository.py`, discovered via `GET /list/{id}/field`). `CacheRepository.upsert_task()` now reads these via `_custom_field_value()` and uses them as `due_date`/`date_closed` in the cache, falling back to ClickUp's native `due_date`/`date_closed` only when the custom field isn't set on that task yet. Every overdue/upcoming/gantt/evolution computation in the app reads `due_date`/`date_closed` from this same cache column, so this single upsert-time change is what makes the whole dashboard and every PDF/XLSX report follow the new fields — no other call site needed to change. If these fields are ever deleted and recreated in ClickUp, the two id constants must be updated (they're per-field-instance, not per-name).
+
 ## PDF Reports
 
 Four report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use `_s()` helper to sanitize em-dashes, curly quotes, etc.). Every PDF endpoint accepts `?lang=pt|en` (default `pt`) and `?inline=true` to stream in-browser.
