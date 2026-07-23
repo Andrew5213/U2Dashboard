@@ -5,7 +5,9 @@ from src.core.database import Base
 from src.models.cache_models import (
     ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache, ClickUpTaskCache, DisciplineWeight,
 )
-from src.repositories.cache_repository import CacheRepository, _ms_to_dt
+from src.repositories.cache_repository import (
+    CacheRepository, _ms_to_dt, _FIELD_VENCIMENTO_ID, _FIELD_DATA_CONCLUSAO_ID,
+)
 
 # ─── Setup in-memory SQLite ──────────────────────────────────────────────────
 
@@ -125,6 +127,7 @@ async def test_upsert_task_basic(repo, db, seed_list):
         "status": {"status": "in progress", "type": "open", "color": "#4ade80"},
         "assignees": [{"id": "u1", "username": "João"}],
         "due_date": "1748649600000",
+        "custom_fields": [{"id": _FIELD_VENCIMENTO_ID, "value": "1748649600000"}],
         "list": {"id": "l1"},
     }
     await repo.upsert_task(task, "l1")
@@ -152,9 +155,6 @@ async def test_upsert_task_idempotent(repo, db, seed_list):
 
 # ─── upsert_task — custom fields "Vencimento"/"Data de Conclusão" ────────────
 
-from src.repositories.cache_repository import _FIELD_VENCIMENTO_ID, _FIELD_DATA_CONCLUSAO_ID
-
-
 @pytest.mark.asyncio
 async def test_upsert_task_prefers_vencimento_field_over_native_due_date(repo, db, seed_list):
     task = {
@@ -170,17 +170,17 @@ async def test_upsert_task_prefers_vencimento_field_over_native_due_date(repo, d
 
 
 @pytest.mark.asyncio
-async def test_upsert_task_falls_back_to_native_due_date_when_field_unset(repo, db, seed_list):
+async def test_upsert_task_ignores_native_due_date_when_field_unset(repo, db, seed_list):
     task = {
         "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
         "list": {"id": "l1"},
-        "due_date": "1700000000000",
+        "due_date": "1700000000000",  # nativo — nao deve mais ser usado, nem como fallback
         "custom_fields": [{"id": _FIELD_VENCIMENTO_ID, "value": None}],
     }
     await repo.upsert_task(task, "l1")
     await db.commit()
     t = await db.get(ClickUpTaskCache, "t1")
-    assert t.due_date == _ms_to_dt("1700000000000")
+    assert t.due_date is None
 
 
 @pytest.mark.asyncio
@@ -198,15 +198,15 @@ async def test_upsert_task_prefers_data_conclusao_field_over_native_date_closed(
 
 
 @pytest.mark.asyncio
-async def test_upsert_task_without_custom_fields_key_uses_native_dates(repo, db, seed_list):
+async def test_upsert_task_without_custom_fields_key_has_no_due_date(repo, db, seed_list):
     task = {
         "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
-        "list": {"id": "l1"}, "due_date": "1700000000000",
+        "list": {"id": "l1"}, "due_date": "1700000000000",  # nativo — ignorado
     }
     await repo.upsert_task(task, "l1")
     await db.commit()
     t = await db.get(ClickUpTaskCache, "t1")
-    assert t.due_date == _ms_to_dt("1700000000000")
+    assert t.due_date is None
 
 
 # ─── mark_tasks_stale ────────────────────────────────────────────────────────
@@ -324,7 +324,8 @@ async def test_delete_task(repo, db, seed_list):
 async def test_get_overview_kpis(repo, db, seed_list):
     tasks = [
         {"id": "t1", "name": "A", "status": {"status": "complete", "type": "closed"}, "list": {"id": "l1"}},
-        {"id": "t2", "name": "B", "status": {"status": "open", "type": "open"}, "due_date": "1000", "list": {"id": "l1"}},
+        {"id": "t2", "name": "B", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"},
+         "custom_fields": [{"id": _FIELD_VENCIMENTO_ID, "value": "1000"}]},
         {"id": "t3", "name": "C", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"}},
     ]
     for t in tasks:

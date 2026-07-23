@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from src.core.database import Base
 from src.models.dashboard_schemas import TaskSummary, TaskDetail
-from src.repositories.cache_repository import CacheRepository
+from src.repositories.cache_repository import CacheRepository, _FIELD_VENCIMENTO_ID
 from src.services.dashboard_service import DashboardService, _task_to_summary
 from src.models.cache_models import ClickUpTaskCache
 
@@ -35,7 +35,7 @@ async def seeded_db(db):
     tasks = [
         {"id": "t1", "name": "Task concluída", "status": {"status": "complete", "type": "closed"}, "list": {"id": "l1"}},
         {"id": "t2", "name": "Task em atraso", "status": {"status": "open", "type": "open"},
-         "due_date": "1000", "list": {"id": "l1"}},
+         "list": {"id": "l1"}, "custom_fields": [{"id": _FIELD_VENCIMENTO_ID, "value": "1000"}]},
         {"id": "t3", "name": "Task normal", "status": {"status": "open", "type": "open"}, "list": {"id": "l2"}},
     ]
     for t in tasks:

@@ -35,9 +35,10 @@ def _ms_to_dt(ms: str | int | None) -> datetime | None:
 
 # Custom fields "Vencimento" e "Data de Conclusão" (tipo date), adicionados pelo
 # usuário a todas as listas do space com o mesmo field id (custom field a nível de
-# Space). Passam a ser a fonte de verdade para due_date/date_closed no cache — têm
-# prioridade sobre os campos nativos do ClickUp (due_date/date_closed), que ficam
-# como fallback apenas para tasks que ainda não foram migradas para os novos campos.
+# Space). São a ÚNICA fonte de due_date/date_closed no cache — os campos nativos
+# do ClickUp (due_date/date_closed) não são mais usados, nem como fallback: uma
+# task sem o custom field preenchido aparece sem vencimento/conclusão, mesmo que
+# tenha um due_date nativo antigo configurado.
 # Se os fields forem recriados no ClickUp, os ids abaixo precisam ser atualizados
 # (descobertos via GET /list/{id}/field).
 _FIELD_VENCIMENTO_ID = "9c6f3a32-24a2-4163-b833-9f76bf0e900c"
@@ -149,8 +150,8 @@ class CacheRepository:
         actual_list = task.get("list") or {}
         actual_list_id = str(actual_list.get("id", list_id)) if actual_list else list_id
 
-        due_date = _custom_field_value(task, _FIELD_VENCIMENTO_ID) or task.get("due_date")
-        date_closed = _custom_field_value(task, _FIELD_DATA_CONCLUSAO_ID) or task.get("date_closed")
+        due_date = _custom_field_value(task, _FIELD_VENCIMENTO_ID)
+        date_closed = _custom_field_value(task, _FIELD_DATA_CONCLUSAO_ID)
 
         stmt = sqlite_insert(ClickUpTaskCache).values(
             task_id=str(task["id"]),
