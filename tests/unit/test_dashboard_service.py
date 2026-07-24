@@ -123,7 +123,10 @@ async def test_get_overview(seeded_db):
     assert overview.overdue_tasks == 1
     assert overview.total_folders == 1
     assert overview.total_lists == 2
-    assert abs(overview.completion_rate - 1 / 3) < 0.01
+    # completion_rate vem do progresso ponderado: cada lista pesa igual dentro da
+    # pasta (não a contagem de tarefas). l1 tem 2 tasks (1 concluída, pesos iguais
+    # por nome não mapeado) = 0.5; l2 tem 1 task aberta = 0.0. Média = 0.25.
+    assert abs(overview.completion_rate - 0.25) < 0.01
 
 
 @pytest.mark.asyncio

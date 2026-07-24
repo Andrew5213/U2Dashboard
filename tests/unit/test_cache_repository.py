@@ -390,10 +390,57 @@ async def test_get_overview_kpis_counts_subtasks_not_parent(repo, db, seed_list)
     await db.commit()
 
     kpis = await repo.get_overview_kpis("s1")
-    # Unidades: sub1, sub2, leaf1 (parent1 é excluído por ter subtasks)
+    # Contagem bruta: sub1, sub2, leaf1 (parent1 é excluído por ter subtasks)
     assert kpis["total_tasks"] == 3
     assert kpis["completed_tasks"] == 2
-    assert kpis["completion_rate"] == pytest.approx(2 / 3, abs=0.01)
+    # completion_rate agora vem do progresso ponderado (weights_config.py), não da
+    # contagem simples: parent1 e leaf1 são as 2 disciplinas da lista, cada uma com
+    # peso igual (nomes não mapeados caem no fallback). parent1 = 0.5 (1 de 2
+    # subtasks concluída, pesos iguais); leaf1 = 1.0 (concluída). Média = 0.75.
+    assert kpis["completion_rate"] == pytest.approx(0.75, abs=0.01)
+
+
+@pytest.mark.asyncio
+async def test_get_lists_with_metrics_applies_real_engineering_weights(repo, db, seed_list):
+    # "Obras Civis" (peso 30) e "Fim das Obras" (peso 2) são disciplinas reais
+    # mapeadas em weights_config.py — o teste prova que o peso real é usado, não
+    # o fallback de peso igual nem a contagem simples de tarefas-folha.
+    await repo.upsert_task(
+        {"id": "civis", "name": "Obras Civis", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "paredes", "name": "Paredes", "status": {"status": "complete", "type": "closed"},
+         "parent": "civis", "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "pisos", "name": "Pisos", "status": {"status": "open", "type": "open"},
+         "parent": "civis", "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "tetos", "name": "Tetos", "status": {"status": "open", "type": "open"},
+         "parent": "civis", "list": {"id": "l1"}},
+        "l1",
+    )
+    await repo.upsert_task(
+        {"id": "fim", "name": "Fim das Obras", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"}},
+        "l1",
+    )
+    await db.commit()
+
+    lists = await repo.get_lists_with_metrics(None, space_id="s1")
+    l1 = next(l for l in lists if l["list_id"] == "l1")
+
+    # Ponderado: Obras Civis (peso 30/32) x progresso interno (Paredes 30 de 73
+    # concluída) + Fim das Obras (peso 2/32) x 0 = (30/32)*(30/73)
+    expected = (30 / 32) * (30 / 73)
+    assert l1["completion_rate"] == pytest.approx(expected, abs=0.001)
+
+    # Contagem simples de tarefas-folha daria 1/4 (Paredes de 4 folhas) — o
+    # resultado real diverge, confirmando que o peso de engenharia foi aplicado.
+    assert l1["completion_rate"] != pytest.approx(0.25, abs=0.01)
 
 
 @pytest.mark.asyncio

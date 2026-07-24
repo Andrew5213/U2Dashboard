@@ -71,6 +71,30 @@ def _leaf_tasks_clause():
     return ClickUpTaskCache.task_id.notin_(parent_ids)
 
 
+def _build_task_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
+    """Agrupa tasks ORM de uma lista em árvore de 2 níveis para o cálculo ponderado
+    de weights_config.py: [{task_id, name, is_done, subtasks:[{name, is_done}]}]."""
+    parents: dict[str, dict] = {}
+    subtasks_by_parent: dict[str, list] = {}
+    for t in tasks:
+        is_done = t.status_type in ("done", "closed")
+        if t.parent_task_id is None:
+            parents[t.task_id] = {
+                "task_id": t.task_id,
+                "name": t.name or "",
+                "is_done": is_done,
+            }
+        else:
+            subtasks_by_parent.setdefault(t.parent_task_id, []).append({
+                "name": t.name or "",
+                "is_done": is_done,
+            })
+    return [
+        {**task_data, "subtasks": subtasks_by_parent.get(tid, [])}
+        for tid, task_data in parents.items()
+    ]
+
+
 class CacheRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
@@ -316,12 +340,29 @@ class CacheRepository:
             select(func.count(ClickUpListCache.list_id)).where(ClickUpListCache.space_id == space_id)
         )).scalar() or 0
 
+        # Progresso ponderado (disciplina/atividade) — média igual entre as "unidades"
+        # do espaço: cada pasta conta uma vez (já sendo a média das suas listas), e
+        # cada lista sem pasta (folderless) conta como sua própria unidade, no mesmo
+        # pé de igualdade — mesmo critério usado nas contagens brutas acima, que já
+        # incluem listas sem pasta no espaço.
+        space_list_rows = (await self._db.execute(
+            select(ClickUpListCache.list_id, ClickUpListCache.folder_id)
+            .where(ClickUpListCache.space_id == space_id)
+        )).all()
+        space_list_rates = await self._weighted_completion_by_list([r.list_id for r in space_list_rows])
+        units_by_key: dict[str, list[float]] = {}
+        for r in space_list_rows:
+            key = r.folder_id or f"__list__{r.list_id}"
+            units_by_key.setdefault(key, []).append(space_list_rates.get(r.list_id, 0.0))
+        unit_rates = [sum(vals) / len(vals) for vals in units_by_key.values()]
+        completion_rate = sum(unit_rates) / len(unit_rates) if unit_rates else 0.0
+
         total = row.total or 0
         completed = row.completed or 0
         return {
             "total_tasks": total,
             "completed_tasks": completed,
-            "completion_rate": round(completed / total, 4) if total > 0 else 0.0,
+            "completion_rate": round(completion_rate, 4),
             "overdue_tasks": row.overdue or 0,
             "tasks_without_due_date": row.no_due or 0,
             "total_folders": total_folders,
@@ -357,6 +398,7 @@ class CacheRepository:
             .group_by(ClickUpFolderCache.folder_id, ClickUpFolderCache.name)
             .order_by(ClickUpFolderCache.name)
         )).fetchall()
+        folder_rates = await self._weighted_completion_by_folder(space_id)
         return [
             {
                 "folder_id": r.folder_id,
@@ -365,7 +407,7 @@ class CacheRepository:
                 "total_tasks": r.total_tasks or 0,
                 "completed_tasks": r.completed or 0,
                 "overdue_tasks": r.overdue or 0,
-                "completion_rate": round((r.completed or 0) / r.total_tasks, 4) if r.total_tasks else 0.0,
+                "completion_rate": round(folder_rates.get(r.folder_id, 0.0), 4),
             }
             for r in rows
         ]
@@ -405,6 +447,7 @@ class CacheRepository:
             .group_by(ClickUpListCache.list_id, ClickUpListCache.name, ClickUpListCache.folder_id)
             .order_by(ClickUpListCache.name)
         )).fetchall()
+        weighted_rates = await self._weighted_completion_by_list([r.list_id for r in rows])
         return [
             {
                 "list_id": r.list_id,
@@ -413,10 +456,52 @@ class CacheRepository:
                 "total_tasks": r.total_tasks or 0,
                 "completed_tasks": r.completed or 0,
                 "overdue_tasks": r.overdue or 0,
-                "completion_rate": round((r.completed or 0) / r.total_tasks, 4) if r.total_tasks else 0.0,
+                "completion_rate": round(weighted_rates.get(r.list_id, 0.0), 4),
             }
             for r in rows
         ]
+
+    async def _weighted_completion_by_list(self, list_ids: list[str]) -> dict[str, float]:
+        """Progresso 0..1 por lista, usando os pesos de engenharia de disciplina/atividade
+        (TASK_WEIGHTS/SUBTASK_WEIGHTS em weights_config.py) em vez de contagem simples de
+        tarefas-folha. Uma única query busca todas as tasks dos list_ids pedidos."""
+        from src.services.weights_config import compute_list_progress
+
+        if not list_ids:
+            return {}
+
+        tasks = list((await self._db.execute(
+            select(ClickUpTaskCache).where(ClickUpTaskCache.list_id.in_(list_ids))
+        )).scalars().all())
+
+        tasks_by_list: dict[str, list] = {}
+        for t in tasks:
+            tasks_by_list.setdefault(t.list_id, []).append(t)
+
+        rates: dict[str, float] = {}
+        for list_id in list_ids:
+            tree = _build_task_tree(tasks_by_list.get(list_id, []))
+            rates[list_id] = compute_list_progress(tree)[0] if tree else 0.0
+        return rates
+
+    async def _weighted_completion_by_folder(self, space_id: str) -> dict[str, float]:
+        """Progresso 0..1 por pasta = média igual entre as listas da pasta (mesmo
+        princípio de compute_province_progress: cada módulo/lista pesa igual dentro
+        da província)."""
+        list_rows = (await self._db.execute(
+            select(ClickUpListCache.list_id, ClickUpListCache.folder_id)
+            .where(ClickUpListCache.space_id == space_id)
+        )).all()
+        rates = await self._weighted_completion_by_list([r.list_id for r in list_rows])
+
+        by_folder: dict[str, list[float]] = {}
+        for r in list_rows:
+            if r.folder_id:
+                by_folder.setdefault(r.folder_id, []).append(rates.get(r.list_id, 0.0))
+        return {
+            folder_id: sum(vals) / len(vals) if vals else 0.0
+            for folder_id, vals in by_folder.items()
+        }
 
     async def get_tasks_by_list(self, list_id: str, include_subtasks: bool = False) -> list[ClickUpTaskCache]:
         conds = [ClickUpTaskCache.list_id == list_id]
@@ -565,6 +650,7 @@ class CacheRepository:
             .order_by(func.min(func.coalesce(ClickUpTaskCache.start_date, ClickUpTaskCache.date_created)))
         )).fetchall()
 
+        folder_rates = await self._weighted_completion_by_folder(space_id)
         result = []
         for r in rows:
             total = r.total_tasks or 0
@@ -577,7 +663,7 @@ class CacheRepository:
                 "due_date": r.due_date.isoformat() if r.due_date else None,
                 "total_tasks": total,
                 "completed_tasks": completed,
-                "completion_rate": round(completed / total, 4) if total > 0 else 0.0,
+                "completion_rate": round(folder_rates.get(r.folder_id, 0.0), 4),
                 "overdue_tasks": overdue,
                 "is_overdue": overdue > 0,
                 "is_done": total > 0 and completed >= total,
@@ -662,12 +748,18 @@ class CacheRepository:
             .group_by(ClickUpTaskCache.status)
         )).fetchall()}
 
+        list_ids = [r[0] for r in (await self._db.execute(
+            select(ClickUpListCache.list_id).where(ClickUpListCache.folder_id == folder_id)
+        )).all()]
+        list_rates = await self._weighted_completion_by_list(list_ids)
+        completion_rate = sum(list_rates.values()) / len(list_rates) if list_rates else 0.0
+
         total = row.total or 0
         completed = row.completed or 0
         return {
             "total_tasks": total,
             "completed_tasks": completed,
-            "completion_rate": round(completed / total, 4) if total > 0 else 0.0,
+            "completion_rate": round(completion_rate, 4),
             "overdue_tasks": row.overdue or 0,
             "tasks_without_due_date": row.no_due or 0,
             "status_distribution": dist,
@@ -1201,25 +1293,7 @@ class CacheRepository:
         result: list[dict] = []
         for lst in lists:
             all_tasks = await self.get_tasks_by_list(lst["list_id"], include_subtasks=True)
-            parents: dict[str, dict] = {}
-            subtasks_by_parent: dict[str, list] = {}
-            for t in all_tasks:
-                is_done = t.status_type in ("done", "closed")
-                if t.parent_task_id is None:
-                    parents[t.task_id] = {
-                        "task_id": t.task_id,
-                        "name": t.name or "",
-                        "is_done": is_done,
-                    }
-                else:
-                    subtasks_by_parent.setdefault(t.parent_task_id, []).append({
-                        "task_id": t.task_id,
-                        "name": t.name or "",
-                        "is_done": is_done,
-                    })
-            tasks_with_subs = []
-            for tid, task_data in parents.items():
-                tasks_with_subs.append({**task_data, "subtasks": subtasks_by_parent.get(tid, [])})
+            tasks_with_subs = _build_task_tree(all_tasks)
             # overdue count for the list
             _active = ClickUpTaskCache.status_type.notin_(["done", "closed"])
             overdue_count = (await self._db.execute(
