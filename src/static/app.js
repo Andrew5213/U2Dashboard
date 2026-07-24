@@ -57,6 +57,37 @@
     return `<span class="status-badge" style="background:${bg};color:${fg}">${dot}${esc(status || 'sem status')}</span>`;
   }
 
+  /* ── Botão "Observação" (só aparece quando ha nota) ──────────────── */
+  function noteButton(note) {
+    if (!note) return '';
+    return `<button type="button" onclick="event.stopPropagation(); showObservacao(this)" data-note="${esc(note)}"
+      title="Ver observação" class="ml-1.5 text-amber-500 hover:text-amber-600 align-text-bottom">
+      <svg class="w-4 h-4 inline" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"/>
+      </svg>
+    </button>`;
+  }
+
+  window.showObservacao = function (btn) {
+    const note = btn.dataset.note || '';
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
+    modal.innerHTML = `
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <div class="bg-amber-500 px-5 py-3 flex items-center justify-between">
+          <h2 class="text-white font-bold text-sm">Observação</h2>
+          <button onclick="this.closest('.fixed').remove()" class="text-white/80 hover:text-white text-lg leading-none">&times;</button>
+        </div>
+        <div class="px-5 py-4 max-h-80 overflow-y-auto">
+          <p class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">${esc(note)}</p>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.remove();
+    });
+  };
+
   function showToast(msg, type) {
     const el = document.getElementById('toast');
     if (!el) return;
@@ -560,7 +591,7 @@
         ? `<span class="text-xs text-red-500 ml-1" title="Tem subtasks">◈</span>` : '';
       return `<tr class="hover:bg-slate-50 cursor-pointer" onclick="location.hash='#/task/${esc(t.task_id)}'; window.__taskName='${esc(t.name)}'">
         <td class="py-3 px-4">
-          <span class="font-medium text-gray-800">${esc(t.name)}</span>${subtaskIcon}
+          <span class="font-medium text-gray-800">${esc(t.name)}</span>${subtaskIcon}${noteButton(t.observacoes)}
         </td>
         <td class="py-3 px-4">${statusBadge(t.status, t.status_type, t.status_color)}</td>
         <td class="py-3 px-4 text-sm text-gray-500">${esc(assigneeNames)}</td>
@@ -644,7 +675,7 @@
       const names = (s.assignees || []).map(function (a) { return a.username || '?'; }).join(', ') || '—';
       const dueCls = s.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
       return `<tr class="hover:bg-slate-50">
-        <td class="py-2.5 px-4 text-sm text-gray-700">${esc(s.name)}</td>
+        <td class="py-2.5 px-4 text-sm text-gray-700">${esc(s.name)}${noteButton(s.observacoes)}</td>
         <td class="py-2.5 px-4">${statusBadge(s.status, s.status_type, s.status_color)}</td>
         <td class="py-2.5 px-4 text-sm text-gray-500">${esc(names)}</td>
         <td class="py-2.5 px-4 text-sm ${dueCls}">${s.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(s.due_date)}</td>

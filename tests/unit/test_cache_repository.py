@@ -6,7 +6,7 @@ from src.models.cache_models import (
     ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache, ClickUpTaskCache, DisciplineWeight,
 )
 from src.repositories.cache_repository import (
-    CacheRepository, _ms_to_dt, _FIELD_VENCIMENTO_ID, _FIELD_DATA_CONCLUSAO_ID,
+    CacheRepository, _ms_to_dt, _FIELD_VENCIMENTO_ID, _FIELD_DATA_CONCLUSAO_ID, _FIELD_OBSERVACOES_ID,
 )
 
 # ─── Setup in-memory SQLite ──────────────────────────────────────────────────
@@ -207,6 +207,31 @@ async def test_upsert_task_without_custom_fields_key_has_no_due_date(repo, db, s
     await db.commit()
     t = await db.get(ClickUpTaskCache, "t1")
     assert t.due_date is None
+
+
+@pytest.mark.asyncio
+async def test_upsert_task_stores_observacoes_field(repo, db, seed_list):
+    task = {
+        "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
+        "list": {"id": "l1"},
+        "custom_fields": [{"id": _FIELD_OBSERVACOES_ID, "value": "Aguardando material do fornecedor"}],
+    }
+    await repo.upsert_task(task, "l1")
+    await db.commit()
+    t = await db.get(ClickUpTaskCache, "t1")
+    assert t.observacoes == "Aguardando material do fornecedor"
+
+
+@pytest.mark.asyncio
+async def test_upsert_task_without_observacoes_is_none(repo, db, seed_list):
+    task = {
+        "id": "t1", "name": "Task", "status": {"status": "open", "type": "open"},
+        "list": {"id": "l1"},
+    }
+    await repo.upsert_task(task, "l1")
+    await db.commit()
+    t = await db.get(ClickUpTaskCache, "t1")
+    assert t.observacoes is None
 
 
 # ─── mark_tasks_stale ────────────────────────────────────────────────────────

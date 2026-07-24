@@ -47,6 +47,7 @@ class TaskSummary(BaseModel):
     is_overdue: bool = False
     parent_task_id: str | None = None
     has_subtasks: bool = False
+    observacoes: str | None = None
     url: str | None = None
 
 

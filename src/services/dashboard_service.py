@@ -34,6 +34,7 @@ def _task_to_summary(task: ClickUpTaskCache, has_subtasks: bool = False) -> Task
         is_overdue=is_overdue,
         parent_task_id=task.parent_task_id,
         has_subtasks=has_subtasks,
+        observacoes=task.observacoes,
         url=task.url,
     )
 
@@ -164,6 +165,7 @@ class DashboardService:
             is_overdue=is_overdue,
             parent_task_id=task.parent_task_id,
             has_subtasks=len(subtasks) > 0,
+            observacoes=task.observacoes,
             url=task.url,
             description=task.description,
             tags=tags,

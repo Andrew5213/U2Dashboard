@@ -44,6 +44,12 @@ def _ms_to_dt(ms: str | int | None) -> datetime | None:
 _FIELD_VENCIMENTO_ID = "9c6f3a32-24a2-4163-b833-9f76bf0e900c"
 _FIELD_DATA_CONCLUSAO_ID = "57217afa-f902-485e-bd14-6505c061cd01"
 
+# Custom field "Observações" (tipo short_text), também adicionado a todas as listas
+# do space com o mesmo field id. Nota: existe um outro campo mais antigo chamado
+# "Observações" (tipo text) presente só nas listas de projeto FM Site/Transmissor —
+# esse aqui é o novo, espaço-wide, e é o único usado pelo cache/dashboard.
+_FIELD_OBSERVACOES_ID = "c2a3d3cb-26e5-4148-878d-3ec4d21ee6fe"
+
 
 def _custom_field_value(task: dict, field_id: str) -> str | int | None:
     for cf in task.get("custom_fields") or []:
@@ -152,6 +158,7 @@ class CacheRepository:
 
         due_date = _custom_field_value(task, _FIELD_VENCIMENTO_ID)
         date_closed = _custom_field_value(task, _FIELD_DATA_CONCLUSAO_ID)
+        observacoes = _custom_field_value(task, _FIELD_OBSERVACOES_ID) or None
 
         stmt = sqlite_insert(ClickUpTaskCache).values(
             task_id=str(task["id"]),
@@ -169,6 +176,7 @@ class CacheRepository:
             date_created=_ms_to_dt(task.get("date_created")),
             date_updated=_ms_to_dt(task.get("date_updated")),
             date_closed=_ms_to_dt(date_closed),
+            observacoes=observacoes,
             url=task.get("url"),
             last_refreshed_at=datetime.utcnow(),
         )
@@ -186,6 +194,7 @@ class CacheRepository:
                 "start_date": stmt.excluded.start_date,
                 "date_updated": stmt.excluded.date_updated,
                 "date_closed": stmt.excluded.date_closed,
+                "observacoes": stmt.excluded.observacoes,
                 "last_refreshed_at": stmt.excluded.last_refreshed_at,
             },
         ))

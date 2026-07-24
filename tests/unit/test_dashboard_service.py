@@ -54,7 +54,7 @@ def _make_orm_task(**kwargs) -> ClickUpTaskCache:
         tags_json='["tag1"]',
         due_date=None, start_date=None, date_created=None,
         date_updated=None, date_closed=None, parent_task_id=None, url=None,
-        description=None, last_refreshed_at=datetime.utcnow(),
+        description=None, observacoes=None, last_refreshed_at=datetime.utcnow(),
     )
     defaults.update(kwargs)
     t = ClickUpTaskCache()
@@ -98,6 +98,18 @@ def test_task_summary_invalid_assignees_json():
     task = _make_orm_task(assignees_json="invalid json {{")
     summary = _task_to_summary(task)
     assert summary.assignees == []
+
+
+def test_task_summary_passes_through_observacoes():
+    task = _make_orm_task(observacoes="Aguardando aprovação do cliente")
+    summary = _task_to_summary(task)
+    assert summary.observacoes == "Aguardando aprovação do cliente"
+
+
+def test_task_summary_no_observacoes_is_none():
+    task = _make_orm_task()
+    summary = _task_to_summary(task)
+    assert summary.observacoes is None
 
 
 # ─── DashboardService ─────────────────────────────────────────────────────────
