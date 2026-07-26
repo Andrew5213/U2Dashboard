@@ -165,16 +165,19 @@ SUBTASK_WEIGHTS: dict[str, dict[str, float]] = {
         "sistemas de antenas stl parabolicas de 1 80 m e 0 9 m": 10.0,  # 2 pratos, montagem e apontamento
         "instalacao de antena parabolica": 6.0,  # unidade adicional, escopo contido
         "desidratador": 4.0,  # equipamento pequeno, uma conexão pneumática
-        "instalacao de racks": 18.0,  # estrutura que sustenta todos os equipamentos da sala
-        "instalacao de rede": 15.0,  # roteamento de cabo de rede pela sala
-        "instalacao de audio": 15.0,  # roteamento de cabo de áudio pela sala
-        "instalacao de patch de audio": 9.0,  # terminação no patch panel — trabalho de bancada, não roteamento
-        "instalacao eletrica": 10.0,  # circuitos elétricos da sala
-        "instalacao de ups": 8.0,  # unidade + fiação de bateria
-        "instalacao de servidores": 7.0,  # várias unidades para posicionar no rack
-        "instalacao de blades": 6.0,  # chassi com várias lâminas, cabeamento interno simplificado
-        "instalacao de ciscos": 5.0,  # montagem física + conexão básica
-        "instalacao de computadores": 3.0,  # poucas estações nessa sala
+        # ── Sala técnica (CTP) — corrigido: montagem de racks/unidades avulsas é
+        # rápida; o esforço real está na infraestrutura de cabeamento/elétrica que
+        # serve a sala inteira, feita depois que os racks já estão de pé.
+        "instalacao eletrica": 20.0,  # circuitos elétricos de toda a sala — base da qual tudo depende
+        "instalacao de rede": 18.0,  # roteamento de cabo de rede pela sala inteira
+        "instalacao de audio": 18.0,  # roteamento de cabo de áudio pela sala inteira
+        "instalacao de patch de audio": 12.0,  # terminação de todas as vias de áudio no patch panel da sala
+        "instalacao de computadores": 8.0,  # várias estações de trabalho para posicionar e configurar
+        "instalacao de servidores": 8.0,  # várias unidades para posicionar e configurar no rack
+        "instalacao de racks": 4.0,  # montagem da estrutura vazia — rápido comparado ao cabeamento que vem depois
+        "instalacao de blades": 4.0,  # chassi com várias lâminas, cabeamento interno simplificado
+        "instalacao de ups": 4.0,  # unidade + fiação de bateria, escopo contido
+        "instalacao de ciscos": 3.0,  # montagem física + conexão básica
         "instalacao de marshall": 2.0,  # um único aparelho de monitoramento
         "instalacao deva": 2.0,  # um único processador
     },
