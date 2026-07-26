@@ -288,14 +288,12 @@
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         var foldersSorted = folders.slice().sort(function (a, b) {
-          var rA = a.total_tasks > 0 ? a.completed_tasks / a.total_tasks : 0;
-          var rB = b.total_tasks > 0 ? b.completed_tasks / b.total_tasks : 0;
-          return rA - rB; // ascendente → ECharts coloca o mais avançado no topo
+          return (a.completion_rate || 0) - (b.completion_rate || 0); // ascendente → ECharts coloca o mais avançado no topo
         });
         Charts.renderProgressBars('chart-folders', foldersSorted, 'name', 'completed_tasks', 'total_tasks', true, function (f) {
           window.__folderName = f.name;
           location.hash = '#/folder/' + f.folder_id;
-        });
+        }, 'completion_rate');
         Charts.renderStatusDonut('chart-donut', overview.status_distribution);
         Charts.renderAssigneeChart('chart-assignees', assignees);
         Charts.renderEvolutionChart('chart-evolution', evolution);
@@ -329,7 +327,7 @@
     const totalTasks     = lists.reduce(function (s, l) { return s + l.total_tasks; }, 0);
     const completedTasks = lists.reduce(function (s, l) { return s + l.completed_tasks; }, 0);
     const overdueTasks   = lists.reduce(function (s, l) { return s + l.overdue_tasks; }, 0);
-    const rate           = totalTasks > 0 ? completedTasks / totalTasks : 0;
+    const rate           = lists.length ? lists.reduce(function (s, l) { return s + (l.completion_rate || 0); }, 0) / lists.length : 0;
     const wp             = disciplines && disciplines.weights_configured ? disciplines.weighted_progress : null;
     const wpPct          = wp !== null && wp !== undefined ? fmtPct(wp) : null;
 
@@ -381,7 +379,7 @@
       <div class="grid grid-cols-2 ${wpPct ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3 mb-6">
         ${kpiCard(ICONS.folder, 'Áreas / Disciplinas', lists.length)}
         ${kpiCard(ICONS.tasks,  'Tasks', totalTasks)}
-        ${kpiCard(ICONS.check,  'Progresso Simples', fmtPct(rate), completedTasks + ' concluídas', 'text-emerald-600')}
+        ${kpiCard(ICONS.check,  'Concluídas', fmtPct(rate), completedTasks + ' de ' + totalTasks, 'text-emerald-600')}
         ${kpiCard(ICONS.clock,  'Em Atraso', overdueTasks, null, overdueTasks > 0 ? 'text-red-600' : '')}
         ${wpCard}
       </div>
@@ -421,7 +419,7 @@
         Charts.renderProgressBars('chart-lists', lists, 'name', 'completed_tasks', 'total_tasks', true, function (l) {
           window.__listName = l.name;
           location.hash = '#/list/' + l.list_id;
-        });
+        }, 'completion_rate');
       });
     });
   }
@@ -568,9 +566,12 @@
       { label: listName, href: '#/list/' + listId },
     ].filter(Boolean));
 
-    let tasks;
+    let tasks, kpis;
     try {
-      tasks = await api('/dashboard/list/' + listId);
+      [tasks, kpis] = await Promise.all([
+        api('/dashboard/list/' + listId),
+        api('/dashboard/list/' + listId + '/kpis').catch(function () { return null; }),
+      ]);
     } catch (e) {
       setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
       return;
@@ -582,7 +583,7 @@
     const total     = tasks.length;
     const completed = tasks.filter(function (t) { return t.status_type === 'done' || t.status_type === 'closed'; }).length;
     const overdue   = tasks.filter(function (t) { return t.is_overdue; }).length;
-    const rate      = total > 0 ? completed / total : 0;
+    const rate      = kpis ? (kpis.completion_rate || 0) : (total > 0 ? completed / total : 0);
 
     const rows = tasks.map(function (t) {
       const assigneeNames = (t.assignees || []).map(function (a) { return a.username || '?'; }).join(', ') || '—';

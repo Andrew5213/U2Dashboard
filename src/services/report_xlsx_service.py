@@ -105,7 +105,7 @@ def render_province_xlsx(data: dict) -> bytes:
         ("Em Atraso", kpis["overdue_tasks"], RED if kpis["overdue_tasks"] else GRAY_200),
         ("Listas (Modulos)", data["total_lists"], BLUE),
     ])
-    kv = [("Taxa de Conclusao (simples)", kpis["completion_rate"])]
+    kv = [("Taxa de Conclusao", kpis["completion_rate"])]
     if data.get("weighted_progress_pct") is not None:
         kv.append(("Progresso Ponderado (EVM)", data["weighted_progress"]))
     row = write_kv_rows(ws, row, kv)

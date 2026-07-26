@@ -46,6 +46,15 @@ async def get_list(list_id: str, response: Response, svc: DashboardService = Dep
     return DashboardEnvelope(data=[t.model_dump() for t in data])
 
 
+@router.get("/list/{list_id}/kpis", response_model=DashboardEnvelope)
+async def get_list_kpis(list_id: str, response: Response, svc: DashboardService = Depends(_svc)):
+    _no_cache(response)
+    data = await svc.get_list_kpis(list_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Lista não encontrada no cache")
+    return DashboardEnvelope(data=data.model_dump())
+
+
 @router.get("/task/{task_id}", response_model=DashboardEnvelope)
 async def get_task(task_id: str, response: Response, svc: DashboardService = Depends(_svc)):
     _no_cache(response)

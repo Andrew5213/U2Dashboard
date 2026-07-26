@@ -388,18 +388,14 @@
       `);
 
       requestAnimationFrame(()=>requestAnimationFrame(()=>{
-        const sorted = folders.slice().sort((a,b)=>{
-          const rA=a.total_tasks>0?a.completed_tasks/a.total_tasks:0;
-          const rB=b.total_tasks>0?b.completed_tasks/b.total_tasks:0;
-          return rA-rB;
-        });
+        const sorted = folders.slice().sort((a,b)=>(a.completion_rate||0)-(b.completion_rate||0));
         (function(){
           const el=document.getElementById('chart-folders');
           if(!el)return;
           const chart=echarts.init(el,'',{renderer:'canvas'});
           const names=sorted.map(f=>f.name);
-          const completed=sorted.map(f=>f.total_tasks>0?Math.round(f.completed_tasks/f.total_tasks*100):0);
-          const open=sorted.map(f=>f.total_tasks>0?Math.round((f.total_tasks-f.completed_tasks)/f.total_tasks*100):100);
+          const completed=sorted.map(f=>Math.round((f.completion_rate||0)*100));
+          const open=sorted.map(f=>100-Math.round((f.completion_rate||0)*100));
           chart.setOption({
             tooltip:{trigger:'axis',axisPointer:{type:'shadow'},
               formatter:function(params){
@@ -479,7 +475,7 @@
       const total     = lists.reduce((s,l)=>s+l.total_tasks,0);
       const completed = lists.reduce((s,l)=>s+l.completed_tasks,0);
       const overdue   = lists.reduce((s,l)=>s+l.overdue_tasks,0);
-      const rate      = total>0?completed/total:0;
+      const rate      = lists.length?lists.reduce((s,l)=>s+(l.completion_rate||0),0)/lists.length:0;
       const wp        = disciplines?.weights_configured?disciplines.weighted_progress:null;
 
       const listsHTML = lists.map(l=>`
@@ -514,7 +510,7 @@
         Charts.renderProgressBars('chart-lists',lists,'name','completed_tasks','total_tasks',true,l=>{
           window.__listName=l.name;
           location.hash='#/list/'+l.list_id;
-        });
+        },'completion_rate');
       }));
     }
 
@@ -528,8 +524,13 @@
         {label:listName,href:'#/list/'+listId},
       ].filter(Boolean));
 
-      let tasks;
-      try { tasks = await api('/dashboard/list/'+listId); }
+      let tasks, kpis;
+      try {
+        [tasks, kpis] = await Promise.all([
+          api('/dashboard/list/'+listId),
+          api('/dashboard/list/'+listId+'/kpis').catch(()=>null),
+        ]);
+      }
       catch(e) {
         setView(`<div style="text-align:center;padding:48px 0;color:#ef4444;font-size:13px">Erro: ${esc(e.message)}</div>`);
         return;
@@ -539,7 +540,7 @@
       const total     = tasks.length;
       const completed = tasks.filter(t=>t.status_type==='done'||t.status_type==='closed').length;
       const overdue   = tasks.filter(t=>t.is_overdue).length;
-      const rate      = total>0?completed/total:0;
+      const rate      = kpis?(kpis.completion_rate||0):(total>0?completed/total:0);
 
       const taskRows = tasks.map(t=>`
         <div class="mob-task-row" onclick="location.hash='#/task/${esc(t.task_id)}';window.__taskName='${esc(t.name)}'">

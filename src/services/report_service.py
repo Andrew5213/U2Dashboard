@@ -666,7 +666,7 @@ class _Report(FPDF):
             kw, kh, gap = 40, 22, 3
             kpis_cover = [
                 (str(kpis["total_tasks"]),     t["prov_kpi_total"]),
-                (kpis["completion_pct"],       t["prov_kpi_simple"]),
+                (kpis["completion_pct"],       t["cover_kpi_rate"]),
                 (wp_pct,                       t["prov_kpi_weighted"]),
                 (str(kpis["overdue_tasks"]),   t["prov_kpi_overdue"]),
             ]

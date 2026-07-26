@@ -503,6 +503,41 @@ class CacheRepository:
             for folder_id, vals in by_folder.items()
         }
 
+    async def get_list_kpis(self, list_id: str) -> dict | None:
+        """KPIs ponderados (mesma engenharia de pesos de get_lists_with_metrics) para
+        uma única lista, usados pela view de detalhe de lista no dashboard."""
+        list_row = (await self._db.execute(
+            select(ClickUpListCache.list_id, ClickUpListCache.name, ClickUpListCache.folder_id)
+            .where(ClickUpListCache.list_id == list_id)
+        )).first()
+        if list_row is None:
+            return None
+
+        now = datetime.utcnow()
+        _done = ClickUpTaskCache.status_type.in_(["done", "closed"])
+        _active = ClickUpTaskCache.status_type.notin_(["done", "closed"])
+        row = (await self._db.execute(
+            select(
+                func.count(ClickUpTaskCache.task_id).label("total"),
+                func.sum(case((_done, 1), else_=0)).label("completed"),
+                func.sum(case(
+                    (and_(ClickUpTaskCache.due_date.isnot(None), ClickUpTaskCache.due_date < now, _active), 1), else_=0,
+                )).label("overdue"),
+            )
+            .where(and_(ClickUpTaskCache.list_id == list_id, _leaf_tasks_clause()))
+        )).one()
+
+        rates = await self._weighted_completion_by_list([list_id])
+        return {
+            "list_id": list_row.list_id,
+            "name": list_row.name,
+            "folder_id": list_row.folder_id,
+            "total_tasks": row.total or 0,
+            "completed_tasks": row.completed or 0,
+            "overdue_tasks": row.overdue or 0,
+            "completion_rate": round(rates.get(list_id, 0.0), 4),
+        }
+
     async def get_tasks_by_list(self, list_id: str, include_subtasks: bool = False) -> list[ClickUpTaskCache]:
         conds = [ClickUpTaskCache.list_id == list_id]
         if not include_subtasks:

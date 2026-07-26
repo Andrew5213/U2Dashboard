@@ -59,6 +59,10 @@ class DashboardService:
         rows = await self._repo.get_lists_with_metrics(folder_id)
         return [ListMetrics(**r) for r in rows]
 
+    async def get_list_kpis(self, list_id: str) -> ListMetrics | None:
+        row = await self._repo.get_list_kpis(list_id)
+        return ListMetrics(**row) if row else None
+
     async def get_list_tasks(self, list_id: str) -> list[TaskSummary]:
         tasks = await self._repo.get_tasks_by_list(list_id, include_subtasks=False)
         subtask_counts = await self._repo.get_subtask_count_by_parent(list_id)

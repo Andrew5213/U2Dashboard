@@ -35,7 +35,7 @@ const Charts = (function () {
 
   /* Barras horizontais: progresso por item (folders ou listas).
      asPercent=true → eixo 0-100%, útil quando os totais são muito díspares. */
-  function renderProgressBars(id, items, labelKey, completedKey, totalKey, asPercent, onClickItem) {
+  function renderProgressBars(id, items, labelKey, completedKey, totalKey, asPercent, onClickItem, rateKey) {
     const chart = _init(id);
     if (!chart) return;
 
@@ -43,12 +43,15 @@ const Charts = (function () {
 
     var completed, open, xMax, xFmt, tooltipFmt;
     if (asPercent) {
-      completed = items.map(function (i) {
+      // Quando rateKey é passado, a % exibida vem do cálculo ponderado (EVM) do
+      // backend, não da razão bruta completed/total — mesma fonte usada pelos
+      // cards e relatórios, para manter consistência visual.
+      var pctOf = function (i) {
+        if (rateKey && i[rateKey] != null) return Math.round(i[rateKey] * 100);
         var t = i[totalKey]; return t > 0 ? Math.round(i[completedKey] / t * 100) : 0;
-      });
-      open = items.map(function (i) {
-        var t = i[totalKey]; return t > 0 ? Math.round((t - i[completedKey]) / t * 100) : 100;
-      });
+      };
+      completed = items.map(pctOf);
+      open = items.map(function (i) { return 100 - pctOf(i); });
       xMax = 100;
       xFmt = function (v) { return v + '%'; };
       tooltipFmt = function (params) {
