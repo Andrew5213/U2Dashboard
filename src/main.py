@@ -9,7 +9,7 @@ from src.core.logging import setup_logging
 from src.core.config import settings
 from src.api import health, webhooks, sync
 from src.api import dashboard, dashboard_stream, reports, disciplines, chat
-from src.api import civil, progress_civil, documents
+from src.api import civil, progress_civil, documents, authorizations
 from src.workers.polling_worker import start_polling, stop_polling
 from src.workers.cache_worker import start_cache_worker, stop_cache_worker
 from src.workers.email_worker import start_email_worker, stop_email_worker
@@ -18,6 +18,7 @@ import src.models.cache_models  # noqa: F401
 import src.models.civil_models  # noqa: F401
 import src.models.progress_models  # noqa: F401
 import src.models.document_models  # noqa: F401
+import src.models.authorization_models  # noqa: F401
 
 
 @asynccontextmanager
@@ -68,6 +69,9 @@ if settings.rdo_module_enabled:
     app.include_router(civil.router)
     app.include_router(progress_civil.router)
 app.include_router(documents.router)
+if settings.authorization_module_enabled:
+    app.include_router(authorizations.webhook_router)
+    app.include_router(authorizations.router)
 
 
 _MOBILE_UA_KEYWORDS = ("mobile", "android", "iphone", "ipad", "ipod")

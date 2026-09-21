@@ -121,6 +121,13 @@ class ClickUpClient:
         logger.info(f"ClickUp custom field created on list {list_id}: {field_def['name']}")
         return data
 
+    async def create_raw_task(self, list_id: str, payload: dict) -> dict:
+        """Cria tarefa a partir de um payload bruto (ex.: com `parent` para subtarefas,
+        campo nao suportado por ClickUpTask)."""
+        data = await self._post(f"/list/{list_id}/task", payload)
+        logger.info(f"ClickUp task created: {payload.get('name')} (id={data['id']})")
+        return data
+
     async def create_task(self, list_id: str, task: ClickUpTask) -> dict:
         payload: dict = {"name": task.name}
         if task.description:
@@ -159,8 +166,15 @@ class ClickUpClient:
         logger.info(f"ClickUp task updated: {task_id}")
         return data
 
-    async def set_custom_field(self, task_id: str, field_id: str, value: str) -> dict:
-        return await self._post(f"/task/{task_id}/field/{field_id}", {"value": value})
+    async def set_custom_field(
+        self, task_id: str, field_id: str, value: object, value_options: dict | None = None
+    ) -> dict:
+        """`value_options={"time": True}` é obrigatório em campos de data que guardam
+        hora — sem ele o ClickUp trunca o valor para a meia-noite do fuso do workspace."""
+        payload: dict = {"value": value}
+        if value_options:
+            payload["value_options"] = value_options
+        return await self._post(f"/task/{task_id}/field/{field_id}", payload)
 
     async def delete_task(self, task_id: str) -> None:
         await self._delete(f"/task/{task_id}")
@@ -175,3 +189,45 @@ class ClickUpClient:
         data = await self._post(f"/team/{settings.clickup_team_id}/webhook", payload)
         logger.info(f"ClickUp webhook created for space {space_id}")
         return data
+
+    # ─── Autorizações de serviço ─────────────────────────────────────────────
+
+    async def create_space(self, team_id: str, name: str) -> dict:
+        """Cria um Space. A API não permite definir statuses customizados —
+        eles precisam ser configurados manualmente na UI depois."""
+        payload = {
+            "name": name,
+            "multiple_assignees": True,
+            "features": {
+                "due_dates": {"enabled": True},
+                "tags": {"enabled": True},
+                "custom_fields": {"enabled": True},
+                "time_tracking": {"enabled": False},
+                "time_estimates": {"enabled": False},
+                "checklists": {"enabled": True},
+            },
+        }
+        data = await self._post(f"/team/{team_id}/space", payload)
+        logger.info(f"ClickUp space created: {name} (id={data['id']})")
+        return data
+
+    async def get_list_fields(self, list_id: str) -> list[dict]:
+        data = await self._get(f"/list/{list_id}/field")
+        return data.get("fields", [])
+
+    async def get_list(self, list_id: str) -> dict:
+        return await self._get(f"/list/{list_id}")
+
+    async def set_task_status(self, task_id: str, status: str) -> dict:
+        """Atualiza apenas o status da tarefa (PUT enxuto, sem tocar em outros campos)."""
+        data = await self._put(f"/task/{task_id}", {"status": status})
+        logger.info(f"ClickUp task {task_id} status → {status}")
+        return data
+
+    async def set_task_name(self, task_id: str, name: str) -> dict:
+        """PUT enxuto só com o nome — não toca em status nem em datas."""
+        return await self._put(f"/task/{task_id}", {"name": name})
+
+    async def create_comment(self, task_id: str, comment_text: str, notify_all: bool = True) -> dict:
+        payload = {"comment_text": comment_text, "notify_all": notify_all}
+        return await self._post(f"/task/{task_id}/comment", payload)

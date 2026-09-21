@@ -1,5 +1,4 @@
 import asyncio
-import smtplib
 from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.logging import logger
 from src.services.report_service import PeriodicReportService
+from src.services.smtp_sender import send_smtp
 
 
 class EmailService:
@@ -52,22 +52,8 @@ class EmailService:
 
 
 def _send_smtp(raw_message: str, recipients: list[str]) -> None:
-    sender = settings.email_from or settings.email_user
-    logger.debug(f"SMTP: conectando {settings.email_smtp_host}:{settings.email_smtp_port}")
-    logger.debug(f"SMTP: remetente={sender}, destinatários={recipients}")
-
-    with smtplib.SMTP(settings.email_smtp_host, settings.email_smtp_port, timeout=30) as server:
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
-        server.login(settings.email_user, settings.email_password)
-        failed = server.sendmail(sender, recipients, raw_message)
-
-    if failed:
-        for addr, (code, msg) in failed.items():
-            logger.error(f"SMTP: falha ao entregar para {addr} — código {code}: {msg}")
-    else:
-        logger.info(f"SMTP: entregue com sucesso para todos ({len(recipients)}) destinatários")
+    """Mantido como fachada — a implementação vive em smtp_sender."""
+    send_smtp(raw_message, recipients)
 
 
 def _build_html(date_label: str, date_stamp: str) -> str:

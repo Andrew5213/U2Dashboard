@@ -67,5 +67,20 @@ class Settings(BaseSettings):
     email_report_weekday: int = 6   # 0=segunda … 6=domingo
     email_report_hour: int = 8      # hora UTC do envio
 
+    # Autorização de Serviço (space/lista dedicados, fora do space sincronizado)
+    authorization_module_enabled: bool = False
+    authorization_space_id: str = ""
+    authorization_list_id: str = ""
+    authorization_webhook_secret: str = ""
+    authorization_approver_email: str = ""
+    authorization_approver_name: str = "Gestor"
+    authorization_token_ttl_days: int = 7
+    # URL pública desta aplicação — usada para montar os links do e-mail
+    authorization_public_base_url: str = ""
+    # Nomes dos statuses na lista do ClickUp (precisam bater exatamente)
+    authorization_status_pending: str = "Solicitado"
+    authorization_status_approved: str = "Autorizado"
+    authorization_status_rejected: str = "Recusado"
+
 
 settings = Settings()

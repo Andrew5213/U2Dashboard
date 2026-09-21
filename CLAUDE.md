@@ -70,12 +70,14 @@ src/
 │   ├── chat_schemas.py      # Pydantic DTOs: ChatRequest, ChatResponse, ChartPayload
 │   ├── civil_models.py      # ORM: CivilProject, CivilSite + 9 child tables (report, resource, activity, material, occurrence, quality_check, photo, next_day_plan, signature)
 │   ├── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
-│   └── document_models.py   # ORM: Document (PDF metadata for the Documentações module)
+│   ├── document_models.py   # ORM: Document (PDF metadata for the Documentações module)
+│   └── authorization_models.py # ORM: AuthorizationToken (links de decisão de uso único)
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
 │   ├── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
 │   ├── civil_repository.py  # DB access for all civil + progress tables (shared by civil.py, progress_civil.py, civil_service.py)
-│   └── document_repository.py # DB access for the document table (create, list, get, delete)
+│   ├── document_repository.py # DB access for the document table (create, list, get, delete)
+│   └── authorization_repository.py # Token pairs for service authorizations (create/consume)
 ├── services/
 │   ├── airbox_client.py     # httpx async client for Airbox API
 │   ├── clickup_client.py    # httpx async client for ClickUp REST API v2
@@ -94,7 +96,10 @@ src/
 │   ├── civil_service.py     # CivilService: orchestrates RDO creation (nested children, sequential numbering, auto-fill measurements)
 │   ├── progress_service.py  # ProgressService + pure EVM functions (pct, activity_contribution, global_progress)
 │   ├── rdo_pdf_service.py   # generate_rdo_pdf(report, site_name) → bytes — fpdf2-based RDO PDF
-│   └── document_service.py  # DocumentService: saves/deletes PDF files on disk + document table rows
+│   ├── document_service.py  # DocumentService: saves/deletes PDF files on disk + document table rows
+│   ├── smtp_sender.py       # send_smtp() — envio SMTP compartilhado (relatórios + autorizações)
+│   ├── authorization_service.py # Autorização de serviço: e-mail ao gestor → decisão → ClickUp
+│   └── authorization_emails.py  # HTML dos e-mails de pedido e de decisão
 ├── api/
 │   ├── health.py            # GET /health
 │   ├── sync.py              # POST /sync/trigger, GET /sync/status|logs, GET+POST /sync/mappings/agreements
@@ -109,7 +114,8 @@ src/
 │   ├── chat.py              # POST /chat, GET /chat/status
 │   ├── civil.py             # /civil/* — Projects, Sites, DailyReports (RDO), photo upload
 │   ├── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
-│   └── documents.py         # /documents/* — folders (dropdown), list, upload, download, delete PDFs
+│   ├── documents.py         # /documents/* — folders (dropdown), list, upload, download, delete PDFs
+│   └── authorizations.py    # POST /webhooks/autorizacoes + GET/POST /autorizacoes/decidir/{token}
 └── workers/
     ├── polling_worker.py    # APScheduler: ClickUp → Airbox sync on interval
     ├── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
@@ -308,6 +314,82 @@ Independent PDF document library, separate from the ClickUp↔Airbox sync and fr
 
 **UI**: `GET /documentacoes` serves `documentacoes.html` (desktop) or `documentacoes_mobile.html` (mobile, via `_is_mobile()`) — both call the same `/documents/*` API, so upload/list/download/delete work identically on phone. Desktop is linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil`. Mobile is linked from the hamburger menu (see "Mobile navigation" below) — a standalone page reached via full navigation, not a hash-route inside the dashboard SPA (same pattern as "Assistente" → `/assistente`).
 
+## Service Authorization Module (Autorização de Serviço)
+
+Fluxo de pedido/aprovação para intervenções em campo ("preciso mexer no transmissor X pelo motivo Y").
+Vive num **Space dedicado do ClickUp** (`Operações U2`, id `901314608766`), separado do
+`CLICKUP_DEFAULT_SPACE_ID` — isso não é preferência, é requisito: dentro do space sincronizado, as
+requisições entrariam no `cache_worker` (contaminando KPIs, donut de status, Gantt e todo PDF/XLSX,
+porque `_leaf_tasks_clause()` conta qualquer tarefa-folha) e o `polling_worker` tentaria criá-las como
+Tasks no Airbox.
+
+**Fluxo completo:**
+1. Funcionário preenche o **Form view** da lista `Autorizações de Serviço` (id `901329002275`) →
+   ClickUp cria a tarefa em `Solicitado`. A lista tem só três statuses — `Solicitado`
+   (not started, o inicial), `Autorizado` (done) e `Recusado` (closed); não há estado
+   intermediário, a decisão é sempre em um passo.
+2. Webhook `taskCreated` → `POST /webhooks/autorizacoes` (endpoint **separado** de `/webhooks/clickup`,
+   que empurra tudo para o `SyncService`/Airbox e para o cache — nada disso se aplica aqui).
+3. `AuthorizationService.handle_task_created` valida lista + status inicial, gera um **par de tokens**
+   (`approve`/`reject`, `secrets.token_urlsafe(32)`, TTL `AUTHORIZATION_TOKEN_TTL_DAYS`) e envia um
+   e-mail ao gestor com o resumo do pedido e dois botões.
+4. O gestor clica → `GET /autorizacoes/decidir/{token}` só **mostra** a página de confirmação.
+5. Confirmando → `POST` grava no ClickUp: status (`Autorizado`/`Recusado`), custom fields
+   `Decidido Por` / `Data da Decisão` / `Observações da Decisão`, e um comentário com `notify_all`.
+   O solicitante recebe e-mail de retorno (endereço lido do custom field `Solicitante`, tipo `users`).
+
+**Três decisões de projeto que não podem ser desfeitas sem quebrar o módulo:**
+
+- **GET nunca decide nada.** Clientes de e-mail e antivírus corporativos fazem *prefetch* de links; se
+  o `GET` aplicasse a decisão, o scanner do Gmail autorizaria o serviço antes de o gestor ler o e-mail.
+  A decisão só acontece no `POST` da página de confirmação.
+- **A página de decisão responde com `Cache-Control: no-store`.** O `410` de token inválido é cacheável
+  por padrão — sem o header, o navegador guarda o erro e continua mostrando "link inválido" mesmo
+  depois de o link passar a valer (aconteceu em teste).
+- **O backend renomeia a tarefa** (`build_task_name` → `<Equipamento> — <Site>`) antes de montar o
+  e-mail. O ClickUp **não** tem template de nome no Form — só a pergunta "Task name", digitada pelo
+  usuário, ou uma Automation `Change task name`, que dispara **depois** do nosso webhook e faria o
+  e-mail sair com o nome antigo. Por isso a pergunta "Task name" deve ser removida do formulário.
+  O rename é idempotente e, se falhar, o fluxo segue com o nome original.
+- **Campos de data precisam de `value_options={"time": True}`** em `ClickUpClient.set_custom_field`.
+  Sem isso o ClickUp trunca o valor para a meia-noite do fuso do workspace (a decisão das 08:44 UTC
+  foi gravada como 03:00 UTC até isso ser corrigido).
+
+**Token de uso único:** decidir consome o token *e* invalida o irmão (`AuthorizationRepository.consume`
+marca `used_at` em todas as linhas da mesma `task_id`). Uma tentativa inválida — recusa sem motivo —
+**não** queima o token: a validação (`validate_note`) roda antes de qualquer escrita.
+
+**Setup (a API pública do ClickUp não cobre tudo):**
+- `python scripts/setup_authorization_space.py` cria Space + Lista + os 12 custom fields
+  (idempotente; o dropdown `Província` é populado a partir dos folders do space principal).
+- **Statuses e Form view são manuais** — a API v2 não cria nem statuses customizados
+  (`PUT /space/{id}` aceita o payload e ignora o campo `statuses`, devolvendo 200) nem views do tipo
+  `form` (`POST /list/{id}/view` só aceita list/board/calendar/table/timeline/workload/activity/map/chat/gantt).
+- `python scripts/register_authorization_webhook.py --url https://DOMINIO/webhooks/autorizacoes`
+  registra o webhook (só `taskCreated`) e imprime o secret para o `.env`.
+- `python scripts/check_authorization_setup.py` diagnostica o setup inteiro (env, space, lista,
+  statuses, os 13 campos, form publicado + link, webhook) e lista o que falta. A única coisa que
+  ele **não** consegue ver é quais campos foram arrastados para dentro do Form — a API não expõe
+  a configuração da form view, só sua existência e o `public_url`.
+
+**Campos da lista:** `Solicitante` (short_text), `E-mail` (email), `Província` (drop_down),
+`Site / Estúdio`, `Equipamento`, `Tipo de Intervenção`, `Motivo`, `Data Prevista`,
+`Duração Estimada (min)`, `Interrompe Transmissão`, mais os três de decisão preenchidos pelo backend.
+
+`Solicitante` é texto e não `users` de propósito: o campo do tipo `users` rejeita quem não tem acesso
+ao Space (erro `FIELD_129`) e não funciona bem em formulário público. Como consequência, o endereço do
+funcionário vem do campo `E-mail` — `requester_email()` tenta, nesta ordem: custom field do tipo
+`email` → campo de texto com "email" no nome e "@" no valor → campo `users` (formato antigo) →
+`task["creator"]["email"]`. O fallback para o criador vale pouco num Form público e anônimo, onde o
+criador é quem publicou o formulário: **se o campo `E-mail` sair do Form, o funcionário deixa de ser
+notificado** (a decisão continua sendo gravada no ClickUp; a página avisa o gestor que ninguém foi
+notificado).
+
+A ordem de exibição no e-mail e na página vem de `_FIELD_ORDER` em `authorization_service.py` — o
+ClickUp devolve os campos em ordem alfabética, péssima para leitura rápida. O casamento é por
+**prefixo normalizado**, para o nome sobreviver a mudanças de unidade (`Duração Estimada (h)` virou
+`(min)` sem quebrar nada). Campos novos criados no ClickUp aparecem no fim.
+
 ## Agreement ↔ List Matching
 
 Lists and agreements are matched **by name** (case-insensitive). If names don't match:
@@ -345,6 +427,9 @@ Tables:
 - `civil_progress_profile`, `civil_progress_category`, `civil_progress_activity_def` — EVM profile catalog
 - `civil_site_activity_qty` — planned totals per (site, activity_def); unique on (site_id, activity_def_id)
 - `civil_progress_measurement` — daily measurements; unique on (site_id, activity_def_id, date)
+
+**Authorization table** (in `authorization_models.py`, imported in `main.py`):
+- `authorization_token` — par de tokens por requisição (`task_id`, `action`, `token`, `expires_at`, `used_at`, `used_note`). Consumir um marca os dois como usados.
 
 **Document table** (in `document_models.py`, imported in `main.py`):
 - `document` — one row per uploaded PDF; `folder_id`/`folder_name` denormalized from `clickup_folder_cache` at upload time; `stored_filename` is a random UUID, `original_filename` is restored on download
@@ -388,6 +473,17 @@ Tables:
 | `EMAIL_RECIPIENTS` | Destinatários separados por vírgula | `""` |
 | `EMAIL_REPORT_WEEKDAY` | Dia da semana do envio (0=segunda … 6=domingo) | `6` |
 | `EMAIL_REPORT_HOUR` | Hora UTC do envio | `8` |
+| `AUTHORIZATION_MODULE_ENABLED` | Liga o módulo de Autorização de Serviço (rotas + webhook) | `false` |
+| `AUTHORIZATION_SPACE_ID` | Space dedicado das autorizações (NUNCA o space sincronizado) | `""` |
+| `AUTHORIZATION_LIST_ID` | Lista das requisições; tarefas de outras listas são ignoradas | `""` |
+| `AUTHORIZATION_WEBHOOK_SECRET` | HMAC do webhook de autorizações; vazio = pula verificação | `""` |
+| `AUTHORIZATION_APPROVER_EMAIL` | Gestor que recebe e decide os pedidos | `""` |
+| `AUTHORIZATION_APPROVER_NAME` | Nome gravado em `Decidido Por` e no comentário | `Gestor` |
+| `AUTHORIZATION_TOKEN_TTL_DAYS` | Validade dos links de decisão | `7` |
+| `AUTHORIZATION_PUBLIC_BASE_URL` | URL pública da app — monta os links do e-mail | `""` |
+| `AUTHORIZATION_STATUS_PENDING` | Status inicial que dispara a notificação | `Solicitado` |
+| `AUTHORIZATION_STATUS_APPROVED` | Status gravado ao autorizar | `Autorizado` |
+| `AUTHORIZATION_STATUS_REJECTED` | Status gravado ao recusar | `Recusado` |
 
 ## mapper.py Constants (require manual setup)
 
@@ -442,6 +538,8 @@ Unit tests:
 - `test_event_broadcaster.py` — asyncio pub/sub broadcast logic
 - `test_cache_service.py` — CacheService refresh and webhook patch logic
 - `test_cache_repository.py` — CacheRepository upsert and query methods
+- `test_authorization_service.py` — formatação de custom fields, ordem do resumo, validação do motivo
+- `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 
 Unit tests:
 - `test_civil_progress.py` — pure EVM calculation functions from `progress_service.py` (pct, contribution, site/global progress)
