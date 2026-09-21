@@ -60,6 +60,18 @@ def _pct_color(rate: float) -> tuple:
     return RED
 
 
+def _hex_to_rgb(hex_color: str | None, fallback: tuple = GRAY_400) -> tuple:
+    if not hex_color:
+        return fallback
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return fallback
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return fallback
+
+
 class _Report(FPDF):
     """Subclasse FPDF com cabeçalho e rodapé customizados."""
 
@@ -1054,6 +1066,161 @@ class _Report(FPDF):
                         self.cell(10, 5, w_pct_txt, align="C")
                         self.set_y(row_y + 6)
 
+    # ── Relatório por Disciplina / Lista (tarefas + atividades indentadas) ───
+
+    def _render_activity_rows(self, rows: list[dict]) -> None:
+        """Renderiza uma lista plana de linhas tarefa/subtarefa: nome indentado + status,
+        com nota de Observacao abaixo quando status == Impedimento e houver conteudo."""
+        t = self.t
+        status_w = 46
+        status_x = 196 - status_w
+
+        for i, row in enumerate(rows):
+            if self.get_y() > 262:
+                self.add_page()
+
+            indent = 9 if row["indent"] else 0
+            name_x = 14 + indent
+            name_w = status_x - name_x - 2
+            row_h = 6 if row["indent"] else 7
+            row_y = self.get_y()
+            txt_color = GRAY_400 if row["is_done"] else DARK
+
+            if row["indent"]:
+                if i % 2 == 0:
+                    self.set_fill_color(248, 248, 252)
+                    self.rect(14, row_y, 182, row_h, style="F")
+                self.set_fill_color(180, 185, 210)
+                self.rect(name_x, row_y + 1, 0.8, row_h - 2, style="F")
+                self.set_xy(name_x + 3, row_y + 1)
+                self.set_font("Helvetica", size=7.5)
+            else:
+                self.set_fill_color(*BLUE_BG)
+                self.rect(14, row_y, 182, row_h, style="F")
+                self.set_xy(name_x + 2, row_y + 1.2)
+                self.set_font("Helvetica", style="B", size=9)
+                txt_color = BLUE_TXT
+
+            name_txt = _s(row["name"])
+            max_chars = 60 if row["indent"] else 55
+            name_txt = name_txt[:max_chars] + ("..." if len(name_txt) > max_chars else "")
+            self._set_text(txt_color)
+            self.cell(name_w, row_h - 2, name_txt, align="L")
+
+            status_color = _hex_to_rgb(row.get("color"), GRAY_600)
+            self.set_fill_color(*status_color)
+            self.rect(status_x, row_y + row_h / 2 - 1.2, 2.4, 2.4, style="F")
+            self.set_xy(status_x + 4, row_y + (1.2 if not row["indent"] else 1))
+            self.set_font("Helvetica", style="B", size=7)
+            self._set_text(status_color)
+            status_txt = _s(row["status"])[:24]
+            self.cell(status_w - 4, row_h - 2, status_txt, align="L")
+
+            self.set_y(row_y + row_h)
+
+            if row.get("note"):
+                note_x = name_x + (3 if row["indent"] else 2)
+                self.set_x(note_x)
+                self.set_font("Helvetica", style="I", size=7)
+                self._set_text(RED)
+                self.multi_cell(182 - (note_x - 14), 3.8,
+                                 _s(f"{t['disc_note_label']}: {row['note']}"), align="L")
+                self.ln(1.5)
+
+    def build_discipline_report(self, data: dict) -> None:
+        t = self.t
+        self.add_page()
+
+        self.set_fill_color(*NAVY)
+        self.rect(0, 0, 210, 38, style="F")
+
+        breadcrumb = " / ".join(filter(None, [data.get("folder_name"), data.get("list_name")]))
+        self.set_xy(14, 10)
+        self.set_font("Helvetica", style="B", size=7)
+        self.set_text_color(147, 197, 253)
+        self.cell(0, 4, _s(breadcrumb.upper()) if breadcrumb else t["disc_report_eyebrow"],
+                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        self.set_xy(14, 15)
+        self.set_font("Helvetica", style="B", size=17)
+        self._set_text(WHITE)
+        self.cell(0, 9, _s(data["discipline_name"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        self.set_xy(14, 27)
+        self.set_font("Helvetica", size=8)
+        self.set_text_color(191, 219, 254)
+        self.cell(0, 5, _s(t["disc_report_meta"].format(
+            n=data["total_activities"], date=data["generated_at"])), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        self.set_y(48)
+
+        rows = data.get("rows", [])
+        if not rows:
+            self.set_font("Helvetica", "I", size=9)
+            self._set_text(GRAY_400)
+            self.cell(182, 10, t["disc_no_activities"], align="C",
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            return
+
+        self._render_activity_rows(rows)
+
+        self.ln(2)
+        self.set_draw_color(*GRAY_200)
+        self.set_line_width(0.2)
+        self.line(14, self.get_y(), 196, self.get_y())
+        self.ln(3)
+        self.set_font("Helvetica", size=7)
+        self._set_text(GRAY_400)
+        self.multi_cell(182, 4, _s(t["disc_footnote"].format(date=data["generated_at"])))
+
+    # ── Relatório por Lista (todas as disciplinas + atividades de uma lista) ─
+
+    def build_list_report(self, data: dict) -> None:
+        t = self.t
+        self.add_page()
+
+        self.set_fill_color(*NAVY)
+        self.rect(0, 0, 210, 38, style="F")
+
+        self.set_xy(14, 10)
+        self.set_font("Helvetica", style="B", size=7)
+        self.set_text_color(147, 197, 253)
+        self.cell(0, 4, _s((data.get("folder_name") or t["disc_report_eyebrow"]).upper()),
+                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        self.set_xy(14, 15)
+        self.set_font("Helvetica", style="B", size=17)
+        self._set_text(WHITE)
+        self.cell(0, 9, _s(data["list_name"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        self.set_xy(14, 27)
+        self.set_font("Helvetica", size=8)
+        self.set_text_color(191, 219, 254)
+        self.cell(0, 5, _s(t["list_report_meta"].format(
+            d=data["total_disciplines"], n=data["total_activities"], date=data["generated_at"])),
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        self.set_y(48)
+
+        rows = data.get("rows", [])
+        if not rows:
+            self.set_font("Helvetica", "I", size=9)
+            self._set_text(GRAY_400)
+            self.cell(182, 10, t["disc_no_activities"], align="C",
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            return
+
+        self._render_activity_rows(rows)
+
+        self.ln(2)
+        self.set_draw_color(*GRAY_200)
+        self.set_line_width(0.2)
+        self.line(14, self.get_y(), 196, self.get_y())
+        self.ln(3)
+        self.set_font("Helvetica", size=7)
+        self._set_text(GRAY_400)
+        self.multi_cell(182, 4, _s(t["disc_footnote"].format(date=data["generated_at"])))
+
     # ── Nota de rodapé final ─────────────────────────────────────────────────
 
     def build_footnote(self, data: dict) -> None:
@@ -1093,6 +1260,25 @@ def _format_task_row(task, now: datetime, t: dict) -> dict:
         "due_date_fmt": due_fmt,
         "is_overdue": is_overdue,
         "url": task.url,
+    }
+
+
+_EXCLUDED_DISCIPLINES = {"aceitação transferência", "aceitacao transferencia", "end of work"}
+
+
+def _activity_row(item, indent: bool, lang: str, t: dict) -> dict:
+    """Converte uma task/subtask do cache em uma linha do relatorio de disciplina/lista:
+    nome + status indentado, com Observacao anexada quando o status for Impedimento."""
+    status_name = translate(item.status, lang) if item.status else t["no_status"]
+    is_impediment = "impedimento" in (item.status or "").strip().lower()
+    note = (item.observacoes or "").strip() if is_impediment else ""
+    return {
+        "name": translate(item.name, lang),
+        "status": status_name,
+        "color": item.status_color,
+        "is_done": item.status_type in ("done", "closed"),
+        "indent": indent,
+        "note": note or None,
     }
 
 
@@ -1375,6 +1561,117 @@ class ProvinceReportService:
         if data["assignee_stats"]:
             pdf.build_team(data["assignee_stats"])
         pdf.build_footnote(data)
+        return bytes(pdf.output())
+
+
+class DisciplineReportService:
+    """Relatorio simples de uma disciplina (task) e suas atividades (subtasks) indentadas,
+    cada uma com o status ao lado; atividades em status "Impedimento" exibem a Observacao
+    do ClickUp abaixo, quando preenchida."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._repo = CacheRepository(db)
+
+    async def generate_pdf(self, task_id: str, lang: str = "pt") -> bytes:
+        data = await self._build_data(task_id, lang)
+        return await asyncio.to_thread(self._render_pdf, data)
+
+    async def _build_data(self, task_id: str, lang: str = "pt") -> dict:
+        t = get_strings(lang)
+
+        task, subtasks = await self._repo.get_task_with_subtasks(task_id)
+        if not task:
+            raise ValueError(f"Task {task_id} nao encontrada no cache")
+
+        list_kpis = await self._repo.get_list_kpis(task.list_id)
+        list_name = translate(list_kpis["name"], lang) if list_kpis else ""
+        folder_name = ""
+        if list_kpis and list_kpis.get("folder_id"):
+            folder = await self._repo.get_folder_by_id(list_kpis["folder_id"])
+            folder_name = folder.name if folder else ""
+
+        rows = [_activity_row(task, False, lang, t)] + [_activity_row(s, True, lang, t) for s in subtasks]
+
+        return {
+            "discipline_name": translate(task.name, lang),
+            "list_name": list_name,
+            "folder_name": folder_name,
+            "total_activities": len(subtasks),
+            "rows": rows,
+            "generated_at": datetime.utcnow().strftime("%d/%m/%Y" + t["at_time"] + "%H:%M"),
+            "lang": lang,
+        }
+
+    @staticmethod
+    def _render_pdf(data: dict) -> bytes:
+        logger.debug(f"Gerando PDF de disciplina: {data['discipline_name']}")
+        lang = data.get("lang", "pt")
+        pdf = _Report(data["discipline_name"], data["generated_at"], lang=lang)
+        pdf.alias_nb_pages()
+        pdf.build_discipline_report(data)
+        return bytes(pdf.output())
+
+
+class ListReportService:
+    """Relatorio de uma lista (modulo) completa: todas as suas disciplinas (tasks) e
+    atividades (subtasks) indentadas, cada uma com o status ao lado; atividades em status
+    "Impedimento" exibem a Observacao do ClickUp abaixo, quando preenchida."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self._repo = CacheRepository(db)
+
+    async def generate_pdf(self, list_id: str, lang: str = "pt") -> bytes:
+        data = await self._build_data(list_id, lang)
+        return await asyncio.to_thread(self._render_pdf, data)
+
+    async def _build_data(self, list_id: str, lang: str = "pt") -> dict:
+        t = get_strings(lang)
+
+        list_kpis = await self._repo.get_list_kpis(list_id)
+        if not list_kpis:
+            raise ValueError(f"Lista {list_id} nao encontrada no cache")
+
+        folder_name = ""
+        if list_kpis.get("folder_id"):
+            folder = await self._repo.get_folder_by_id(list_kpis["folder_id"])
+            folder_name = folder.name if folder else ""
+
+        all_tasks = await self._repo.get_tasks_by_list(list_id, include_subtasks=True)
+        parents = [
+            tk for tk in all_tasks
+            if not tk.parent_task_id and (tk.name or "").strip().lower() not in _EXCLUDED_DISCIPLINES
+        ]
+        subtasks_by_parent: dict[str, list] = {}
+        for tk in all_tasks:
+            if tk.parent_task_id:
+                subtasks_by_parent.setdefault(tk.parent_task_id, []).append(tk)
+
+        rows: list[dict] = []
+        total_activities = 0
+        for parent in parents:
+            children = subtasks_by_parent.get(parent.task_id, [])
+            rows.append(_activity_row(parent, False, lang, t))
+            for child in children:
+                rows.append(_activity_row(child, True, lang, t))
+            total_activities += len(children)
+
+        return {
+            "list_name": translate(list_kpis["name"], lang),
+            "folder_name": folder_name,
+            "total_disciplines": len(parents),
+            "total_activities": total_activities,
+            "rows": rows,
+            "generated_at": datetime.utcnow().strftime("%d/%m/%Y" + t["at_time"] + "%H:%M"),
+            "lang": lang,
+        }
+
+    @staticmethod
+    def _render_pdf(data: dict) -> bytes:
+        logger.debug(f"Gerando PDF de lista: {data['list_name']}")
+        lang = data.get("lang", "pt")
+        pdf = _Report(data["list_name"], data["generated_at"], lang=lang)
+        pdf.alias_nb_pages()
+        pdf.build_list_report(data)
         return bytes(pdf.output())
 
 

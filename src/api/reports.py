@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db, AsyncSessionLocal
 from src.core.config import settings
 from src.core.logging import logger
-from src.services.report_service import ReportService, ProvinceReportService, PeriodicReportService
+from src.services.report_service import ReportService, ProvinceReportService, PeriodicReportService, DisciplineReportService, ListReportService
 from src.services.email_service import EmailService
 from src.services.report_strings import get_strings
 from src.repositories.cache_repository import CacheRepository
@@ -64,6 +64,60 @@ async def export_provincia_pdf(
 
     datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
     filename = get_strings(lang)["filename_province"].format(folder_id=folder_id, ts=datestamp)
+    disposition = "inline" if inline else f'attachment; filename="{filename}"'
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition},
+    )
+
+
+@router.get("/pdf/disciplina", summary="Exportar relatório de atividades de uma disciplina, agrupadas por status")
+async def export_disciplina_pdf(
+    task_id: str = Query(..., description="ID da task (disciplina) no ClickUp"),
+    inline: bool = Query(default=False, description="Exibir inline no browser (para preview)"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando relatório PDF de disciplina para task {task_id} (lang={lang})")
+    try:
+        pdf_bytes = await DisciplineReportService(db).generate_pdf(task_id, lang=lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Erro ao gerar PDF de disciplina {task_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = get_strings(lang)["filename_discipline"].format(ts=datestamp)
+    disposition = "inline" if inline else f'attachment; filename="{filename}"'
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition},
+    )
+
+
+@router.get("/pdf/lista", summary="Exportar relatório de uma lista (todas as disciplinas e atividades)")
+async def export_lista_pdf(
+    list_id: str = Query(..., description="ID da lista no ClickUp"),
+    inline: bool = Query(default=False, description="Exibir inline no browser (para preview)"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando relatório PDF de lista para {list_id} (lang={lang})")
+    try:
+        pdf_bytes = await ListReportService(db).generate_pdf(list_id, lang=lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Erro ao gerar PDF de lista {list_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = get_strings(lang)["filename_list"].format(ts=datestamp)
     disposition = "inline" if inline else f'attachment; filename="{filename}"'
     return Response(
         content=pdf_bytes,

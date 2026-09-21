@@ -68,6 +68,23 @@
     </button>`;
   }
 
+  window.exportListaPdf = function (listId) {
+    const btn = document.getElementById('btn-pdf-lista');
+    const lang = (typeof _reportLang !== 'undefined' && _reportLang) ? _reportLang : 'pt';
+    if (btn) {
+      btn.dataset.orig = btn.dataset.orig || btn.innerHTML;
+      btn.innerHTML = 'Gerando...';
+      btn.disabled = true;
+      setTimeout(function () { btn.innerHTML = btn.dataset.orig; btn.disabled = false; }, 5000);
+    }
+    const a = document.createElement('a');
+    a.href = `/reports/pdf/lista?list_id=${encodeURIComponent(listId)}&lang=${lang}`;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   window.showObservacao = function (btn) {
     const note = btn.dataset.note || '';
     const modal = document.createElement('div');
@@ -616,6 +633,13 @@
           <h2 class="text-sm font-semibold text-gray-700">${esc(listName)} — Tasks (${total})</h2>
           <div class="flex items-center gap-3">
             <div class="w-32">${progressBar(rate)}</div>
+            ${total > 0 ? `<button type="button" id="btn-pdf-lista" onclick="exportListaPdf('${esc(listId)}')"
+              class="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors font-medium flex items-center gap-1 shrink-0">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h4m3 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/>
+              </svg>
+              Relatório PDF
+            </button>` : ''}
             <a href="#/gantt/${esc(listId)}"
               class="text-xs bg-red-50 text-red-700 px-2.5 py-1 rounded-lg hover:bg-red-100 transition-colors font-medium flex items-center gap-1 shrink-0">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">

@@ -186,8 +186,8 @@
   </div>
 
   <!-- ══ SCRIPTS ════════════════════════════════════════════════ -->
-  <script src="/static/sse.js?v=30"></script>
-  <script src="/static/charts.js?v=30"></script>
+  <script src="/static/sse.js?v=31"></script>
+  <script src="/static/charts.js?v=31"></script>
 
   <script>
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -560,6 +560,10 @@
           ${kpiCard('Em Andamento', total-completed-overdue, null, '#2563eb')}
           ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'#1e293b')}
         </div>
+        ${total>0?`<button type="button" id="btn-pdf-lista" onclick="exportListaPdf('${esc(listId)}')"
+          style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#1d4ed8;background:#eff6ff;border:none;padding:8px 12px;border-radius:8px;margin-bottom:10px;width:100%;justify-content:center">
+          Relatório PDF da Lista
+        </button>`:''}
         <div class="mob-table-wrap">
           <div class="mob-table-header">${esc(listName)} — Tasks (${total})</div>
           ${taskRows||`<div style="text-align:center;padding:24px;font-size:12px;color:#94a3b8">Nenhuma task nesta área</div>`}
@@ -789,6 +793,10 @@
 
   function exportProvincia(folderId) {
     _exportWithSpinner('btn-pdf-provincia',`/reports/pdf/provincia?folder_id=${folderId}&lang=${_reportLang}`);
+  }
+
+  function exportListaPdf(listId) {
+    _exportWithSpinner('btn-pdf-lista',`/reports/pdf/lista?list_id=${encodeURIComponent(listId)}&lang=${_reportLang}`);
   }
   </script>
 
