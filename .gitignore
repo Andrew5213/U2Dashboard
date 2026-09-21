@@ -2,6 +2,7 @@
 .env.dev
 *.db
 uploads/
+data/
 graphify-out/
 documents/
 *.db-shm

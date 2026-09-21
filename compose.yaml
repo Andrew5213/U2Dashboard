@@ -1,0 +1,37 @@
+name: apiclickup
+
+services:
+  app:
+    build: .
+    image: apiclickup:latest
+    container_name: apiclickup
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+
+    # Porta do host so em loopback: quem expoe para a internet e o Nginx (80/443).
+    # Nao troque para "8001:8000" nem "0.0.0.0:..." (o Docker ignora o ufw).
+    ports:
+      - "127.0.0.1:8001:8000"
+
+    volumes:
+      - ./data:/data            # sync.db, uploads/ e documents/ (persistente)
+      - ./.env:/app/.env:ro     # segredos; nunca entram na imagem
+
+    environment:
+      # Caminhos DENTRO do contêiner; sobrepoem as mesmas chaves do .env
+      DATABASE_URL: sqlite+aiosqlite:////data/sync.db
+      CIVIL_UPLOADS_DIR: /data/uploads
+      DOCUMENTS_DIR: /data/documents
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+      - /app/logs:size=64m,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    cpus: 2
+    stop_grace_period: 20s
