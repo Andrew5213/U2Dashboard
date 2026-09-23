@@ -42,6 +42,12 @@
     return Math.round((rate || 0) * 100) + '%';
   }
 
+  // Duas casas decimais — usado só nos KPIs do overview, onde o número total do
+  // projeto anda devagar e o arredondamento escondia o avanço da semana.
+  function fmtPctPrecise(rate) {
+    return ((rate || 0) * 100).toFixed(2) + '%';
+  }
+
   function progressBar(rate, colorClass) {
     const pct = Math.round((rate || 0) * 100);
     const cls = colorClass || (pct >= 80 ? 'bg-emerald-400' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400');
@@ -192,7 +198,7 @@
 
     setLastRefresh(overview.last_refresh_at);
 
-    const pct = fmtPct(overview.completion_rate);
+    const pct = fmtPctPrecise(overview.completion_rate);
     const overdueColor = overview.overdue_tasks > 0 ? 'text-red-600' : 'text-gray-800';
 
     const foldersHTML = folders.map(function (f) {

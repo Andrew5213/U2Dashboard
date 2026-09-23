@@ -210,6 +210,8 @@
     }
 
     function fmtPct(r) { return Math.round((r||0)*100)+'%'; }
+    // Duas casas — só nos KPIs do overview, igual ao desktop (fmtPctPrecise em app.js).
+    function fmtPctPrecise(r) { return ((r||0)*100).toFixed(2)+'%'; }
 
     function healthColor(rate, overdue) {
       if (overdue > 0)  return { border:'#f87171', badge:'#fef2f2', badgeTxt:'#dc2626', dot:'#ef4444', label:'Em risco' };
@@ -307,7 +309,7 @@
         return;
       }
 
-      const pct = fmtPct(overview.completion_rate);
+      const pct = fmtPctPrecise(overview.completion_rate);
       const overdueClr = overview.overdue_tasks>0?'#dc2626':'#1e293b';
 
       const foldersHTML = folders.map(f=>{
