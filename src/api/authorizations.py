@@ -7,8 +7,6 @@ Dois routers distintos:
   * `router` — a página de confirmação que o gestor abre a partir do e-mail.
 """
 import asyncio
-import hashlib
-import hmac
 
 from fastapi import APIRouter, Depends, Form, Header, Request
 from fastapi.responses import HTMLResponse
@@ -18,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
 from src.core.logging import logger
+from src.core.webhook_security import verify_clickup_signature
 from src.services.authorization_service import AuthorizationError, AuthorizationService
 
 webhook_router = APIRouter(prefix="/webhooks", tags=["autorizações"])
@@ -26,16 +25,6 @@ router = APIRouter(prefix="/autorizacoes", tags=["autorizações"])
 templates = Jinja2Templates(directory="src/templates")
 
 _TEMPLATE = "authorization_decision.html"
-
-
-def _verify_signature(body: bytes, signature: str | None) -> bool:
-    """Mesma lógica do webhook principal, com o secret próprio deste webhook."""
-    if not settings.authorization_webhook_secret or not signature:
-        return True
-    expected = hmac.new(
-        settings.authorization_webhook_secret.encode(), body, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature)
 
 
 async def _notify_approver(task_id: str) -> None:
@@ -54,7 +43,7 @@ async def receive_authorization_webhook(
     x_signature: str | None = Header(None, alias="X-Signature"),
 ):
     body = await request.body()
-    if not _verify_signature(body, x_signature):
+    if not verify_clickup_signature(settings.authorization_webhook_secret, body, x_signature):
         logger.warning("Webhook de autorizações: assinatura inválida")
         return {"status": "invalid_signature"}
 

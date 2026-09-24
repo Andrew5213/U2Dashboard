@@ -1,11 +1,10 @@
 import asyncio
-import hashlib
-import hmac
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.logging import logger
 from src.core.config import settings
 from src.core.database import get_db, AsyncSessionLocal
+from src.core.webhook_security import verify_clickup_signature
 from src.services.sync_service import SyncService
 from src.services.cache_service import CacheService
 from src.services.event_broadcaster import broadcaster
@@ -20,17 +19,6 @@ HANDLED_EVENTS = {
     "taskAssigneeUpdated",
     "taskDueDateUpdated",
 }
-
-
-def _verify_signature(body: bytes, signature: str | None) -> bool:
-    if not settings.clickup_webhook_secret or not signature:
-        return True
-    expected = hmac.new(
-        settings.clickup_webhook_secret.encode(),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature)
 
 
 async def _update_cache_and_broadcast(event: str, task_id: str) -> None:
@@ -52,7 +40,7 @@ async def receive_clickup_webhook(
 ):
     body = await request.body()
 
-    if not _verify_signature(body, x_signature):
+    if not verify_clickup_signature(settings.clickup_webhook_secret, body, x_signature):
         logger.warning("ClickUp webhook: assinatura inválida")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -69,11 +57,15 @@ async def receive_clickup_webhook(
     if not task_id:
         return {"status": "ignored", "reason": "no task_id"}
 
-    # Sync para Airbox (fluxo original — não interrompido por erros de cache)
-    service = SyncService(db)
-    result = await service.handle_clickup_webhook(event, task_id, history_items)
+    if settings.sync_enabled:
+        # Sync para Airbox (fluxo original — não interrompido por erros de cache)
+        result = await SyncService(db).handle_clickup_webhook(event, task_id, history_items)
+        response = {"status": "ok" if result.success else "error", "detail": result.message}
+    else:
+        # SYNC_ENABLED=false: o Airbox não é usado, então só cache + SSE são atualizados.
+        response = {"status": "ok", "detail": "sync desabilitado (SYNC_ENABLED=false)"}
 
     # Atualiza cache + SSE em background (fire-and-forget, não bloqueia resposta)
     asyncio.create_task(_update_cache_and_broadcast(event, task_id))
 
-    return {"status": "ok" if result.success else "error", "detail": result.message}
+    return response

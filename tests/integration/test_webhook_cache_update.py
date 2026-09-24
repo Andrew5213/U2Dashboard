@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch, AsyncMock
@@ -62,6 +66,7 @@ async def test_webhook_updates_cache(app_with_db, seeded_session):
          patch("asyncio.create_task") as mock_create_task:
 
         mock_settings.clickup_webhook_secret = ""
+        mock_settings.sync_enabled = True
         mock_sync_instance = AsyncMock()
         mock_sync_instance.handle_clickup_webhook = AsyncMock(return_value=AsyncMock(success=True, message="ok"))
         mock_sync.return_value = mock_sync_instance
@@ -94,6 +99,7 @@ async def test_webhook_task_deleted_is_handled(app_with_db):
          patch("asyncio.create_task") as mock_create_task:
 
         mock_settings.clickup_webhook_secret = ""
+        mock_settings.sync_enabled = True
         mock_sync_instance = AsyncMock()
         mock_sync_instance.handle_clickup_webhook = AsyncMock(return_value=AsyncMock(success=True, message="ok"))
         mock_sync.return_value = mock_sync_instance
@@ -133,3 +139,91 @@ async def test_webhook_no_task_id(app_with_db):
         })
     assert resp.status_code == 200
     assert resp.json()["status"] == "ignored"
+
+
+def _signed_request(secret: str, event: str = "taskCreated", task_id: str = "t1"):
+    """Corpo cru + assinatura como o ClickUp envia (hex puro do HMAC-SHA256 do corpo)."""
+    body = json.dumps({"event": event, "task_id": task_id, "history_items": []}).encode()
+    signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return body, signature
+
+
+@pytest.mark.asyncio
+async def test_webhook_with_secret_accepts_valid_signature(app_with_db):
+    body, signature = _signed_request("s3cret")
+
+    with patch("src.api.webhooks.SyncService") as mock_sync,          patch("src.api.webhooks.settings") as mock_settings,          patch("asyncio.create_task"):
+        mock_settings.clickup_webhook_secret = "s3cret"
+        mock_settings.sync_enabled = True
+        mock_sync.return_value.handle_clickup_webhook = AsyncMock(
+            return_value=AsyncMock(success=True, message="ok")
+        )
+
+        async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+            resp = await client.post(
+                "/webhooks/clickup",
+                content=body,
+                headers={"X-Signature": signature, "Content-Type": "application/json"},
+            )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_webhook_with_secret_rejects_missing_signature(app_with_db):
+    body, _ = _signed_request("s3cret")
+
+    with patch("src.api.webhooks.SyncService") as mock_sync,          patch("src.api.webhooks.settings") as mock_settings,          patch("asyncio.create_task") as mock_create_task:
+        mock_settings.clickup_webhook_secret = "s3cret"
+        mock_settings.sync_enabled = True
+
+        async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+            resp = await client.post(
+                "/webhooks/clickup", content=body, headers={"Content-Type": "application/json"}
+            )
+
+    assert resp.status_code == 401
+    mock_sync.assert_not_called()
+    mock_create_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_webhook_with_secret_rejects_wrong_signature(app_with_db):
+    body, _ = _signed_request("s3cret")
+
+    with patch("src.api.webhooks.SyncService") as mock_sync,          patch("src.api.webhooks.settings") as mock_settings,          patch("asyncio.create_task") as mock_create_task:
+        mock_settings.clickup_webhook_secret = "s3cret"
+        mock_settings.sync_enabled = True
+
+        async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+            resp = await client.post(
+                "/webhooks/clickup",
+                content=body,
+                headers={"X-Signature": "0" * 64, "Content-Type": "application/json"},
+            )
+
+    assert resp.status_code == 401
+    mock_sync.assert_not_called()
+    mock_create_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_webhook_skips_airbox_when_sync_is_disabled(app_with_db):
+    """Com SYNC_ENABLED=false (Airbox descartado) o webhook não pode chamar o
+    SyncService, mas continua atualizando o cache e o SSE."""
+    with patch("src.api.webhooks.SyncService") as mock_sync,          patch("src.api.webhooks.settings") as mock_settings,          patch("asyncio.create_task") as mock_create_task:
+        mock_settings.clickup_webhook_secret = ""
+        mock_settings.sync_enabled = False
+
+        async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+            resp = await client.post("/webhooks/clickup", json={
+                "event": "taskCreated",
+                "task_id": "t_new",
+                "history_items": [],
+            })
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    mock_sync.assert_not_called()
+    mock_create_task.assert_called_once()
