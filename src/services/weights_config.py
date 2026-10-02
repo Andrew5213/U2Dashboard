@@ -578,10 +578,17 @@ def build_province_evolution(lists_data: list[dict], now: datetime) -> dict:
 
     Algoritmo:
         - Cada lista tem peso igual: 1/n_lists
-        - Dentro de cada lista, tarefas têm peso TASK_WEIGHTS (normalizado)
-        - Contribuição de uma tarefa ao progresso da pasta = weight_norm / n_lists
-        - Ao marcar uma tarefa como concluída, sua contribuição é adicionada cumulativamente
-        - O eixo X é reconstruído a partir de date_closed de cada tarefa concluída
+        - Dentro de cada lista, disciplinas têm peso TASK_WEIGHTS (normalizado)
+        - Dentro de cada disciplina, atividades têm peso SUBTASK_WEIGHTS (normalizado)
+        - Cada ATIVIDADE concluída adiciona weight_disciplina × weight_atividade / n_lists
+          na data em que foi fechada; uma disciplina marcada como concluída fecha o que
+          faltar na própria data dela
+        - O eixo X é reconstruído a partir de date_closed de cada conclusão
+
+    O progresso final é calculado com compute_task_progress — o mesmo que alimenta o
+    gráfico de barras —, então as duas visões terminam no mesmo número. Antes esta
+    função só contava disciplinas inteiras fechadas, e qualquer província com
+    atividades concluídas mas nenhuma disciplina fechada aparecia como 0%.
     """
     n_lists = len(lists_data)
     if not n_lists:
@@ -601,16 +608,39 @@ def build_province_evolution(lists_data: list[dict], now: datetime) -> dict:
         list_prog = 0.0
         for task, raw_w in zip(tasks, raw_weights):
             norm_w = raw_w / total_w if total_w > 0 else 0.0
-            contrib = norm_w / n_lists
+            share = norm_w / n_lists          # quanto esta disciplina vale na província
+            subs = task.get("subtasks") or []
 
             if task.get("date_created"):
                 all_created.append(task["date_created"])
 
+            # Mesmo progresso que o gráfico de barras usa — os dois têm de fechar
+            # no mesmo número.
+            list_prog += norm_w * compute_task_progress(task["name"], task["is_done"], subs)
+
+            # Decomposição no tempo: cada atividade concluída vira um degrau na
+            # data em que foi fechada.
+            credited = 0.0
+            sub_dict = SUBTASK_WEIGHTS.get(_norm(task["name"]), {})
+            sub_raws = [sub_dict.get(_norm(s["name"]), 1.0) for s in subs]
+            sub_total = sum(sub_raws)
+            for sub, sub_w in zip(subs, sub_raws):
+                if not sub.get("is_done") or sub_total <= 0:
+                    continue
+                dc = sub.get("date_closed")
+                if not dc:
+                    continue
+                contrib = share * (sub_w / sub_total)
+                events.append((dc, contrib))
+                credited += contrib
+
+            # Disciplina fechada pelo engenheiro vale 1.0 mesmo com atividades em
+            # aberto (compute_task_progress). O que sobrou entra na data do pai.
             if task["is_done"]:
-                list_prog += norm_w
                 dc = task.get("date_closed")
-                if dc:
-                    events.append((dc, contrib))
+                remainder = share - credited
+                if dc and remainder > 1e-9:
+                    events.append((dc, remainder))
 
         current_progress += list_prog / n_lists
 

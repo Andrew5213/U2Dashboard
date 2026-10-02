@@ -76,3 +76,74 @@ def test_compute_list_progress_uses_real_weights_not_equal_fallback():
     # diferente do resultado ponderado, provando que o peso real está sendo usado.
     simple_flat_rate = 1 / 4
     assert progress != pytest.approx(simple_flat_rate, abs=0.01)
+
+
+# ─── Curva de evolução ───────────────────────────────────────────────────────
+# A evolução e o gráfico de barras precisam fechar no mesmo número. Antes a curva
+# só contava disciplinas inteiras fechadas, então províncias como HUAMBO — com
+# atividades concluídas e nenhuma disciplina fechada — apareciam com 0%.
+
+from datetime import datetime  # noqa: E402
+
+from src.services.weights_config import build_province_evolution  # noqa: E402
+
+
+def _lista(disciplina: str, atividades: list[tuple[str, bool]], pai_done: bool = False) -> dict:
+    criado = datetime(2026, 1, 1)
+    return {
+        "list_id": "l1", "name": "Site FM", "total_tasks": 1, "completed_tasks": 0,
+        "tasks": [{
+            "task_id": "t1", "name": disciplina, "is_done": pai_done,
+            "date_created": criado,
+            "date_closed": datetime(2026, 9, 30) if pai_done else None,
+            "subtasks": [
+                {"name": nome, "is_done": done, "date_created": criado,
+                 "date_closed": datetime(2026, 9, 30) if done else None}
+                for nome, done in atividades
+            ],
+        }],
+    }
+
+
+def test_atividades_concluidas_movem_a_curva_sem_disciplina_fechada():
+    lista = _lista("Gerador", [("Fabricação caixote", True), ("Concretagem base gerador", False)])
+    ev = build_province_evolution([lista], datetime(2026, 10, 2))
+
+    assert ev["current_progress"] > 0
+    assert len(ev["points"]) > 2  # início + degrau da atividade + hoje
+
+
+def test_evolucao_bate_com_o_progresso_do_grafico_de_barras():
+    lista = _lista("Gerador", [("Fabricação caixote", True), ("Concretagem base gerador", False)])
+    ev = build_province_evolution([lista], datetime(2026, 10, 2))
+    barras, _ = compute_list_progress(lista["tasks"])
+
+    assert ev["current_progress"] == pytest.approx(barras, abs=1e-4)
+
+
+def test_disciplina_fechada_vale_um_inteiro_mesmo_com_atividade_aberta():
+    lista = _lista("Gerador", [("Fabricação caixote", True), ("Concretagem base gerador", False)],
+                   pai_done=True)
+    ev = build_province_evolution([lista], datetime(2026, 10, 2))
+
+    assert ev["current_progress"] == pytest.approx(1.0, abs=1e-4)
+    # o degrau da atividade e o do fechamento da disciplina somam o total, sem dobrar
+    assert ev["points"][-1]["progress"] == pytest.approx(1.0, abs=1e-4)
+
+
+def test_nada_concluido_fica_em_zero():
+    lista = _lista("Gerador", [("Fabricação caixote", False)])
+    ev = build_province_evolution([lista], datetime(2026, 10, 2))
+
+    assert ev["current_progress"] == 0.0
+    assert all(p["progress"] == 0.0 for p in ev["points"])
+
+
+def test_atividade_sem_data_de_conclusao_nao_quebra_a_serie():
+    lista = _lista("Gerador", [("Fabricação caixote", True)])
+    lista["tasks"][0]["subtasks"][0]["date_closed"] = None
+    ev = build_province_evolution([lista], datetime(2026, 10, 2))
+
+    # sem data não há degrau, mas o ponto final ainda reflete o progresso real
+    assert ev["current_progress"] > 0
+    assert ev["points"][-1]["progress"] == pytest.approx(ev["current_progress"], abs=1e-4)

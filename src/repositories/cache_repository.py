@@ -71,24 +71,35 @@ def _leaf_tasks_clause():
     return ClickUpTaskCache.task_id.notin_(parent_ids)
 
 
+def _closed_at(task: ClickUpTaskCache, is_done: bool) -> datetime | None:
+    """Quando a tarefa foi concluída. `date_closed` vem do custom field "Data de
+    Conclusão", preenchido em menos da metade das tarefas — daí o fallback para
+    `date_updated`, que a curva de evolução precisa para posicionar o degrau."""
+    return task.date_closed or (task.date_updated if is_done else None)
+
+
 def _build_task_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
     """Agrupa tasks ORM de uma lista em árvore de 2 níveis para o cálculo ponderado
-    de weights_config.py: [{task_id, name, is_done, subtasks:[{name, is_done}]}]."""
+    de weights_config.py:
+    [{task_id, name, is_done, date_created, date_closed, subtasks:[{name, is_done,
+      date_created, date_closed}]}].
+
+    As datas são ignoradas por compute_list_progress e usadas por
+    build_province_evolution para reconstruir a série temporal."""
     parents: dict[str, dict] = {}
     subtasks_by_parent: dict[str, list] = {}
     for t in tasks:
         is_done = t.status_type in ("done", "closed")
+        node = {
+            "name": t.name or "",
+            "is_done": is_done,
+            "date_created": t.date_created,
+            "date_closed": _closed_at(t, is_done),
+        }
         if t.parent_task_id is None:
-            parents[t.task_id] = {
-                "task_id": t.task_id,
-                "name": t.name or "",
-                "is_done": is_done,
-            }
+            parents[t.task_id] = {"task_id": t.task_id, **node}
         else:
-            subtasks_by_parent.setdefault(t.parent_task_id, []).append({
-                "name": t.name or "",
-                "is_done": is_done,
-            })
+            subtasks_by_parent.setdefault(t.parent_task_id, []).append(node)
     return [
         {**task_data, "subtasks": subtasks_by_parent.get(tid, [])}
         for tid, task_data in parents.items()
@@ -1289,24 +1300,19 @@ class CacheRepository:
 
     async def get_folder_tasks_for_evolution(self, folder_id: str) -> list[dict]:
         """
-        Retorna listas com tarefas pai (sem subtarefas) incluindo datas de criação e
-        fechamento — usado para reconstruir a curva de evolução temporal ponderada.
+        Retorna listas com disciplinas E suas atividades, incluindo datas de criação
+        e conclusão — usado para reconstruir a curva de evolução temporal ponderada.
+
+        As subtarefas são indispensáveis: sem elas a curva só se move quando uma
+        disciplina inteira fecha, e províncias com atividades concluídas mas nenhuma
+        disciplina fechada apareciam com 0% na evolução enquanto o gráfico de barras
+        (que sempre considerou subtarefas) mostrava progresso real.
         """
         lists = await self.get_lists_with_metrics(folder_id)
         result: list[dict] = []
         for lst in lists:
-            parent_tasks = await self.get_tasks_by_list(lst["list_id"], include_subtasks=False)
-            tasks_data = []
-            for t in parent_tasks:
-                is_done = t.status_type in ("done", "closed")
-                tasks_data.append({
-                    "task_id": t.task_id,
-                    "name": t.name or "",
-                    "is_done": is_done,
-                    "date_created": t.date_created,
-                    "date_closed": t.date_closed or (t.date_updated if is_done else None),
-                    "subtasks": [],
-                })
+            all_tasks = await self.get_tasks_by_list(lst["list_id"], include_subtasks=True)
+            tasks_data = _build_task_tree(all_tasks)
             result.append({
                 "list_id": lst["list_id"],
                 "name": lst["name"],
