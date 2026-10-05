@@ -6,14 +6,21 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Autorização de Serviço — U2 Broadcast</title>
 <link rel="icon" type="image/png" href="/img/favicon u2.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root { --navy:#1B3A6B; --green:#15803d; --red:#b91c1c; --line:#e5e7eb; --muted:#6b7280; }
+  /* Paleta do hub U2 (u2broadcast.engenhariarf.com) — mesma do dashboard. */
+  :root {
+    --navy:#161618; --green:#15803d; --red:#b91c1c; --line:#2a2a2e; --muted:#8b8b93;
+    --bg:#0a0a0b; --panel:#161618; --ink:#f4f4f2; --accent:#e8262a;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:#eef2f7; color:#111827;
-         font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif; padding:24px 14px; }
-  .card { max-width:600px; margin:0 auto; background:#fff; border-radius:6px; overflow:hidden;
-          box-shadow:0 1px 6px rgba(0,0,0,.12); }
-  .head { padding:22px 26px; color:#fff; background:var(--navy); }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font-family:'Archivo','Segoe UI',system-ui,-apple-system,Arial,sans-serif; padding:24px 14px; }
+  .card { max-width:600px; margin:0 auto; background:var(--panel); border-radius:6px; overflow:hidden;
+          box-shadow:0 1px 6px rgba(0,0,0,.5); border:1px solid var(--line); }
+  .head { padding:22px 26px; color:#fff; background:var(--accent); }
   .head.approve { background:var(--green); }
   .head.reject  { background:var(--red); }
   .head .kicker { margin:0 0 6px; font-size:10px; font-weight:700; letter-spacing:2px;
@@ -28,9 +35,10 @@
   td { padding:9px 0 9px 14px; border-bottom:1px solid var(--line); font-size:14px; }
   label { display:block; margin:20px 0 6px; font-size:13px; font-weight:600; }
   .req { color:var(--red); }
-  textarea { width:100%; min-height:90px; padding:11px; border:1px solid #cbd5e1;
-             border-radius:5px; font:inherit; font-size:15px; resize:vertical; }
-  textarea:focus { outline:2px solid var(--navy); outline-offset:1px; }
+  textarea { width:100%; min-height:90px; padding:11px; border:1px solid var(--line);
+             border-radius:5px; font:inherit; font-size:15px; resize:vertical;
+             background:#1c1c20; color:var(--ink); }
+  textarea:focus { outline:2px solid var(--accent); outline-offset:1px; }
   button { width:100%; margin-top:18px; padding:16px; border:0; border-radius:5px;
            color:#fff; font-size:16px; font-weight:700; cursor:pointer; }
   button.approve { background:var(--green); }
@@ -38,8 +46,8 @@
   button:disabled { opacity:.55; cursor:not-allowed; }
   .hint { margin:14px 0 0; color:var(--muted); font-size:12px; line-height:1.6; text-align:center; }
   .alert { margin:0 0 16px; padding:12px 14px; border-radius:5px; font-size:14px;
-           background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
-  .link { display:block; margin-top:18px; text-align:center; color:var(--navy); font-size:13px; }
+           background:rgba(232,38,42,.14); color:#fca5a5; border:1px solid rgba(232,38,42,.4); }
+  .link { display:block; margin-top:18px; text-align:center; color:var(--accent); font-size:13px; }
   .msg { font-size:15px; line-height:1.65; }
   /* No celular a coluna fixa de rótulos espreme o Motivo em duas palavras por
      linha — abaixo de 520px o par vira rótulo em cima, valor embaixo. */

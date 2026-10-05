@@ -8,7 +8,12 @@
   <link rel="icon" type="image/png" href="/img/favicon u2.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/echarts.min.js"></script>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="/static/echarts-theme-u2.js?v=33"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=33" />
+  <link rel="stylesheet" href="/static/theme-dark.css?v=33" />
   <style>
     /* Submenu de províncias */
     #provincia-submenu {
@@ -23,7 +28,7 @@
   </style>
 </head>
 
-<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+<body class="theme-dark bg-gray-100 font-sans flex h-screen overflow-hidden">
 
   <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
   <aside class="w-56 flex-shrink-0 bg-gray-900 flex flex-col z-30 h-screen overflow-hidden">
@@ -227,9 +232,9 @@
   <!-- Toast -->
   <div id="toast" class="fixed bottom-5 right-5 z-50 hidden max-w-sm"></div>
 
-  <script src="/static/sse.js?v=31"></script>
-  <script src="/static/charts.js?v=31"></script>
-  <script src="/static/app.js?v=31"></script>
+  <script src="/static/sse.js?v=33"></script>
+  <script src="/static/charts.js?v=33"></script>
+  <script src="/static/app.js?v=33"></script>
   <script>
     function _exportWithSpinner(btnId, url) {
       const btn = document.getElementById(btnId);

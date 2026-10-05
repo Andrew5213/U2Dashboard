@@ -22,7 +22,7 @@
       return s
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:11.5px;font-family:monospace">$1</code>');
+        .replace(/`([^`]+)`/g, '<code style="background:var(--u2-panel-2);padding:1px 5px;border-radius:3px;font-size:11.5px;font-family:monospace">$1</code>');
     }
 
     const lines = safe.split('\n');
@@ -39,13 +39,13 @@
     for (const line of lines) {
       if (/^### /.test(line)) {
         flushList();
-        out.push(`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px;color:#1e293b">${inline(line.slice(4))}</div>`);
+        out.push(`<div style="font-weight:700;font-size:12.5px;margin:10px 0 3px;color:var(--u2-white)">${inline(line.slice(4))}</div>`);
       } else if (/^## /.test(line)) {
         flushList();
-        out.push(`<div style="font-weight:700;font-size:13px;margin:12px 0 4px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:3px">${inline(line.slice(3))}</div>`);
+        out.push(`<div style="font-weight:700;font-size:13px;margin:12px 0 4px;color:var(--u2-white);border-bottom:1px solid var(--u2-line);padding-bottom:3px">${inline(line.slice(3))}</div>`);
       } else if (/^# /.test(line)) {
         flushList();
-        out.push(`<div style="font-weight:700;font-size:14px;margin:12px 0 4px;color:#0f172a">${inline(line.slice(2))}</div>`);
+        out.push(`<div style="font-weight:700;font-size:14px;margin:12px 0 4px;color:var(--u2-white)">${inline(line.slice(2))}</div>`);
       } else if (/^[-*] /.test(line)) {
         listItems.push(inline(line.slice(2)));
       } else if (line.trim() === '') {
@@ -115,11 +115,11 @@
     el.className = 'chart-canvas';
     container.appendChild(el);
     disposeChart(chartId);
-    const inst = echarts.init(el);
+    const inst = echarts.init(el, (typeof U2_DARK === 'function' && U2_DARK()) ? 'u2dark' : null);
     _chartInstances[chartId] = inst;
 
     let opt = {
-      title: { text: chart.title || '', textStyle: { fontSize: 13, fontWeight: 600, color: '#1e293b' } },
+      title: { text: chart.title || '', textStyle: { fontSize: 13, fontWeight: 600, color: '#f4f4f2' } },
       tooltip: { trigger: chart.type === 'pie' ? 'item' : 'axis' },
       animation: true,
     };

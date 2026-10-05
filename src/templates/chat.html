@@ -6,7 +6,12 @@
   <title>Assistente IA — U2 Broadcast</title>
   <link rel="icon" type="image/png" href="/img/favicon u2.png" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/theme-dark.css?v=33" />
   <script src="/static/echarts.min.js"></script>
+  <script src="/static/echarts-theme-u2.js?v=33"></script>
   <style>
     /* Submenu de províncias */
     #provincia-submenu { max-height: 0; overflow: hidden; transition: max-height 0.25s ease; }
@@ -69,7 +74,7 @@
     .input-hint { font-size: 10.5px; color: #94a3b8; margin-top: 6px; text-align: center; }
   </style>
 </head>
-<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+<body class="theme-dark bg-gray-100 font-sans flex h-screen overflow-hidden">
 
   <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
   <aside class="w-56 flex-shrink-0 bg-gray-900 flex flex-col z-30 h-screen overflow-hidden">

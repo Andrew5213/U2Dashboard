@@ -6,9 +6,13 @@
   <title>U2 Broadcast — RDO Civil</title>
   <link rel="icon" type="image/png" href="/img/favicon u2.png" />
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=33" />
+  <link rel="stylesheet" href="/static/theme-dark.css?v=33" />
 </head>
-<body class="bg-gray-100 font-sans flex h-screen overflow-hidden">
+<body class="theme-dark bg-gray-100 font-sans flex h-screen overflow-hidden">
 
   <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
   <aside class="w-56 flex-shrink-0 bg-gray-900 flex flex-col z-30 h-screen overflow-hidden">
@@ -470,11 +474,11 @@
   <style>
     .field-label { display:block; font-size:11px; font-weight:600; color:#9ca3af; text-transform:uppercase; letter-spacing:.07em; margin-bottom:5px; }
     .field-input { display:block; width:100%; border:1px solid #d1d5db; border-radius:8px; padding:8px 12px; font-size:0.875rem; background:#fff; outline:none; transition:border-color .15s, box-shadow .15s; }
-    .field-input:focus { border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
-    .field-input[readonly] { background:#f9fafb; color:#6b7280; cursor:default; }
-    .field-input.status-ok   { border-color:#22c55e !important; background:#f0fdf4 !important; color:#15803d; }
-    .field-input.status-warn { border-color:#f59e0b !important; background:#fffbeb !important; color:#92400e; }
-    .field-input.status-bad  { border-color:#ef4444 !important; background:#fef2f2 !important; color:#b91c1c; }
+    .field-input:focus { border-color:#e8262a; box-shadow:0 0 0 3px rgba(232,38,42,.18); }
+    .field-input[readonly] { background:#111113; color:#8b8b93; cursor:default; }
+    .field-input.status-ok   { border-color:#34d399 !important; background:rgba(52,211,153,.14) !important; color:#34d399; }
+    .field-input.status-warn { border-color:#fbbf24 !important; background:rgba(251,191,36,.14) !important; color:#fbbf24; }
+    .field-input.status-bad  { border-color:#e8262a !important; background:rgba(232,38,42,.14) !important; color:#e8262a; }
     .td-input { @apply w-full border-0 bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 rounded px-1 py-0.5; }
     .site-tab-active { @apply bg-blue-600 text-white border-blue-600; }
     .site-tab-idle   { @apply text-gray-600 border-gray-300 hover:bg-gray-100; }
@@ -724,9 +728,9 @@
       if (isCatalog) {
         descInput.classList.add('hidden');
         catInput.value = opt.dataset.cat || '';
-        catInput.readOnly = true; catInput.style.background = '#f3f4f6';
+        catInput.readOnly = true; catInput.style.background = '#111113';
         unitInput.value = opt.dataset.unit || '';
-        unitInput.readOnly = true; unitInput.style.background = '#f3f4f6';
+        unitInput.readOnly = true; unitInput.style.background = '#111113';
       } else {
         descInput.classList.remove('hidden');
         catInput.readOnly = false; catInput.style.background = '';
@@ -1366,6 +1370,6 @@
       }
     }
   </script>
-  <script src="/static/sse.js?v=30"></script>
+  <script src="/static/sse.js?v=33"></script>
 </body>
 </html>

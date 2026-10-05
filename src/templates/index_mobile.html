@@ -10,9 +10,14 @@
   <link rel="icon" type="image/png" href="/img/favicon u2.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/echarts.min.js"></script>
-  <link rel="stylesheet" href="/static/mobile.css" />
+  <script src="/static/echarts-theme-u2.js?v=33"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/theme-dark.css?v=33" />
+  <link rel="stylesheet" href="/static/mobile.css?v=33" />
 </head>
-<body class="bg-gray-100 font-sans" style="padding-top:env(safe-area-inset-top)">
+<body class="theme-dark bg-gray-100 font-sans" style="padding-top:env(safe-area-inset-top)">
 
   <!-- ══ HEADER ══════════════════════════════════════════════════ -->
   <header class="mob-header">
@@ -26,7 +31,7 @@
       <span class="mob-bc-current">Visão Geral</span>
     </div>
     <div class="mob-sse-chip">
-      <span id="sse-dot" style="width:7px;height:7px;border-radius:50%;background:#4b5563;flex-shrink:0;display:inline-block"></span>
+      <span id="sse-dot" style="width:7px;height:7px;border-radius:50%;background:var(--u2-gray);flex-shrink:0;display:inline-block"></span>
       <span id="sse-label" style="display:none"></span>
     </div>
   </header>
@@ -60,7 +65,7 @@
 
       <!-- PDF Diário -->
       <button class="mob-drawer-item" id="btn-pdf-diario" onclick="exportDiario()">
-        <span class="mob-drawer-item-icon" style="background:#fef3c7">
+        <span class="mob-drawer-item-icon" style="background:rgba(251,191,36,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#d97706" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
           </svg>
@@ -73,7 +78,7 @@
 
       <!-- PDF Semanal -->
       <button class="mob-drawer-item" id="btn-pdf-semanal" onclick="exportSemanal()">
-        <span class="mob-drawer-item-icon" style="background:#ecfdf5">
+        <span class="mob-drawer-item-icon" style="background:rgba(52,211,153,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#16a34a" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
           </svg>
@@ -86,7 +91,7 @@
 
       <!-- PDF Executivo -->
       <button class="mob-drawer-item" id="btn-pdf-executivo" onclick="exportPDF()">
-        <span class="mob-drawer-item-icon" style="background:#eff6ff">
+        <span class="mob-drawer-item-icon" style="background:rgba(96,165,250,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#1e40af" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
           </svg>
@@ -99,7 +104,7 @@
 
       <!-- PDF Província (expansível) -->
       <button class="mob-drawer-item" id="btn-pdf-provincia" onclick="toggleProvinciaDrawer()">
-        <span class="mob-drawer-item-icon" style="background:#f5f3ff">
+        <span class="mob-drawer-item-icon" style="background:rgba(129,140,248,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c-.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
           </svg>
@@ -127,7 +132,7 @@
     <div class="mob-drawer-body">
 
       <a href="#/" class="mob-drawer-item" onclick="closeMenu()">
-        <span class="mob-drawer-item-icon" style="background:#eff6ff">
+        <span class="mob-drawer-item-icon" style="background:rgba(96,165,250,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#1e40af" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
           </svg>
@@ -137,7 +142,7 @@
 
       {% if chat_enabled %}
       <a href="/assistente" class="mob-drawer-item">
-        <span class="mob-drawer-item-icon" style="background:#f5f3ff">
+        <span class="mob-drawer-item-icon" style="background:rgba(129,140,248,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
           </svg>
@@ -147,7 +152,7 @@
       {% endif %}
 
       <a href="/documentacoes" class="mob-drawer-item">
-        <span class="mob-drawer-item-icon" style="background:#fef2f2">
+        <span class="mob-drawer-item-icon" style="background:rgba(232,38,42,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#dc2626" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-19.5 0v6a2.25 2.25 0 0 0 2.25 2.25h15a2.25 2.25 0 0 0 2.25-2.25v-6m-19.5 0h19.5M6 6h3.879a1.5 1.5 0 0 1 1.06.44l1.122 1.12a1.5 1.5 0 0 0 1.06.44H18a2.25 2.25 0 0 1 2.25 2.25v.75" />
           </svg>
@@ -156,7 +161,7 @@
       </a>
 
       <a href="https://centraldoconhecimento.up.railway.app" target="_blank" rel="noopener noreferrer" class="mob-drawer-item">
-        <span class="mob-drawer-item-icon" style="background:#eff6ff">
+        <span class="mob-drawer-item-icon" style="background:rgba(96,165,250,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
           </svg>
@@ -165,7 +170,7 @@
       </a>
 
       <button class="mob-drawer-item" onclick="closeMenu(); openDrawer();">
-        <span class="mob-drawer-item-icon" style="background:#ecfdf5">
+        <span class="mob-drawer-item-icon" style="background:rgba(52,211,153,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#16a34a" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
           </svg>
@@ -174,7 +179,7 @@
       </button>
 
       <button class="mob-drawer-item" onclick="closeMenu(); triggerRefresh();">
-        <span class="mob-drawer-item-icon" style="background:#fffbeb">
+        <span class="mob-drawer-item-icon" style="background:rgba(251,191,36,.18)">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#d97706" stroke-width="1.75">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
           </svg>
@@ -186,8 +191,8 @@
   </div>
 
   <!-- ══ SCRIPTS ════════════════════════════════════════════════ -->
-  <script src="/static/sse.js?v=31"></script>
-  <script src="/static/charts.js?v=31"></script>
+  <script src="/static/sse.js?v=33"></script>
+  <script src="/static/charts.js?v=33"></script>
 
   <script>
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -214,9 +219,9 @@
     function fmtPctPrecise(r) { return ((r||0)*100).toFixed(2)+'%'; }
 
     function healthColor(rate, overdue) {
-      if (overdue > 0)  return { border:'#f87171', badge:'#fef2f2', badgeTxt:'#dc2626', dot:'#ef4444', label:'Em risco' };
-      if (rate < 0.1)   return { border:'#fbbf24', badge:'#fffbeb', badgeTxt:'#b45309', dot:'#f59e0b', label:'Atenção' };
-      return               { border:'#4ade80', badge:'#f0fdf4', badgeTxt:'#16a34a', dot:'#22c55e', label:'No prazo' };
+      if (overdue > 0)  return { border:'#f87171', badge:'rgba(232,38,42,.14)', badgeTxt:'#dc2626', dot:'#ef4444', label:'Em risco' };
+      if (rate < 0.1)   return { border:'#fbbf24', badge:'rgba(251,191,36,.14)', badgeTxt:'var(--u2-amber)', dot:'var(--u2-amber)', label:'Atenção' };
+      return               { border:'#4ade80', badge:'rgba(52,211,153,.14)', badgeTxt:'var(--u2-green)', dot:'var(--u2-green)', label:'No prazo' };
     }
 
     function progressFill(rate) {
@@ -227,7 +232,7 @@
 
     function statusBadge(status, color) {
       const bg = color ? color+'22' : '#e2e8f022';
-      const fg = color || '#64748b';
+      const fg = color || 'var(--u2-gray)';
       return `<span class="mob-status" style="background:${bg};color:${fg}">
         <span style="width:6px;height:6px;border-radius:50%;background:${fg};display:inline-block"></span>
         ${esc(status||'sem status')}
@@ -241,9 +246,9 @@
     function showToast(msg, type) {
       const el = document.getElementById('mob-toast');
       const colors = {
-        success:'background:#f0fdf4;color:#166534;border:1px solid #bbf7d0',
-        error:  'background:#fef2f2;color:#991b1b;border:1px solid #fecaca',
-        info:   'background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe',
+        success:'background:rgba(52,211,153,.18);color:var(--u2-green);border:1px solid rgba(52,211,153,.4)',
+        error:  'background:rgba(232,38,42,.18);color:#fca5a5;border:1px solid rgba(232,38,42,.4)',
+        info:   'background:rgba(96,165,250,.18);color:var(--u2-blue);border:1px solid rgba(96,165,250,.4)',
       };
       el.setAttribute('style', (colors[type]||colors.info)+';display:block');
       el.textContent = msg;
@@ -285,7 +290,7 @@
     function kpiCard(label, value, sub, color) {
       return `<div class="mob-kpi-card">
         <div class="mob-kpi-label">${esc(label)}</div>
-        <div class="mob-kpi-value" style="color:${color||'#1e293b'}">${esc(String(value))}</div>
+        <div class="mob-kpi-value" style="color:${color||'var(--u2-white)'}">${esc(String(value))}</div>
         ${sub?`<div class="mob-kpi-sub">${esc(String(sub))}</div>`:''}
       </div>`;
     }
@@ -310,7 +315,7 @@
       }
 
       const pct = fmtPctPrecise(overview.completion_rate);
-      const overdueClr = overview.overdue_tasks>0?'#dc2626':'#1e293b';
+      const overdueClr = overview.overdue_tasks>0?'#dc2626':'var(--u2-white)';
 
       const foldersHTML = folders.map(f=>{
         const h = healthColor(f.completion_rate, f.overdue_tasks);
@@ -334,8 +339,8 @@
         if(!list.length) return `<div style="text-align:center;padding:24px 0;font-size:12px;color:#94a3b8">Nenhuma tarefa vencendo.</div>`;
         return list.map(t=>{
           const days = Math.ceil((new Date(t.due_date)-Date.now())/86400000);
-          const urgClr = days<=2?'#dc2626':days<=7?'#d97706':'#64748b';
-          const dot    = days<=2?'#ef4444':days<=7?'#f59e0b':'#cbd5e1';
+          const urgClr = days<=2?'#dc2626':days<=7?'var(--u2-amber)':'var(--u2-gray)';
+          const dot    = days<=2?'#ef4444':days<=7?'var(--u2-amber)':'var(--u2-gray)';
           const dayStr = days===0?'Hoje':days===1?'Amanhã':'em '+days+'d';
           return `<div class="mob-task-row">
             <span class="mob-task-dot" style="background:${dot}"></span>
@@ -351,8 +356,8 @@
       setView(`
         <!-- KPIs -->
         <div class="mob-kpi-grid">
-          ${kpiCard('Total de Tasks', overview.total_tasks, null, '#1e293b')}
-          ${kpiCard('Concluídas', overview.completed_tasks, pct+' do total', '#16a34a')}
+          ${kpiCard('Total de Tasks', overview.total_tasks, null, 'var(--u2-white)')}
+          ${kpiCard('Concluídas', overview.completed_tasks, pct+' do total', 'var(--u2-green)')}
           ${kpiCard('Progresso', pct, overview.completed_tasks+' de '+overview.total_tasks, '#dc2626')}
           ${kpiCard('Em Atraso', overview.overdue_tasks, 'tasks vencidas', overdueClr)}
         </div>
@@ -395,7 +400,7 @@
         (function(){
           const el=document.getElementById('chart-folders');
           if(!el)return;
-          const chart=echarts.init(el,'',{renderer:'canvas'});
+          const chart=echarts.init(el,'u2dark',{renderer:'canvas'});
           const names=sorted.map(f=>f.name);
           const completed=sorted.map(f=>Math.round((f.completion_rate||0)*100));
           const open=sorted.map(f=>100-Math.round((f.completion_rate||0)*100));
@@ -414,9 +419,9 @@
             series:[
               {name:'Concluídas',type:'bar',stack:'total',data:completed,
                itemStyle:{color:'#4ade80',cursor:'pointer'},
-               label:{show:true,position:'inside',formatter:function(p){return p.value?p.value+'%':'';},fontSize:10,color:'#166534'}},
+               label:{show:true,position:'inside',formatter:function(p){return p.value?p.value+'%':'';},fontSize:10,color:'#06281a'}},
               {name:'Em aberto',type:'bar',stack:'total',data:open,
-               itemStyle:{color:'#e2e8f0'},
+               itemStyle:{color:'#2e2e34'},
                label:{show:false}},
             ],
           });
@@ -430,7 +435,7 @@
         // Gráfico de equipes — barras horizontais (nomes longos, tela estreita)
         if (assignees&&assignees.length&&document.getElementById('chart-assignees')) {
           const top = assignees.slice(0,15);
-          const inst = echarts.init(document.getElementById('chart-assignees'));
+          const inst = echarts.init(document.getElementById('chart-assignees'), 'u2dark');
           const barData = top.map(d=>{
             const total = d.open+d.completed;
             const rate  = total>0?d.completed/total:0;
@@ -446,7 +451,7 @@
                      (d.overdue?`<br><span style="color:#f87171">Em atraso: <b>${d.overdue}</b></span>`:'');
             }},
             grid:{left:8,right:44,top:6,bottom:6,containLabel:true},
-            xAxis:{type:'value',axisLabel:{fontSize:9},splitLine:{lineStyle:{color:'#f1f5f9'}}},
+            xAxis:{type:'value',axisLabel:{fontSize:9},splitLine:{lineStyle:{color:'#1c1c20'}}},
             yAxis:{type:'category',data:top.map(d=>d.assignee),
                    axisLabel:{fontSize:9,width:120,overflow:'truncate'}},
             series:[{type:'bar',data:barData,barMaxWidth:20,
@@ -486,7 +491,7 @@
           onclick="location.hash='#/list/${esc(l.list_id)}';window.__listName='${esc(l.name)}'">
           <div class="mob-card-header">
             <span class="mob-card-title">${esc(l.name)}</span>
-            <span style="font-size:14px;font-weight:700;color:${l.completion_rate>=0.8?'#16a34a':l.completion_rate>=0.4?'#d97706':'#dc2626'};flex-shrink:0">${fmtPct(l.completion_rate)}</span>
+            <span style="font-size:14px;font-weight:700;color:${l.completion_rate>=0.8?'var(--u2-green)':l.completion_rate>=0.4?'var(--u2-amber)':'#dc2626'};flex-shrink:0">${fmtPct(l.completion_rate)}</span>
           </div>
           <div class="mob-card-meta">${l.total_tasks} task(s)</div>
           ${progressFill(l.completion_rate)}
@@ -495,11 +500,11 @@
 
       setView(`
         <div class="mob-kpi-grid">
-          ${kpiCard('Áreas', lists.length, null, '#6366f1')}
-          ${kpiCard('Tasks', total, null, '#1e293b')}
-          ${kpiCard('Concluídas', fmtPct(rate), completed+' de '+total, '#16a34a')}
-          ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'#1e293b')}
-          ${wp!==null?kpiCard('Prog. Ponderado',fmtPct(wp),'EVM por disciplina','#7c3aed'):''}
+          ${kpiCard('Áreas', lists.length, null, 'var(--u2-indigo)')}
+          ${kpiCard('Tasks', total, null, 'var(--u2-white)')}
+          ${kpiCard('Concluídas', fmtPct(rate), completed+' de '+total, 'var(--u2-green)')}
+          ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'var(--u2-white)')}
+          ${wp!==null?kpiCard('Prog. Ponderado',fmtPct(wp),'EVM por disciplina','var(--u2-indigo)'):''}
         </div>
         <div class="mob-chart-wrap">
           <div class="mob-chart-title">Progresso por Disciplina</div>
@@ -547,7 +552,7 @@
 
       const taskRows = tasks.map(t=>`
         <div class="mob-task-row" onclick="location.hash='#/task/${esc(t.task_id)}';window.__taskName='${esc(t.name)}'">
-          <span class="mob-task-dot" style="background:${t.status_color||'#94a3b8'}"></span>
+          <span class="mob-task-dot" style="background:${t.status_color||'var(--u2-gray)'}"></span>
           <div style="flex:1;min-width:0">
             <div class="mob-task-name">${esc(t.name)}</div>
             <div class="mob-task-meta">${statusBadge(t.status,t.status_color)}</div>
@@ -558,12 +563,12 @@
       setView(`
         <div class="mob-kpi-grid">
           ${kpiCard('Tasks', total)}
-          ${kpiCard('Concluídas', completed, fmtPct(rate), '#16a34a')}
-          ${kpiCard('Em Andamento', total-completed-overdue, null, '#2563eb')}
-          ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'#1e293b')}
+          ${kpiCard('Concluídas', completed, fmtPct(rate), 'var(--u2-green)')}
+          ${kpiCard('Em Andamento', total-completed-overdue, null, 'var(--u2-red)')}
+          ${kpiCard('Em Atraso', overdue, null, overdue>0?'#dc2626':'var(--u2-white)')}
         </div>
         ${total>0?`<button type="button" id="btn-pdf-lista" onclick="exportListaPdf('${esc(listId)}')"
-          style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#1d4ed8;background:#eff6ff;border:none;padding:8px 12px;border-radius:8px;margin-bottom:10px;width:100%;justify-content:center">
+          style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#1d4ed8;background:rgba(96,165,250,.18);border:none;padding:8px 12px;border-radius:8px;margin-bottom:10px;width:100%;justify-content:center">
           Relatório PDF da Lista
         </button>`:''}
         <div class="mob-table-wrap">
@@ -596,7 +601,7 @@
       const subtaskRows = (task.subtasks||[]).map(s=>{
         const names = (s.assignees||[]).map(a=>a.username||'?').join(', ')||'—';
         return `<div class="mob-task-row">
-          <span class="mob-task-dot" style="background:${s.status_color||'#94a3b8'}"></span>
+          <span class="mob-task-dot" style="background:${s.status_color||'var(--u2-gray)'}"></span>
           <div style="flex:1;min-width:0">
             <div class="mob-task-name">${esc(s.name)}</div>
             <div class="mob-task-meta">${esc(names)} · ${fmtDate(s.due_date)}</div>
@@ -614,11 +619,11 @@
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
               ${statusBadge(task.status,task.status_color)}
-              ${task.is_overdue?`<span class="mob-status" style="background:#fef2f2;color:#dc2626">${warnIcon()} Em atraso</span>`:''}
+              ${task.is_overdue?`<span class="mob-status" style="background:rgba(232,38,42,.18);color:#dc2626">${warnIcon()} Em atraso</span>`:''}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px">
               <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Responsável</div><div style="color:#374151;font-weight:500">${esc(assignees)}</div></div>
-              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Prazo</div><div style="color:${task.is_overdue?'#dc2626':'#374151'};font-weight:500">${fmtDate(task.due_date)}</div></div>
+              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Prazo</div><div style="color:${task.is_overdue?'#dc2626':'var(--u2-gray-light)'};font-weight:500">${fmtDate(task.due_date)}</div></div>
               <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Início</div><div style="color:#374151">${fmtDate(task.start_date)}</div></div>
               <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Criada</div><div style="color:#374151">${fmtDate(task.date_created)}</div></div>
             </div>

@@ -17,7 +17,7 @@ const ChatWidget = (() => {
   const ChatCharts = { _instances: {} };
   ChatCharts.init = (el, id) => {
     ChatCharts.dispose(id);
-    const inst = echarts.init(el);
+    const inst = echarts.init(el, (typeof U2_DARK === 'function' && U2_DARK()) ? 'u2dark' : null);
     ChatCharts._instances[id] = inst;
     return inst;
   };
@@ -53,8 +53,8 @@ const ChatWidget = (() => {
       grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;';
       (chart.data || []).forEach(item => {
         const card = document.createElement('div');
-        card.style.cssText = 'background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;text-align:center;';
-        card.innerHTML = `<div style="font-size:18px;font-weight:700;color:#1e40af;">${_escapeHtml(String(item.value))}</div><div style="font-size:10px;color:#64748b;margin-top:2px;">${_escapeHtml(item.label)}</div>`;
+        card.style.cssText = 'background:var(--u2-panel-2);border:1px solid var(--u2-line);border-radius:8px;padding:8px 10px;text-align:center;';
+        card.innerHTML = `<div style="font-size:18px;font-weight:700;color:var(--u2-red);">${_escapeHtml(String(item.value))}</div><div style="font-size:10px;color:var(--u2-gray);margin-top:2px;">${_escapeHtml(item.label)}</div>`;
         grid.appendChild(card);
       });
       container.appendChild(grid);
@@ -67,11 +67,11 @@ const ChatWidget = (() => {
       const rows = d.rows || [];
       const wrap = document.createElement('div');
       wrap.style.cssText = 'overflow-x:auto;margin-top:8px;max-height:260px;overflow-y:auto;';
-      let html = `<p style="font-size:11px;font-weight:600;color:#374151;margin-bottom:4px;">${_escapeHtml(chart.title || '')}</p>`;
+      let html = `<p style="font-size:11px;font-weight:600;color:var(--u2-gray-light);margin-bottom:4px;">${_escapeHtml(chart.title || '')}</p>`;
       html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-      html += '<thead><tr>' + headers.map(h => `<th style="background:#f1f5f9;padding:4px 8px;text-align:left;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${_escapeHtml(h)}</th>`).join('') + '</tr></thead>';
+      html += '<thead><tr>' + headers.map(h => `<th style="background:var(--u2-panel-2);padding:4px 8px;text-align:left;border-bottom:1px solid var(--u2-line);white-space:nowrap;">${_escapeHtml(h)}</th>`).join('') + '</tr></thead>';
       html += '<tbody>' + rows.map((row, i) =>
-        `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'};">${row.map(cell => `<td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">${_escapeHtml(String(cell ?? ''))}</td>`).join('')}</tr>`
+        `<tr style="background:${i % 2 === 0 ? 'var(--u2-panel)' : 'var(--u2-panel-2)'};">${row.map(cell => `<td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap;">${_escapeHtml(String(cell ?? ''))}</td>`).join('')}</tr>`
       ).join('') + '</tbody></table>';
       wrap.innerHTML = html;
       container.appendChild(wrap);
@@ -141,7 +141,7 @@ const ChatWidget = (() => {
 
     const bubble = document.createElement('div');
     bubble.style.cssText = `max-width:88%;padding:9px 12px;border-radius:12px;font-size:12.5px;line-height:1.5;word-break:break-word;` +
-      (isUser ? 'background:#1e40af;color:#fff;border-bottom-right-radius:3px;' : 'background:#f1f5f9;color:#1e293b;border-bottom-left-radius:3px;');
+      (isUser ? 'background:var(--u2-red);color:#fff;border-bottom-right-radius:3px;' : 'background:var(--u2-panel-2);color:var(--u2-white);border-bottom-left-radius:3px;');
 
     // Text — convert newlines to <br>
     const textDiv = document.createElement('div');
@@ -168,7 +168,7 @@ const ChatWidget = (() => {
     const el = document.createElement('div');
     el.id = 'chat-thinking';
     el.style.cssText = 'display:flex;align-items:flex-start;margin-bottom:12px;';
-    el.innerHTML = `<div style="background:#f1f5f9;padding:8px 12px;border-radius:12px;border-bottom-left-radius:3px;font-size:12px;color:#64748b;">
+    el.innerHTML = `<div style="background:var(--u2-panel-2);padding:8px 12px;border-radius:12px;border-bottom-left-radius:3px;font-size:12px;color:var(--u2-gray);">
       <span style="display:inline-flex;gap:3px;align-items:center;">
         <span style="animation:bounce 1s infinite 0s" class="dot">●</span>
         <span style="animation:bounce 1s infinite .2s" class="dot">●</span>
@@ -236,11 +236,11 @@ const ChatWidget = (() => {
     _panel = document.createElement('div');
     _panel.id = 'chat-panel';
     _panel.className = 'hidden-panel';
-    _panel.style.cssText = 'position:fixed;top:0;right:0;width:380px;max-width:95vw;height:100vh;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.12);z-index:9999;display:flex;flex-direction:column;';
+    _panel.style.cssText = 'position:fixed;top:0;right:0;width:380px;max-width:95vw;height:100vh;background:var(--u2-panel);box-shadow:-4px 0 24px rgba(0,0,0,.12);z-index:9999;display:flex;flex-direction:column;';
 
     // Header
     const header = document.createElement('div');
-    header.style.cssText = 'padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;background:#1e40af;';
+    header.style.cssText = 'padding:14px 16px;border-bottom:1px solid var(--u2-line);display:flex;align-items:center;justify-content:space-between;background:var(--u2-red);';
     header.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;">
         <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2">
@@ -269,7 +269,7 @@ const ChatWidget = (() => {
     _input.id = 'chat-input';
     _input.placeholder = 'Pergunte sobre o progresso... (/ para focar)';
     _input.rows = 1;
-    _input.style.cssText = 'flex:1;resize:none;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:12.5px;outline:none;max-height:100px;overflow-y:auto;font-family:inherit;background:#fff;';
+    _input.style.cssText = 'flex:1;resize:none;border:1px solid var(--u2-line);border-radius:8px;padding:8px 10px;font-size:12.5px;outline:none;max-height:100px;overflow-y:auto;font-family:inherit;background:var(--u2-panel);';
     _input.addEventListener('input', () => {
       _input.style.height = 'auto';
       _input.style.height = Math.min(_input.scrollHeight, 100) + 'px';
@@ -279,7 +279,7 @@ const ChatWidget = (() => {
     });
 
     _sendBtn = document.createElement('button');
-    _sendBtn.style.cssText = 'background:#1e40af;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;white-space:nowrap;font-weight:600;flex-shrink:0;';
+    _sendBtn.style.cssText = 'background:var(--u2-red);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;white-space:nowrap;font-weight:600;flex-shrink:0;';
     _sendBtn.textContent = 'Enviar';
     _sendBtn.addEventListener('click', _send);
 

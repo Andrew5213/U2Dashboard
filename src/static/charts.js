@@ -1,4 +1,8 @@
 /* Wrappers ECharts para o dashboard */
+
+/* O tema 'u2dark' e os helpers U2_DARK/U2_TRACK vêm de echarts-theme-u2.js,
+   carregado antes deste arquivo nos templates. */
+
 const Charts = (function () {
   const _instances = {};
   const _observers = {};
@@ -9,7 +13,7 @@ const Charts = (function () {
     if (_observers[id]) { _observers[id].disconnect(); delete _observers[id]; }
     const el = document.getElementById(id);
     if (!el) return null;
-    const chart = echarts.init(el, null, { renderer: 'svg' });
+    const chart = echarts.init(el, U2_DARK() ? 'u2dark' : null, { renderer: 'svg' });
     _instances[id] = chart;
     window.addEventListener('resize', function () { chart.resize(); });
     /* ResizeObserver corrige dimensões quando o CSS Grid resolve o layout
@@ -107,7 +111,7 @@ const Charts = (function () {
               return asPercent ? p.value + '%' : p.value;
             },
             fontSize: 10,
-            color: '#166534',
+            color: (U2_DARK() ? '#06281a' : '#166534'),
           },
         },
         {
@@ -115,7 +119,7 @@ const Charts = (function () {
           type: 'bar',
           stack: 'total',
           data: open,
-          itemStyle: { color: '#e2e8f0', borderRadius: [0, 3, 3, 0], cursor: onClickItem ? 'pointer' : 'default' },
+          itemStyle: { color: (U2_DARK() ? U2_TRACK : '#e2e8f0'), borderRadius: [0, 3, 3, 0], cursor: onClickItem ? 'pointer' : 'default' },
           label: {
             show: true,
             position: 'inside',
@@ -124,7 +128,7 @@ const Charts = (function () {
               return asPercent ? p.value + '%' : p.value;
             },
             fontSize: 10,
-            color: '#64748b',
+            color: (U2_DARK() ? '#8b8b93' : '#64748b'),
           },
         },
       ],
@@ -296,7 +300,7 @@ const Charts = (function () {
       yAxis: {
         type: 'value',
         axisLabel: { fontSize: 10 },
-        splitLine: { lineStyle: { color: '#f1f5f9' } },
+        splitLine: { lineStyle: { color: (U2_DARK() ? U2_TRACK : '#f1f5f9') } },
       },
       series: [{
         type: 'bar',
@@ -486,7 +490,7 @@ const Charts = (function () {
         }
 
         var tdBg = isNow ? '#fffbeb' : '#fff';
-        var tdBd = isNow ? '#fde68a' : '#f3f4f6';
+        var tdBd = isNow ? '#fde68a' : (U2_DARK() ? U2_TRACK : '#f3f4f6');
         cH += '<td style="background:' + tdBg + ';border-right:1px solid ' + tdBd + ';'
           + 'width:' + WC + 'px;min-width:' + WC + 'px;height:26px;padding:0;">' + inner + '</td>';
       });
@@ -662,14 +666,14 @@ const Charts = (function () {
             return new Date(val).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
           },
         },
-        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        splitLine: { lineStyle: { color: (U2_DARK() ? U2_TRACK : '#f3f4f6') } },
       },
       yAxis: {
         type: 'value',
         min: 0,
         max: 100,
         axisLabel: { fontSize: 10, color: '#6b7280', formatter: function (v) { return v + '%'; } },
-        splitLine: { lineStyle: { color: '#f3f4f6' } },
+        splitLine: { lineStyle: { color: (U2_DARK() ? U2_TRACK : '#f3f4f6') } },
       },
       series: series,
     });

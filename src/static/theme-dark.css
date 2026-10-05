@@ -1,0 +1,363 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Tema escuro U2 — paleta extraída de u2broadcast.engenhariarf.com
+
+   A app é construída com utilitárias do Tailwind (play CDN) espalhadas por 8
+   templates. Em vez de reescrever classe por classe, este arquivo remapeia as
+   utilitárias que a app realmente usa.
+
+   Tudo está sob `.theme-dark`, o que dá especificidade (0,2,0) contra a classe
+   única do Tailwind (0,1,0) — vence sem precisar de !important. Tirar a classe
+   do <body> devolve a aparência clara original.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --u2-black: #0a0a0b;        /* fundo da aplicação */
+  --u2-ink: #111113;          /* sidebar e barras */
+  --u2-panel: #161618;        /* cards */
+  --u2-panel-2: #1c1c20;      /* chips, hover, sub-blocos */
+  --u2-line: #2a2a2e;         /* bordas e divisores */
+  --u2-gray: #8b8b93;         /* texto terciário */
+  --u2-gray-light: #c9c9cf;   /* texto secundário */
+  --u2-white: #f4f4f2;        /* texto principal */
+  --u2-red: #e8262a;          /* acento */
+  --u2-red-dark: #b81a1e;
+  --u2-navy: #10203d;
+  --u2-font: "Archivo", "Segoe UI", system-ui, sans-serif;
+  --u2-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  /* Semânticas reposicionadas para contraste sobre fundo escuro */
+  --u2-green: #34d399;
+  --u2-amber: #fbbf24;
+  --u2-blue: #60a5fa;
+  --u2-indigo: #818cf8;
+}
+
+/* `body.theme-dark` e não `.theme-dark`: o body carrega as duas classes
+   (`theme-dark bg-gray-100`), então um seletor de classe simples empata com o do
+   Tailwind e perde pela ordem de injeção do play CDN — ele insere seu <style>
+   depois dos nossos <link>. Prefixar com o elemento resolve o empate. */
+body.theme-dark {
+  background: var(--u2-black);
+  color: var(--u2-white);
+  font-family: var(--u2-font);
+}
+
+/* Mesmo motivo: quando a utilitária está no PRÓPRIO elemento do tema. */
+.theme-dark.bg-gray-100,
+.theme-dark.bg-white,
+.theme-dark.bg-gray-900 { background-color: var(--u2-black); }
+
+/* ─── Superfícies ────────────────────────────────────────────────────────── */
+
+.theme-dark .bg-gray-100,
+.theme-dark .bg-gray-50 { background-color: var(--u2-black); }
+
+.theme-dark .bg-white { background-color: var(--u2-panel); }
+
+.theme-dark .bg-gray-800,
+.theme-dark .bg-gray-900 { background-color: var(--u2-ink); }
+
+.theme-dark .bg-slate-50,
+.theme-dark .bg-slate-100 { background-color: var(--u2-panel-2); }
+
+.theme-dark .hover\:bg-gray-50:hover,
+.theme-dark .hover\:bg-gray-100:hover,
+.theme-dark .hover\:bg-slate-100:hover,
+.theme-dark .hover\:bg-slate-50:hover { background-color: var(--u2-panel-2); }
+
+.theme-dark .hover\:bg-gray-800:hover { background-color: #1a1a1d; }
+
+/* ─── Bordas ─────────────────────────────────────────────────────────────── */
+
+.theme-dark .border-gray-100,
+.theme-dark .border-gray-200,
+.theme-dark .border-gray-300,
+.theme-dark .border-gray-700,
+.theme-dark .border-slate-100,
+.theme-dark .border-slate-200 { border-color: var(--u2-line); }
+
+.theme-dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]),
+.theme-dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.theme-dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--u2-line);
+}
+
+/* ─── Texto ──────────────────────────────────────────────────────────────── */
+
+.theme-dark .text-gray-900,
+.theme-dark .text-gray-800,
+.theme-dark .text-slate-900,
+.theme-dark .text-slate-800 { color: var(--u2-white); }
+
+.theme-dark .text-gray-700,
+.theme-dark .text-gray-600,
+.theme-dark .text-slate-700,
+.theme-dark .text-slate-600 { color: var(--u2-gray-light); }
+
+.theme-dark .text-gray-500,
+.theme-dark .text-gray-400,
+.theme-dark .text-gray-300,
+.theme-dark .text-slate-500,
+.theme-dark .text-slate-400 { color: var(--u2-gray); }
+
+/* ─── Acento vermelho ────────────────────────────────────────────────────── */
+
+.theme-dark .text-red-400,
+.theme-dark .text-red-500,
+.theme-dark .text-red-600,
+.theme-dark .text-red-700,
+.theme-dark .text-red-800 { color: var(--u2-red); }
+
+.theme-dark .bg-red-400,
+.theme-dark .bg-red-500,
+.theme-dark .bg-red-600 { background-color: var(--u2-red); }
+
+.theme-dark .bg-red-50,
+.theme-dark .bg-red-100 { background-color: rgba(232, 38, 42, 0.14); }
+
+.theme-dark .border-red-200,
+.theme-dark .border-red-100 { border-color: rgba(232, 38, 42, 0.35); }
+
+.theme-dark .hover\:bg-red-700:hover { background-color: var(--u2-red-dark); }
+
+/* ─── Semânticas de status ───────────────────────────────────────────────── */
+
+.theme-dark .text-emerald-600,
+.theme-dark .text-emerald-500,
+.theme-dark .text-emerald-400,
+.theme-dark .text-green-600 { color: var(--u2-green); }
+
+.theme-dark .text-amber-600,
+.theme-dark .text-amber-700,
+.theme-dark .text-yellow-600 { color: var(--u2-amber); }
+
+.theme-dark .text-blue-600,
+.theme-dark .text-blue-500 { color: var(--u2-blue); }
+
+.theme-dark .text-indigo-600,
+.theme-dark .text-indigo-500,
+.theme-dark .text-indigo-700,
+.theme-dark .text-indigo-200 { color: var(--u2-indigo); }
+
+.theme-dark .bg-emerald-50,
+.theme-dark .bg-emerald-100 { background-color: rgba(52, 211, 153, 0.14); }
+.theme-dark .bg-amber-50,
+.theme-dark .bg-amber-100 { background-color: rgba(251, 191, 36, 0.14); }
+.theme-dark .bg-blue-50,
+.theme-dark .bg-blue-100 { background-color: rgba(96, 165, 250, 0.14); }
+.theme-dark .bg-indigo-50,
+.theme-dark .bg-indigo-100 { background-color: rgba(129, 140, 248, 0.14); }
+
+.theme-dark .bg-emerald-400,
+.theme-dark .bg-emerald-500 { background-color: var(--u2-green); }
+.theme-dark .bg-amber-400,
+.theme-dark .bg-amber-500 { background-color: var(--u2-amber); }
+/* Ações primárias seguem o acento único do site: vermelho, não azul. */
+.theme-dark .bg-blue-600,
+.theme-dark .bg-indigo-600 { background-color: var(--u2-red); }
+.theme-dark .hover\:bg-blue-700:hover,
+.theme-dark .hover\:bg-indigo-700:hover { background-color: var(--u2-red-dark); }
+
+/* ─── Formulários ────────────────────────────────────────────────────────── */
+
+.theme-dark input,
+.theme-dark select,
+.theme-dark textarea {
+  background-color: var(--u2-panel-2);
+  border-color: var(--u2-line);
+  color: var(--u2-white);
+}
+
+.theme-dark input::placeholder,
+.theme-dark textarea::placeholder { color: var(--u2-gray); }
+
+.theme-dark input:focus,
+.theme-dark select:focus,
+.theme-dark textarea:focus {
+  outline: 2px solid var(--u2-red);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+/* ─── Componentes próprios (styles.css) ──────────────────────────────────── */
+
+/* A sombra preta do hover não existe sobre fundo preto — o relevo passa a vir
+   da borda, como no site. */
+.theme-dark .card-hover:hover {
+  box-shadow: none;
+  border-color: var(--u2-red);
+}
+
+.theme-dark .toast {
+  background-color: var(--u2-panel);
+  color: var(--u2-white);
+  border: 1px solid var(--u2-line);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.theme-dark ::-webkit-scrollbar { width: 10px; height: 10px; }
+.theme-dark ::-webkit-scrollbar-track { background: var(--u2-black); }
+.theme-dark ::-webkit-scrollbar-thumb {
+  background: var(--u2-line);
+  border-radius: 6px;
+}
+.theme-dark ::-webkit-scrollbar-thumb:hover { background: #3a3a40; }
+
+/* Números e rótulos técnicos em mono, como no site */
+.theme-dark .kpi-value,
+.theme-dark .mono { font-family: var(--u2-mono); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Componentes com CSS próprio (blocos <style> dentro dos templates).
+   Não são utilitárias do Tailwind, então precisam de override nominal.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Assistente IA (chat.html) ──────────────────────────────────────────── */
+/* O azul #1e40af era a cor de marca do assistente; o site da U2 trabalha com
+   um acento só, o vermelho — então o chat passa a seguir o mesmo. */
+
+.theme-dark .welcome-icon,
+.theme-dark .msg-avatar { background: var(--u2-red); }
+
+.theme-dark .welcome-title { color: var(--u2-white); }
+.theme-dark .welcome-sub { color: var(--u2-gray); }
+
+.theme-dark .suggestion-card {
+  background: var(--u2-panel);
+  border-color: var(--u2-line);
+  color: var(--u2-gray-light);
+}
+.theme-dark .suggestion-card:hover {
+  border-color: var(--u2-red);
+  color: var(--u2-white);
+  background: rgba(232, 38, 42, 0.12);
+}
+
+.theme-dark .bubble-user { background: var(--u2-red); color: #fff; }
+.theme-dark .bubble-bot {
+  background: var(--u2-panel);
+  color: var(--u2-white);
+  border-color: var(--u2-line);
+}
+.theme-dark .typing-bubble span { background: var(--u2-gray); }
+
+.theme-dark .kpi-card {
+  background: var(--u2-panel-2);
+  border-color: var(--u2-line);
+}
+
+.theme-dark .chat-table-wrap { border-color: var(--u2-line); }
+.theme-dark .chat-table th {
+  background: var(--u2-panel-2);
+  border-bottom-color: var(--u2-line);
+  color: var(--u2-white);
+}
+.theme-dark .chat-table td {
+  border-bottom-color: var(--u2-line);
+  color: var(--u2-gray-light);
+}
+.theme-dark .chat-table tr.even td { background: var(--u2-panel); }
+.theme-dark .chat-table tr.odd td { background: var(--u2-panel-2); }
+.theme-dark .chat-table tr:hover td { background: rgba(232, 38, 42, 0.10); }
+
+.theme-dark .input-bar {
+  background: var(--u2-ink);
+  border-top-color: var(--u2-line);
+}
+.theme-dark #chat-input {
+  background: var(--u2-panel-2);
+  border-color: var(--u2-line);
+  color: var(--u2-white);
+}
+.theme-dark #chat-input:focus { border-color: var(--u2-red); }
+.theme-dark #chat-send { background: var(--u2-red); color: #fff; }
+.theme-dark #chat-send:hover { background: var(--u2-red-dark); }
+.theme-dark #chat-send:disabled { background: #5c2124; color: #b9b9bf; }
+.theme-dark .input-hint { color: var(--u2-gray); }
+
+/* ─── RDO e Controle de Progresso ────────────────────────────────────────── */
+
+.theme-dark .field-label { color: var(--u2-gray); }
+.theme-dark .field-input,
+.theme-dark .td-input {
+  background: var(--u2-panel-2);
+  border-color: var(--u2-line);
+  color: var(--u2-white);
+}
+.theme-dark .field-input:focus,
+.theme-dark .td-input:focus { border-color: var(--u2-red); }
+.theme-dark .field-input[readonly] { background: var(--u2-ink); color: var(--u2-gray); }
+.theme-dark .field-input.status-ok { background: rgba(52, 211, 153, 0.14); color: var(--u2-green); }
+.theme-dark .field-input.status-warn { background: rgba(251, 191, 36, 0.14); color: var(--u2-amber); }
+.theme-dark .field-input.status-bad { background: rgba(232, 38, 42, 0.14); color: var(--u2-red); }
+
+.theme-dark .site-tab-idle { background: var(--u2-panel-2); color: var(--u2-gray-light); }
+.theme-dark .site-tab-active,
+.theme-dark .active-tab { background: var(--u2-red); color: #fff; }
+
+/* Input de arquivo: o botão nativo vem branco e fura o tema. */
+.theme-dark input[type="file"] {
+  color: var(--u2-gray-light);
+  background: transparent;
+  border: none;
+}
+.theme-dark input[type="file"]::file-selector-button {
+  background: var(--u2-panel-2);
+  color: var(--u2-white);
+  border: 1px solid var(--u2-line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+.theme-dark input[type="file"]::file-selector-button:hover { border-color: var(--u2-red); }
+
+/* O select nativo abre com a lista pintada pelo SO — forçar o esquema escuro
+   faz o popup vir escuro também. */
+.theme-dark select { color-scheme: dark; }
+
+/* ─── Varredura final ────────────────────────────────────────────────────────
+   Classes que apareceram no inventário completo dos templates e ainda não
+   tinham destino. `text-white` fica de fora de propósito: já é branco e é usado
+   sobre fundos que continuam escuros ou vermelhos. */
+
+.theme-dark .bg-gray-200,
+.theme-dark .bg-gray-300,
+.theme-dark .bg-slate-300 { background-color: #2e2e34; }   /* trilhos de barra */
+.theme-dark .bg-gray-600 { background-color: var(--u2-panel-2); }
+.theme-dark .border-gray-400 { border-color: var(--u2-line); }
+
+/* Azuis e índigos de ação viram o acento vermelho */
+.theme-dark .bg-blue-500,
+.theme-dark .bg-blue-700,
+.theme-dark .bg-indigo-700 { background-color: var(--u2-red); }
+.theme-dark .bg-blue-300 { background-color: #5c2124; }
+.theme-dark .text-blue-400,
+.theme-dark .text-blue-700,
+.theme-dark .text-blue-800 { color: var(--u2-blue); }
+.theme-dark .border-blue-100,
+.theme-dark .border-blue-200,
+.theme-dark .border-blue-400,
+.theme-dark .border-blue-600,
+.theme-dark .border-indigo-500 { border-color: rgba(232, 38, 42, 0.45); }
+.theme-dark .ring-blue-400,
+.theme-dark .ring-blue-500,
+.theme-dark .ring-indigo-500 { --tw-ring-color: var(--u2-red); }
+
+/* Verdes e âmbares de status */
+.theme-dark .bg-green-600,
+.theme-dark .bg-green-700 { background-color: #15803d; }
+.theme-dark .bg-green-300 { background-color: var(--u2-green); }
+.theme-dark .bg-green-50 { background-color: rgba(52, 211, 153, 0.14); }
+.theme-dark .text-green-700,
+.theme-dark .text-emerald-700,
+.theme-dark .text-emerald-800 { color: var(--u2-green); }
+.theme-dark .border-green-200,
+.theme-dark .border-green-400,
+.theme-dark .border-emerald-200 { border-color: rgba(52, 211, 153, 0.4); }
+.theme-dark .text-amber-400,
+.theme-dark .text-amber-500,
+.theme-dark .text-amber-800 { color: var(--u2-amber); }
+.theme-dark .bg-amber-200 { background-color: rgba(251, 191, 36, 0.28); }
+.theme-dark .border-amber-200 { border-color: rgba(251, 191, 36, 0.4); }
+.theme-dark .text-red-300 { color: #fca5a5; }

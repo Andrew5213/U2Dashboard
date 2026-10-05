@@ -165,6 +165,34 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **Mobile navigation**: all three mobile templates (`index_mobile.html`, `chat_mobile.html`, `documentacoes_mobile.html`) share the same hamburger-menu pattern instead of a persistent bottom tab bar (a bottom nav was tried first but conflicted with chat's fixed input bar, so it was replaced everywhere for consistency). Each page has a `.mob-menu-btn` in the header that calls `openMenu()`, opening a `.mob-drawer#main-menu` with links to Dashboard, Assistente IA (conditional on `chat_enabled`), Documentações, plus buttons for Relatórios (closes the menu and opens the reports drawer) and Atualizar Cache. The reports drawer itself (`#reports-drawer` + `openDrawer`/`closeDrawer`/`setReportLang`/`exportPDF`/`exportDiario`/`exportSemanal`/`toggleProvinciaDrawer`/`exportProvincia`) and `triggerRefresh()` are duplicated verbatim into all three templates — same copy-per-page convention already used for the desktop sidebar, since there's no shared-partial/include mechanism in this template-per-page architecture. `chat_mobile.html` did not have `#mob-toast`/`showToast()` before this and needed them added for `triggerRefresh()`'s feedback.
 
+**Tema escuro (paleta do hub U2)**: toda a UI segue as cores de
+`u2broadcast.engenhariarf.com` — `--u2-black #0a0a0b` (fundo), `--u2-ink #111113` (sidebar),
+`--u2-panel #161618` (cards), `--u2-line #2a2a2e` (bordas), `--u2-gray #8b8b93`,
+`--u2-white #f4f4f2`, `--u2-red #e8262a` (acento único: azuis e índigos de ação viram vermelho),
+mais as fontes Archivo e JetBrains Mono. As variáveis vivem em `src/static/theme-dark.css`.
+
+Como a app é Tailwind play CDN com utilitárias espalhadas por 8 templates, o tema **não** reescreve
+classes: `theme-dark.css` remapeia as ~95 utilitárias de cor que a app usa, todas sob `.theme-dark`
+— especificidade (0,2,0) contra a (0,1,0) do Tailwind, o que dispensa `!important`. A classe entra no
+`<body>` de cada template; **removê-la devolve o visual claro**. Três exceções em que o seletor de
+classe simples empata e perde (o play CDN injeta seu `<style>` depois dos nossos `<link>`): regras que
+atingem o próprio elemento do tema usam `body.theme-dark` / `.theme-dark.bg-gray-100`.
+
+O `<style>` interno de `chat.html`/`rdo.html` e o `mobile.css` não são Tailwind: os componentes do chat
+e do RDO ganharam override nominal no mesmo arquivo, e `mobile.css` foi convertido na origem para as
+variáveis (o mobile não tem variante clara). Regras com `!important` em `rdo.html` (`.field-input.status-*`)
+e cores atribuídas por JS via `element.style.background` furam qualquer override — essas foram trocadas
+no próprio arquivo.
+
+**ECharts não resolve CSS custom properties.** Dentro de `option` (itemStyle, axisLabel, splitLine,
+textStyle) a cor precisa ser literal — `var(--u2-...)` ali faz a série sumir sem erro no console. O tema
+dos gráficos é registrado em `src/static/echarts-theme-u2.js` (carregado por `index`, `chat`,
+`index_mobile` e `chat_mobile`, antes de `charts.js`) e aplicado via `echarts.init(el, U2_DARK() ? 'u2dark' : null)`.
+Fica fora de `charts.js` porque o chat não carrega aquele arquivo.
+
+**Assets são versionados à mão** com `?v=N` nos templates. Esquecer de incrementar depois de mexer em
+CSS/JS faz o navegador servir o arquivo antigo — vale para o deploy e para o teste local.
+
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
 **"Vencimento" / "Data de Conclusão" custom fields are the only source of due date/close date**: the user added two `date`-type custom fields — "Vencimento" and "Data de Conclusão" — to every list in the space, all sharing the same field id (`_FIELD_VENCIMENTO_ID` / `_FIELD_DATA_CONCLUSAO_ID` in `cache_repository.py`, discovered via `GET /list/{id}/field`). `CacheRepository.upsert_task()` reads these via `_custom_field_value()` and uses them as `due_date`/`date_closed` in the cache — **with no fallback** to ClickUp's native `due_date`/`date_closed`. A task without the custom field filled in simply has no due date/close date in the cache, even if it has an old native due date configured (native ClickUp due dates are no longer used anywhere in this app). Every overdue/upcoming/gantt/evolution computation in the app reads `due_date`/`date_closed` from this same cache column, so this single upsert-time change is what makes the whole dashboard and every PDF/XLSX report follow the new fields — no other call site needed to change. If these fields are ever deleted and recreated in ClickUp, the two id constants must be updated (they're per-field-instance, not per-name). Since this only takes effect on the next cache upsert, a task edited before this change was deployed keeps showing its old native due date until the next full refresh (`cache_worker` interval, `POST /dashboard/refresh`, or app restart) re-upserts it.

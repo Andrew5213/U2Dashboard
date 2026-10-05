@@ -58,7 +58,7 @@
 
   function statusBadge(status, statusType, color) {
     const bg = color ? color + '22' : '#e2e8f014';
-    const fg = color || '#64748b';
+    const fg = color || 'var(--u2-gray)';
     const dot = `<span style="background:${fg}" class="w-1.5 h-1.5 rounded-full inline-block"></span>`;
     return `<span class="status-badge" style="background:${bg};color:${fg}">${dot}${esc(status || 'sem status')}</span>`;
   }
