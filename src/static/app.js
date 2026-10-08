@@ -31,6 +31,13 @@
       .replace(/"/g, '&quot;');
   }
 
+  // Texto vindo do ClickUp dentro de um onclick="…": vira literal JS (JSON) e só
+  // depois é escapado para o atributo. Com '${esc(x)}' um apóstrofo no nome
+  // quebrava o clique e abria espaço para injeção de script.
+  function jsStr(value) {
+    return esc(JSON.stringify(String(value === null || value === undefined ? '' : value)));
+  }
+
   function fmtDate(iso) {
     if (!iso) return '—';
     try {
@@ -56,6 +63,38 @@
     </div>`;
   }
 
+  /* ── Cronograma de obra: tarefas com % concluído, início e duração ── */
+  function isSchedule(tasks) {
+    return (tasks || []).some(function (t) { return t.progress_pct !== null && t.progress_pct !== undefined; });
+  }
+
+  function fmtDuration(task) {
+    if (task.duration_days === null || task.duration_days === undefined) return '—';
+    const days = Number(task.duration_days).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+    return days + (task.calendar_type === 'corrido' ? ' d corridos' : ' d');
+  }
+
+  function percentCell(task) {
+    const pct = Math.round(task.progress_pct || 0);
+    return `<div class="flex items-center gap-2 min-w-[110px]">
+      <div class="flex-1">${progressBar(pct / 100)}</div>
+      <span class="text-xs text-gray-500 tabular-nums w-9 text-right">${pct}%</span>
+    </div>`;
+  }
+
+  // Colunas extras de uma linha de cronograma (início, fim, duração, progresso).
+  function scheduleCells(task, pad) {
+    const dueCls = task.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
+    return `<td class="${pad} text-sm text-gray-500 whitespace-nowrap">${fmtDate(task.start_date)}</td>
+        <td class="${pad} text-sm ${dueCls} whitespace-nowrap">${task.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(task.due_date)}</td>
+        <td class="${pad} text-sm text-gray-500 whitespace-nowrap">${fmtDuration(task)}</td>
+        <td class="${pad}">${percentCell(task)}</td>`;
+  }
+
+  const SCHEDULE_HEADERS = ['Início', 'Fim', 'Duração', 'Progresso'].map(function (label) {
+    return `<th class="py-2 px-4 text-left font-medium">${label}</th>`;
+  }).join('');
+
   function statusBadge(status, statusType, color) {
     const bg = color ? color + '22' : '#e2e8f014';
     const fg = color || 'var(--u2-gray)';
@@ -72,6 +111,70 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"/>
       </svg>
     </button>`;
+  }
+
+  /* ── Dependências: marcador na linha + modal com a lista ─────────── */
+  const LINK_ICON = '<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"/></svg>';
+
+  // Uma dependência como linha clicável: nome (e o grupo, que desempata nomes
+  // repetidos), status, período e % quando houver.
+  function dependencyRow(dep) {
+    const pct = dep.progress_pct !== null && dep.progress_pct !== undefined
+      ? `<span class="text-xs text-gray-500 tabular-nums">${Math.round(dep.progress_pct)}%</span>` : '';
+    const period = dep.start_date || dep.due_date
+      ? `<span class="text-xs text-gray-500 whitespace-nowrap">${fmtDate(dep.start_date)} → ${fmtDate(dep.due_date)}</span>` : '';
+    return `<a href="#/task/${esc(dep.task_id)}" onclick="window.__taskName=${jsStr(dep.name)}; var m=this.closest('.fixed'); if (m) m.remove();"
+        class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-slate-50">
+      <span class="min-w-0">
+        <span class="block text-sm text-gray-800 font-medium truncate">${esc(dep.name)}</span>
+        ${dep.parent_name ? `<span class="block text-xs text-gray-400 truncate">${esc(dep.parent_name)}</span>` : ''}
+      </span>
+      <span class="flex items-center gap-3 shrink-0">${period}${pct}${statusBadge(dep.status, dep.status_type, dep.status_color)}</span>
+    </a>`;
+  }
+
+  function depsButton(task) {
+    const deps = task.depends_on || [];
+    if (!deps.length) return '';
+    const open = deps.filter(function (d) { return d.status_type !== 'done' && d.status_type !== 'closed'; }).length;
+    const cls = open ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
+    const hint = open
+      ? `Depende de ${deps.length} tarefa(s), ${open} ainda em aberto`
+      : `Depende de ${deps.length} tarefa(s), todas concluídas`;
+    return `<button type="button" onclick="event.stopPropagation(); showDependencias(this)"
+      data-title="${esc(task.name)}" data-deps="${esc(JSON.stringify(deps))}" title="${hint}"
+      class="ml-1.5 text-xs font-medium px-1.5 py-0.5 rounded-md align-text-bottom ${cls}">${LINK_ICON} ${deps.length}</button>`;
+  }
+
+  window.showDependencias = function (btn) {
+    let deps = [];
+    try { deps = JSON.parse(btn.dataset.deps || '[]'); } catch (_) { deps = []; }
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
+    modal.innerHTML = `
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
+        <div class="bg-amber-500 px-5 py-3 flex items-center justify-between">
+          <h2 class="text-white font-bold text-sm truncate">${esc(btn.dataset.title || '')} — depende de</h2>
+          <button onclick="this.closest('.fixed').remove()" class="text-white/80 hover:text-white text-lg leading-none">&times;</button>
+        </div>
+        <div class="px-2 py-2 max-h-96 overflow-y-auto">${deps.map(dependencyRow).join('')}</div>
+        <p class="px-5 py-2 text-xs text-gray-400 border-t border-slate-100">Só pode começar depois que estas terminarem.</p>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) modal.remove();
+    });
+  };
+
+  function dependencySection(title, hint, deps) {
+    if (!deps || !deps.length) return '';
+    return `<div class="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
+        <div class="px-4 py-3 border-b border-slate-100">
+          <h3 class="text-sm font-semibold text-gray-700">${title} (${deps.length})</h3>
+          <p class="text-xs text-gray-400 mt-0.5">${hint}</p>
+        </div>
+        <div class="p-2">${deps.map(dependencyRow).join('')}</div>
+      </div>`;
   }
 
   window.exportListaPdf = function (listId) {
@@ -204,7 +307,7 @@
     const foldersHTML = folders.map(function (f) {
       const h = healthStatus(f.completion_rate, f.overdue_tasks);
       return `<div class="bg-white rounded-xl border border-gray-200 border-l-4 ${h.border} p-4 card-hover cursor-pointer"
-               onclick="location.hash='#/folder/${esc(f.folder_id)}'; window.__folderName='${esc(f.name)}'">
+               onclick="location.hash='#/folder/${esc(f.folder_id)}'; window.__folderName=${jsStr(f.name)}">
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full ${h.dot} shrink-0"></span>
@@ -362,7 +465,7 @@
         ? `<span class="text-xs text-indigo-600 font-medium bg-indigo-50 px-1.5 py-0.5 rounded ml-1">${Math.round(disc.weight * 100)}%</span>`
         : '';
       return `<div class="bg-white rounded-xl border border-gray-200 p-4 card-hover cursor-pointer"
-               onclick="location.hash='#/list/${esc(l.list_id)}'; window.__listName='${esc(l.name)}'">
+               onclick="location.hash='#/list/${esc(l.list_id)}'; window.__listName=${jsStr(l.name)}">
         <div class="flex items-start justify-between gap-2">
           <div class="flex items-center gap-1 min-w-0">
             <p class="font-medium text-gray-800 truncate">${esc(l.name)}</p>
@@ -608,18 +711,22 @@
     const overdue   = tasks.filter(function (t) { return t.is_overdue; }).length;
     const rate      = kpis ? (kpis.completion_rate || 0) : (total > 0 ? completed / total : 0);
 
+    const schedule = isSchedule(tasks);
     const rows = tasks.map(function (t) {
       const assigneeNames = (t.assignees || []).map(function (a) { return a.username || '?'; }).join(', ') || '—';
       const dueCls = t.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
       const subtaskIcon = t.has_subtasks
         ? `<span class="text-xs text-red-500 ml-1" title="Tem subtasks">◈</span>` : '';
-      return `<tr class="hover:bg-slate-50 cursor-pointer" onclick="location.hash='#/task/${esc(t.task_id)}'; window.__taskName='${esc(t.name)}'">
+      const dateCells = schedule
+        ? scheduleCells(t, 'py-3 px-4')
+        : `<td class="py-3 px-4 text-sm ${dueCls}">${t.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(t.due_date)}</td>`;
+      return `<tr class="hover:bg-slate-50 cursor-pointer" onclick="location.hash='#/task/${esc(t.task_id)}'; window.__taskName=${jsStr(t.name)}">
         <td class="py-3 px-4">
-          <span class="font-medium text-gray-800">${esc(t.name)}</span>${subtaskIcon}${noteButton(t.observacoes)}
+          <span class="font-medium text-gray-800">${esc(t.name)}</span>${subtaskIcon}${depsButton(t)}${noteButton(t.observacoes)}
         </td>
         <td class="py-3 px-4">${statusBadge(t.status, t.status_type, t.status_color)}</td>
         <td class="py-3 px-4 text-sm text-gray-500">${esc(assigneeNames)}</td>
-        <td class="py-3 px-4 text-sm ${dueCls}">${t.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(t.due_date)}</td>
+        ${dateCells}
       </tr>`;
     }).join('');
 
@@ -659,10 +766,10 @@
           <table class="w-full text-sm">
             <thead>
               <tr class="text-xs text-gray-400 uppercase tracking-wide border-b border-slate-100">
-                <th class="py-2 px-4 text-left font-medium w-1/2">Task</th>
+                <th class="py-2 px-4 text-left font-medium ${schedule ? 'w-1/3' : 'w-1/2'}">Task</th>
                 <th class="py-2 px-4 text-left font-medium">Status</th>
                 <th class="py-2 px-4 text-left font-medium">Responsável</th>
-                <th class="py-2 px-4 text-left font-medium">Prazo</th>
+                ${schedule ? SCHEDULE_HEADERS : '<th class="py-2 px-4 text-left font-medium">Prazo</th>'}
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
@@ -697,6 +804,15 @@
       return;
     }
 
+    setBreadcrumb([
+      { label: 'Visão Geral', href: '#/' },
+      nav.folderId ? { label: nav.folderName || 'Província', href: '#/folder/' + nav.folderId } : null,
+      nav.listId   ? { label: nav.listName || 'Área',       href: '#/list/' + nav.listId }     : null,
+    ].concat((task.ancestors || []).map(function (a) {
+      return { label: a.name, href: '#/task/' + a.task_id };
+    })).concat([{ label: task.name, href: '#/task/' + taskId }]).filter(Boolean));
+
+    const schedule = task.progress_pct !== null && task.progress_pct !== undefined;
     const assigneeNames = (task.assignees || []).map(function (a) { return a.username || '?'; }).join(', ') || '—';
     const tags = (task.tags || []).map(function (t) {
       return `<span class="text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded-full">${esc(t)}</span>`;
@@ -705,11 +821,20 @@
     const subtaskRows = (task.subtasks || []).map(function (s) {
       const names = (s.assignees || []).map(function (a) { return a.username || '?'; }).join(', ') || '—';
       const dueCls = s.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
-      return `<tr class="hover:bg-slate-50">
-        <td class="py-2.5 px-4 text-sm text-gray-700">${esc(s.name)}${noteButton(s.observacoes)}</td>
+      // Subtarefa com filhos (grupo de um cronograma) abre a própria página.
+      const open = s.has_subtasks
+        ? ` class="hover:bg-slate-50 cursor-pointer" onclick="location.hash='#/task/${esc(s.task_id)}'; window.__taskName=${jsStr(s.name)}"`
+        : ' class="hover:bg-slate-50"';
+      const subtaskIcon = s.has_subtasks
+        ? `<span class="text-xs text-red-500 ml-1" title="Tem subtasks">◈</span>` : '';
+      const dateCells = schedule
+        ? scheduleCells(s, 'py-2.5 px-4')
+        : `<td class="py-2.5 px-4 text-sm ${dueCls}">${s.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(s.due_date)}</td>`;
+      return `<tr${open}>
+        <td class="py-2.5 px-4 text-sm text-gray-700">${esc(s.name)}${subtaskIcon}${depsButton(s)}${noteButton(s.observacoes)}</td>
         <td class="py-2.5 px-4">${statusBadge(s.status, s.status_type, s.status_color)}</td>
         <td class="py-2.5 px-4 text-sm text-gray-500">${esc(names)}</td>
-        <td class="py-2.5 px-4 text-sm ${dueCls}">${s.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(s.due_date)}</td>
+        ${dateCells}
       </tr>`;
     }).join('');
 
@@ -725,7 +850,7 @@
                 <th class="py-2 px-4 text-left font-medium">Nome</th>
                 <th class="py-2 px-4 text-left font-medium">Status</th>
                 <th class="py-2 px-4 text-left font-medium">Responsável</th>
-                <th class="py-2 px-4 text-left font-medium">Prazo</th>
+                ${schedule ? SCHEDULE_HEADERS : '<th class="py-2 px-4 text-left font-medium">Prazo</th>'}
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">${subtaskRows}</tbody>
@@ -765,18 +890,25 @@
             <p class="text-gray-700 font-medium">${esc(assigneeNames)}</p>
           </div>
           <div>
-            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Prazo</p>
-            <p class="${task.is_overdue ? 'text-red-500 font-medium' : 'text-gray-700'}">${fmtDate(task.due_date)}</p>
-          </div>
-          <div>
             <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Início</p>
             <p class="text-gray-700">${fmtDate(task.start_date)}</p>
           </div>
           <div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">${schedule ? 'Fim' : 'Prazo'}</p>
+            <p class="${task.is_overdue ? 'text-red-500 font-medium' : 'text-gray-700'}">${fmtDate(task.due_date)}</p>
+          </div>
+          ${schedule ? `<div>
+            <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Duração</p>
+            <p class="text-gray-700">${fmtDuration(task)}</p>
+          </div>` : `<div>
             <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Criada em</p>
             <p class="text-gray-700">${fmtDate(task.date_created)}</p>
-          </div>
+          </div>`}
         </div>
+        ${schedule ? `<div class="mt-4 pt-4 border-t border-slate-100">
+          <p class="text-xs text-gray-400 uppercase tracking-wide mb-1">Progresso</p>
+          <div class="max-w-md">${percentCell(task)}</div>
+        </div>` : ''}
 
         ${task.description ? `
         <div class="mt-4 pt-4 border-t border-slate-100">
@@ -785,6 +917,8 @@
         </div>` : ''}
       </div>
 
+      ${dependencySection('Depende de', 'Só pode começar depois que estas terminarem.', task.depends_on)}
+      ${dependencySection('Libera', 'Estas esperam o término desta para começar.', task.blocks)}
       ${subtaskSection}
     `);
   }

@@ -17,3 +17,6 @@ logs/
 dist/
 *.egg-info/
 .claude/
+
+# Cópias de segurança de listas do ClickUp (dados reais, incluem e-mails)
+backups/

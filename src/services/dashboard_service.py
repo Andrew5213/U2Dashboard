@@ -3,14 +3,72 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.cache_models import ClickUpTaskCache
 from src.models.dashboard_schemas import (
-    AssigneeStats, FolderMetrics, GanttTask, ListMetrics, OverviewKPIs,
+    AssigneeStats, DependencyRef, FolderMetrics, GanttTask, ListMetrics, OverviewKPIs,
     TaskDetail, TaskSummary, UpcomingTask,
 )
 from src.repositories.cache_repository import CacheRepository
 from src.services.weights_config import build_province_evolution
 
 
-def _task_to_summary(task: ClickUpTaskCache, has_subtasks: bool = False) -> TaskSummary:
+def _own_dependencies(task: ClickUpTaskCache) -> list[str]:
+    try:
+        return list(json.loads(task.depends_on_json or "[]"))
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+class _DependencyIndex:
+    """Dependências de uma lista, prontas para exibir: de quem cada tarefa depende
+    e quem espera por ela. Num grupo (tarefa com filhos) contam as dependências
+    das tarefas de dentro que cruzam a fronteira do grupo."""
+
+    def __init__(self, tasks: list[ClickUpTaskCache], outside: list[ClickUpTaskCache]) -> None:
+        self._by_id = {t.task_id: t for t in list(tasks) + list(outside)}
+        children: dict[str, list[str]] = {}
+        for t in tasks:
+            if t.parent_task_id:
+                children.setdefault(t.parent_task_id, []).append(t.task_id)
+
+        def members(task_id: str) -> set[str]:
+            found = {task_id}
+            for child in children.get(task_id, []):
+                found |= members(child)
+            return found
+
+        own = {t.task_id: _own_dependencies(t) for t in tasks}
+        self._depends: dict[str, list[str]] = {}
+        self._blocks: dict[str, list[str]] = {}
+        for t in tasks:
+            inside = members(t.task_id)
+            waiting = [d for m in inside for d in own.get(m, []) if d not in inside]
+            released = [o for o, deps in own.items() if o not in inside and any(d in inside for d in deps)]
+            self._depends[t.task_id] = list(dict.fromkeys(waiting))
+            self._blocks[t.task_id] = list(dict.fromkeys(released))
+
+    def _refs(self, ids: list[str]) -> list[DependencyRef]:
+        refs = []
+        for task_id in ids:
+            t = self._by_id.get(task_id)
+            if t is None:
+                continue
+            parent = self._by_id.get(t.parent_task_id) if t.parent_task_id else None
+            refs.append(DependencyRef(
+                task_id=t.task_id, name=t.name, parent_name=parent.name if parent else None,
+                status=t.status, status_type=t.status_type, status_color=t.status_color,
+                start_date=t.start_date, due_date=t.due_date, progress_pct=t.progress_pct,
+            ))
+        return refs
+
+    def depends_on(self, task_id: str) -> list[DependencyRef]:
+        return self._refs(self._depends.get(task_id, []))
+
+    def blocks(self, task_id: str) -> list[DependencyRef]:
+        return self._refs(self._blocks.get(task_id, []))
+
+
+def _task_to_summary(
+    task: ClickUpTaskCache, has_subtasks: bool = False, deps: "_DependencyIndex | None" = None
+) -> TaskSummary:
     now = datetime.utcnow()
     is_overdue = (
         task.due_date is not None
@@ -36,6 +94,10 @@ def _task_to_summary(task: ClickUpTaskCache, has_subtasks: bool = False) -> Task
         has_subtasks=has_subtasks,
         observacoes=task.observacoes,
         url=task.url,
+        progress_pct=task.progress_pct,
+        duration_days=task.duration_days,
+        calendar_type=task.calendar_type,
+        depends_on=deps.depends_on(task.task_id) if deps else [],
     )
 
 
@@ -66,7 +128,21 @@ class DashboardService:
     async def get_list_tasks(self, list_id: str) -> list[TaskSummary]:
         tasks = await self._repo.get_tasks_by_list(list_id, include_subtasks=False)
         subtask_counts = await self._repo.get_subtask_count_by_parent(list_id)
-        return [_task_to_summary(t, has_subtasks=subtask_counts.get(t.task_id, 0) > 0) for t in tasks]
+        deps = await self._dependency_index(list_id)
+        return [
+            _task_to_summary(t, has_subtasks=subtask_counts.get(t.task_id, 0) > 0, deps=deps)
+            for t in tasks
+        ]
+
+    async def _dependency_index(self, list_id: str) -> _DependencyIndex | None:
+        """None quando a lista não tem nenhuma dependência — o caso de quase todas."""
+        tasks = await self._repo.get_tasks_by_list(list_id, include_subtasks=True)
+        wanted = {d for t in tasks for d in _own_dependencies(t)}
+        if not wanted:
+            return None
+        known = {t.task_id for t in tasks}
+        outside = await self._repo.get_tasks_by_ids(wanted - known)
+        return _DependencyIndex(tasks, outside)
 
     async def get_assignee_stats(self, space_id: str) -> list[AssigneeStats]:
         rows = await self._repo.get_assignee_task_stats(space_id)
@@ -157,6 +233,9 @@ class DashboardService:
             and task.due_date < now
             and task.status_type not in ("done", "closed")
         )
+        subtask_counts = await self._repo.get_subtask_count_by_parent(task.list_id)
+        ancestors = await self._repo.get_task_ancestors(task)
+        deps = await self._dependency_index(task.list_id)
         return TaskDetail(
             task_id=task.task_id,
             name=task.name,
@@ -171,9 +250,18 @@ class DashboardService:
             has_subtasks=len(subtasks) > 0,
             observacoes=task.observacoes,
             url=task.url,
+            progress_pct=task.progress_pct,
+            duration_days=task.duration_days,
+            calendar_type=task.calendar_type,
+            ancestors=[{"task_id": a.task_id, "name": a.name} for a in ancestors],
+            depends_on=deps.depends_on(task.task_id) if deps else [],
+            blocks=deps.blocks(task.task_id) if deps else [],
             description=task.description,
             tags=tags,
             date_created=task.date_created,
             date_updated=task.date_updated,
-            subtasks=[_task_to_summary(s) for s in subtasks],
+            subtasks=[
+                _task_to_summary(s, has_subtasks=subtask_counts.get(s.task_id, 0) > 0, deps=deps)
+                for s in subtasks
+            ],
         )

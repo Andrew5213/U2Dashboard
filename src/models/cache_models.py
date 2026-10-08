@@ -55,6 +55,13 @@ class ClickUpTaskCache(Base):
     date_updated: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     date_closed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     observacoes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Cronograma de obra: só preenchidos em listas geridas pelo motor (campo "% Concluído").
+    # progress_pct não nulo é o que identifica uma tarefa de cronograma.
+    progress_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_days: Mapped[float | None] = mapped_column(Float, nullable=True)
+    calendar_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Ids das tarefas de que esta depende (dependências "waiting on" do ClickUp), em JSON
+    depends_on_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_refreshed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

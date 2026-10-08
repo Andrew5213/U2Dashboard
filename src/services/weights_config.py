@@ -435,30 +435,50 @@ SUBTASK_WEIGHTS: dict[str, dict[str, float]] = {
 
 # ── Funções de cálculo ────────────────────────────────────────────────────────
 
+def _sub_weight(sub: dict, sub_dict: dict[str, float]) -> float:
+    """Peso de uma atividade: o da própria tarefa quando vem de um cronograma
+    (duração útil), senão o peso de engenharia por nome."""
+    if "weight" in sub:
+        return float(sub["weight"])
+    return sub_dict.get(_norm(sub["name"]), 1.0)
+
+
+def _sub_progress(sub: dict) -> float:
+    """Quanto da atividade está feito: o % lançado, ou 0/1 pelo status."""
+    if "progress" in sub:
+        return float(sub["progress"])
+    return 1.0 if sub["is_done"] else 0.0
+
+
+def _task_weight(task: dict) -> float:
+    if "weight" in task:
+        return float(task["weight"])
+    return TASK_WEIGHTS.get(_norm(task["name"]), 1.0)
+
+
 def compute_task_progress(
-    task_name: str, task_done: bool, subtasks: list[dict]
+    task_name: str, task_done: bool, subtasks: list[dict], own_progress: float | None = None
 ) -> float:
     """
     Progresso 0..1 de uma disciplina usando pesos das subtarefas.
     - Se o pai está concluído → 1.0 (status do engenheiro é autoritativo).
-    - Se não há subtarefas e pai aberto → 0.0.
+    - Se não há subtarefas e pai aberto → own_progress (cronograma) ou 0.0.
     - Se há subtarefas e pai aberto → progresso ponderado pelas subtarefas.
-    subtasks: [{'name': str, 'is_done': bool}, ...]
+    subtasks: [{'name': str, 'is_done': bool, 'weight'?: float, 'progress'?: float}, ...]
     """
     if task_done:
         return 1.0
 
     if not subtasks:
-        return 0.0
+        return own_progress or 0.0
 
     sub_dict = SUBTASK_WEIGHTS.get(_norm(task_name), {})
     total_w = 0.0
     done_w = 0.0
     for sub in subtasks:
-        w = sub_dict.get(_norm(sub["name"]), 1.0)
+        w = _sub_weight(sub, sub_dict)
         total_w += w
-        if sub["is_done"]:
-            done_w += w
+        done_w += w * _sub_progress(sub)
     return done_w / total_w if total_w > 0 else 0.0
 
 
@@ -468,9 +488,7 @@ def compute_list_progress(tasks: list[dict]) -> tuple[float, list[dict]]:
     tasks: [{'name': str, 'is_done': bool, 'subtasks': [...], 'task_id': str}, ...]
     Retorna: (progress 0..1, detalhes por tarefa)
     """
-    raw_weights: list[float] = []
-    for task in tasks:
-        raw_weights.append(TASK_WEIGHTS.get(_norm(task["name"]), 1.0))
+    raw_weights: list[float] = [_task_weight(task) for task in tasks]
     total_w = sum(raw_weights)
 
     details: list[dict] = []
@@ -478,14 +496,12 @@ def compute_list_progress(tasks: list[dict]) -> tuple[float, list[dict]]:
     for task, raw_w in zip(tasks, raw_weights):
         norm_w = raw_w / total_w if total_w > 0 else 0.0
         task_prog = compute_task_progress(
-            task["name"], task["is_done"], task.get("subtasks", [])
+            task["name"], task["is_done"], task.get("subtasks", []), task.get("progress")
         )
         weighted_sum += norm_w * task_prog
 
         sub_dict = SUBTASK_WEIGHTS.get(_norm(task["name"]), {})
-        sub_raws = [
-            sub_dict.get(_norm(s["name"]), 1.0) for s in task.get("subtasks", [])
-        ]
+        sub_raws = [_sub_weight(s, sub_dict) for s in task.get("subtasks", [])]
         sub_total = sum(sub_raws)
         sub_details = []
         for sub, sw in zip(task.get("subtasks", []), sub_raws):
@@ -602,7 +618,7 @@ def build_province_evolution(lists_data: list[dict], now: datetime) -> dict:
         tasks = lst["tasks"]
         if not tasks:
             continue
-        raw_weights = [TASK_WEIGHTS.get(_norm(t["name"]), 1.0) for t in tasks]
+        raw_weights = [_task_weight(t) for t in tasks]
         total_w = sum(raw_weights)
 
         list_prog = 0.0
@@ -616,13 +632,15 @@ def build_province_evolution(lists_data: list[dict], now: datetime) -> dict:
 
             # Mesmo progresso que o gráfico de barras usa — os dois têm de fechar
             # no mesmo número.
-            list_prog += norm_w * compute_task_progress(task["name"], task["is_done"], subs)
+            list_prog += norm_w * compute_task_progress(
+                task["name"], task["is_done"], subs, task.get("progress")
+            )
 
             # Decomposição no tempo: cada atividade concluída vira um degrau na
             # data em que foi fechada.
             credited = 0.0
             sub_dict = SUBTASK_WEIGHTS.get(_norm(task["name"]), {})
-            sub_raws = [sub_dict.get(_norm(s["name"]), 1.0) for s in subs]
+            sub_raws = [_sub_weight(s, sub_dict) for s in subs]
             sub_total = sum(sub_raws)
             for sub, sub_w in zip(subs, sub_raws):
                 if not sub.get("is_done") or sub_total <= 0:

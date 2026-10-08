@@ -10,12 +10,12 @@
   <link rel="icon" type="image/png" href="/img/favicon u2.png" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/echarts.min.js"></script>
-  <script src="/static/echarts-theme-u2.js?v=33"></script>
+  <script src="/static/echarts-theme-u2.js?v=35"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/theme-dark.css?v=33" />
-  <link rel="stylesheet" href="/static/mobile.css?v=33" />
+  <link rel="stylesheet" href="/static/theme-dark.css?v=35" />
+  <link rel="stylesheet" href="/static/mobile.css?v=35" />
 </head>
 <body class="theme-dark bg-gray-100 font-sans" style="padding-top:env(safe-area-inset-top)">
 
@@ -191,8 +191,8 @@
   </div>
 
   <!-- ══ SCRIPTS ════════════════════════════════════════════════ -->
-  <script src="/static/sse.js?v=33"></script>
-  <script src="/static/charts.js?v=33"></script>
+  <script src="/static/sse.js?v=35"></script>
+  <script src="/static/charts.js?v=35"></script>
 
   <script>
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -320,7 +320,7 @@
       const foldersHTML = folders.map(f=>{
         const h = healthColor(f.completion_rate, f.overdue_tasks);
         return `<div class="mob-card" style="border-left-color:${h.border}"
-          onclick="location.hash='#/folder/${esc(f.folder_id)}';window.__folderName='${esc(f.name)}'">
+          onclick="location.hash='#/folder/${esc(f.folder_id)}';window.__folderName=${jsStr(f.name)}">
           <div class="mob-card-header">
             <div style="display:flex;align-items:center;gap:7px;min-width:0">
               <span style="width:8px;height:8px;border-radius:50%;background:${h.dot};flex-shrink:0"></span>
@@ -488,7 +488,7 @@
 
       const listsHTML = lists.map(l=>`
         <div class="mob-card" style="border-left-color:#6366f1"
-          onclick="location.hash='#/list/${esc(l.list_id)}';window.__listName='${esc(l.name)}'">
+          onclick="location.hash='#/list/${esc(l.list_id)}';window.__listName=${jsStr(l.name)}">
           <div class="mob-card-header">
             <span class="mob-card-title">${esc(l.name)}</span>
             <span style="font-size:14px;font-weight:700;color:${l.completion_rate>=0.8?'var(--u2-green)':l.completion_rate>=0.4?'var(--u2-amber)':'#dc2626'};flex-shrink:0">${fmtPct(l.completion_rate)}</span>
@@ -522,6 +522,36 @@
       }));
     }
 
+    // Texto do ClickUp dentro de onclick: literal JS (JSON) escapado para o atributo.
+    function jsStr(v) { return esc(JSON.stringify(String(v===null||v===undefined?'':v))); }
+
+    /* ── Dependências das tarefas ───────────────────────────── */
+    function depsCount(t) {
+      const n = (t.depends_on||[]).length;
+      return n ? ` <span style="font-size:11px;font-weight:600;color:#d97706">⛓ ${n}</span>` : '';
+    }
+    function depsSection(title, deps) {
+      if (!deps || !deps.length) return '';
+      const rows = deps.map(d=>`
+        <div class="mob-task-row" onclick="location.hash='#/task/${esc(d.task_id)}';window.__taskName=${jsStr(d.name)}">
+          <span class="mob-task-dot" style="background:${d.status_color||'var(--u2-gray)'}"></span>
+          <div style="flex:1;min-width:0">
+            <div class="mob-task-name">${esc(d.name)}</div>
+            <div class="mob-task-meta">${d.parent_name?esc(d.parent_name)+' · ':''}${fmtDate(d.start_date)} → ${fmtDate(d.due_date)}</div>
+          </div>
+          ${statusBadge(d.status,d.status_color)}
+        </div>`).join('');
+      return `<div class="mob-table-wrap" style="margin-bottom:10px">
+          <div class="mob-table-header">${title} (${deps.length})</div>${rows}</div>`;
+    }
+
+    /* ── Cronograma de obra: tarefas com % concluído ─────────── */
+    function isScheduleTask(t) { return t.progress_pct!==null && t.progress_pct!==undefined; }
+    function schedulePct(t) {
+      return isScheduleTask(t)
+        ? ` <span style="font-size:11px;font-weight:600;color:var(--u2-gray-light)">${Math.round(t.progress_pct||0)}%</span>` : '';
+    }
+
     /* ── VIEW: Lista (tasks) ────────────────────────────────── */
     async function renderList(listId) {
       loading();
@@ -551,11 +581,11 @@
       const rate      = kpis?(kpis.completion_rate||0):(total>0?completed/total:0);
 
       const taskRows = tasks.map(t=>`
-        <div class="mob-task-row" onclick="location.hash='#/task/${esc(t.task_id)}';window.__taskName='${esc(t.name)}'">
+        <div class="mob-task-row" onclick="location.hash='#/task/${esc(t.task_id)}';window.__taskName=${jsStr(t.name)}">
           <span class="mob-task-dot" style="background:${t.status_color||'var(--u2-gray)'}"></span>
           <div style="flex:1;min-width:0">
             <div class="mob-task-name">${esc(t.name)}</div>
-            <div class="mob-task-meta">${statusBadge(t.status,t.status_color)}</div>
+            <div class="mob-task-meta">${statusBadge(t.status,t.status_color)}${schedulePct(t)}${depsCount(t)}</div>
           </div>
           <div class="mob-task-date ${t.is_overdue?'style="color:#dc2626"':''}">${t.is_overdue?warnIcon()+' ':''}</div>
         </div>`).join('');
@@ -600,11 +630,15 @@
 
       const subtaskRows = (task.subtasks||[]).map(s=>{
         const names = (s.assignees||[]).map(a=>a.username||'?').join(', ')||'—';
-        return `<div class="mob-task-row">
+        const open = s.has_subtasks
+          ? ` onclick="location.hash='#/task/${esc(s.task_id)}';window.__taskName=${jsStr(s.name)}"` : '';
+        const period = isScheduleTask(s)
+          ? `${fmtDate(s.start_date)} → ${fmtDate(s.due_date)}` : fmtDate(s.due_date);
+        return `<div class="mob-task-row"${open}>
           <span class="mob-task-dot" style="background:${s.status_color||'var(--u2-gray)'}"></span>
           <div style="flex:1;min-width:0">
-            <div class="mob-task-name">${esc(s.name)}</div>
-            <div class="mob-task-meta">${esc(names)} · ${fmtDate(s.due_date)}</div>
+            <div class="mob-task-name">${esc(s.name)}${s.has_subtasks?' ◈':''}</div>
+            <div class="mob-task-meta">${esc(names)} · ${period}${schedulePct(s)}${depsCount(s)}</div>
           </div>
           ${statusBadge(s.status,s.status_color)}
         </div>`;
@@ -623,12 +657,16 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px">
               <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Responsável</div><div style="color:#374151;font-weight:500">${esc(assignees)}</div></div>
-              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Prazo</div><div style="color:${task.is_overdue?'#dc2626':'var(--u2-gray-light)'};font-weight:500">${fmtDate(task.due_date)}</div></div>
+              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">${isScheduleTask(task)?'Fim':'Prazo'}</div><div style="color:${task.is_overdue?'#dc2626':'var(--u2-gray-light)'};font-weight:500">${fmtDate(task.due_date)}</div></div>
               <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Início</div><div style="color:#374151">${fmtDate(task.start_date)}</div></div>
-              <div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Criada</div><div style="color:#374151">${fmtDate(task.date_created)}</div></div>
+              ${isScheduleTask(task)
+                ? `<div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Progresso</div><div style="color:#374151;font-weight:600">${Math.round(task.progress_pct||0)}%${task.duration_days!=null?' · '+Number(task.duration_days).toLocaleString('pt-BR',{maximumFractionDigits:2})+' d':''}</div></div>`
+                : `<div><div style="color:#94a3b8;font-weight:600;text-transform:uppercase;font-size:10px;margin-bottom:3px">Criada</div><div style="color:#374151">${fmtDate(task.date_created)}</div></div>`}
             </div>
           </div>
         </div>
+        ${depsSection('Depende de', task.depends_on)}
+        ${depsSection('Libera', task.blocks)}
         ${task.has_subtasks?`
           <div class="mob-table-wrap">
             <div class="mob-table-header">Subtasks (${task.subtasks.length})</div>

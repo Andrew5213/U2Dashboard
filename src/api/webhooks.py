@@ -8,6 +8,7 @@ from src.core.webhook_security import verify_clickup_signature
 from src.services.sync_service import SyncService
 from src.services.cache_service import CacheService
 from src.services.event_broadcaster import broadcaster
+from src.workers.schedule_worker import notify_list_changed
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -28,6 +29,7 @@ async def _update_cache_and_broadcast(event: str, task_id: str) -> None:
             list_id = await CacheService(db).apply_webhook_event(event, task_id)
         if list_id:
             await broadcaster.publish({"type": event, "task_id": task_id, "list_id": list_id})
+            notify_list_changed(list_id)
     except Exception as exc:
         logger.warning(f"Webhook cache update falhou para {event}/{task_id}: {exc}")
 

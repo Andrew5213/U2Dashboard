@@ -82,5 +82,24 @@ class Settings(BaseSettings):
     authorization_status_approved: str = "Autorizado"
     authorization_status_rejected: str = "Recusado"
 
+    # Cronograma de obra (motor de cálculo sobre listas do ClickUp)
+    schedule_enabled: bool = False
+    # Listas geridas pelo motor, separadas por vírgula (uma por província)
+    schedule_list_ids: str = ""
+    # Lista onde cada tarefa é um feriado (data = vencimento). Fora do space sincronizado.
+    schedule_holidays_list_id: str = ""
+    # Folga semanal padrão, Seg→Dom ("1" = folga). A descrição da lista pode sobrepor.
+    schedule_weekend_mask: str = "0000001"
+    # Espera após um webhook antes de recalcular (junta edições em sequência)
+    schedule_debounce_seconds: float = 20.0
+    # Recálculo periódico — cobre o que o ClickUp não avisa (remoção de dependência, feriados)
+    schedule_interval_seconds: int = 300
+    # Fuso da obra em horas a partir de UTC (Angola = +1) — define o que é "hoje"
+    schedule_utc_offset_hours: int = 1
+
+    @property
+    def schedule_lists(self) -> list[str]:
+        return [item.strip() for item in self.schedule_list_ids.split(",") if item.strip()]
+
 
 settings = Settings()

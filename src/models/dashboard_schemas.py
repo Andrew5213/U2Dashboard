@@ -35,6 +35,20 @@ class ListMetrics(BaseModel):
     completion_rate: float
 
 
+class DependencyRef(BaseModel):
+    """Tarefa do outro lado de uma dependência. `parent_name` desempata nomes
+    repetidos (há duas "Cura do Concreto" na mesma lista)."""
+    task_id: str
+    name: str
+    parent_name: str | None = None
+    status: str | None = None
+    status_type: str | None = None
+    status_color: str | None = None
+    start_date: datetime | None = None
+    due_date: datetime | None = None
+    progress_pct: float | None = None
+
+
 class TaskSummary(BaseModel):
     task_id: str
     name: str
@@ -49,6 +63,13 @@ class TaskSummary(BaseModel):
     has_subtasks: bool = False
     observacoes: str | None = None
     url: str | None = None
+    # Cronograma de obra — nulos fora das listas geridas pelo motor
+    progress_pct: float | None = None
+    duration_days: float | None = None
+    calendar_type: str | None = None
+    # De que tarefas esta depende. Num grupo, são as dependências das tarefas dele
+    # que apontam para fora do grupo.
+    depends_on: list[DependencyRef] = []
 
 
 class TaskDetail(TaskSummary):
@@ -57,6 +78,10 @@ class TaskDetail(TaskSummary):
     date_created: datetime | None = None
     date_updated: datetime | None = None
     subtasks: list[TaskSummary] = []
+    # Do topo até o pai direto: [{task_id, name}] — a tarefa pode estar no 3º nível
+    ancestors: list[dict[str, str]] = []
+    # Tarefas que esperam por esta (o inverso de depends_on)
+    blocks: list[DependencyRef] = []
 
 
 class AssigneeStats(BaseModel):

@@ -4,6 +4,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select, delete, func, case, and_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.config import settings
+from src.services.schedule_engine import useful_duration
+from src.services.schedule_fields import (
+    FIELD_CALENDAR, FIELD_DURATION, FIELD_PERCENT, find_field, read_calendar, read_number, read_percent,
+)
 from src.models.cache_models import (
     ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache,
     ClickUpTaskCache, ClickUpUserCache, CacheRefreshLog, DisciplineWeight,
@@ -51,6 +56,11 @@ _FIELD_DATA_CONCLUSAO_ID = "57217afa-f902-485e-bd14-6505c061cd01"
 _FIELD_OBSERVACOES_ID = "c2a3d3cb-26e5-4148-878d-3ec4d21ee6fe"
 
 
+def _end_of_day(moment: datetime | None) -> datetime | None:
+    """Prazo de cronograma é só um dia: a tarefa só está atrasada depois que ele acaba."""
+    return moment.replace(hour=23, minute=59, second=59, microsecond=0) if moment else None
+
+
 def _custom_field_value(task: dict, field_id: str) -> str | int | None:
     for cf in task.get("custom_fields") or []:
         if cf.get("id") == field_id:
@@ -85,7 +95,12 @@ def _build_task_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
       date_created, date_closed}]}].
 
     As datas são ignoradas por compute_list_progress e usadas por
-    build_province_evolution para reconstruir a série temporal."""
+    build_province_evolution para reconstruir a série temporal.
+
+    Lista de cronograma (tarefas com progress_pct): ver _build_schedule_tree."""
+    if any(t.progress_pct is not None for t in tasks):
+        return _build_schedule_tree(tasks)
+
     parents: dict[str, dict] = {}
     subtasks_by_parent: dict[str, list] = {}
     for t in tasks:
@@ -104,6 +119,59 @@ def _build_task_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
         {**task_data, "subtasks": subtasks_by_parent.get(tid, [])}
         for tid, task_data in parents.items()
     ]
+
+
+def _build_schedule_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
+    """Árvore de uma lista de cronograma, no mesmo formato de 2 níveis.
+
+    A lista tem 3 níveis (disciplina → grupo → tarefa) e o peso vem da duração
+    útil de cada tarefa, não dos pesos por nome. Por isso cada disciplina de topo
+    recebe TODAS as suas tarefas-folha como "subtasks", cada uma com `weight`
+    (duração útil) e `progress` (% concluído, 0..1). weights_config usa esses
+    valores quando presentes. Tarefas canceladas ficam fora."""
+    days_per_week = settings.schedule_weekend_mask.count("0")
+    by_id = {t.task_id: t for t in tasks}
+    children: dict[str, list[ClickUpTaskCache]] = {}
+    for t in tasks:
+        if t.parent_task_id in by_id:
+            children.setdefault(t.parent_task_id, []).append(t)
+
+    def leaf_node(t: ClickUpTaskCache) -> dict:
+        is_done = t.status_type == "done"
+        return {
+            "name": t.name or "",
+            "is_done": is_done,
+            "date_created": t.date_created,
+            "date_closed": _closed_at(t, is_done),
+            "weight": useful_duration(t.duration_days or 0.0, t.calendar_type or "", days_per_week),
+            "progress": (t.progress_pct or 0.0) / 100,
+        }
+
+    def leaves_of(t: ClickUpTaskCache) -> list[dict]:
+        kids = children.get(t.task_id)
+        if not kids:
+            return [] if t.status_type == "closed" else [leaf_node(t)]
+        return [leaf for kid in kids for leaf in leaves_of(kid)]
+
+    tree: list[dict] = []
+    for t in tasks:
+        if t.parent_task_id in by_id:
+            continue
+        is_done = t.status_type == "done"
+        node = {
+            "task_id": t.task_id,
+            "name": t.name or "",
+            "is_done": is_done,
+            "date_created": t.date_created,
+            "date_closed": _closed_at(t, is_done),
+        }
+        if t.task_id in children:
+            leaves = leaves_of(t)
+            tree.append({**node, "weight": sum(leaf["weight"] for leaf in leaves), "subtasks": leaves})
+        elif t.status_type != "closed":
+            own = leaf_node(t)
+            tree.append({**node, "weight": own["weight"], "progress": own["progress"], "subtasks": []})
+    return tree
 
 
 class CacheRepository:
@@ -195,6 +263,25 @@ class CacheRepository:
         date_closed = _custom_field_value(task, _FIELD_DATA_CONCLUSAO_ID)
         observacoes = _custom_field_value(task, _FIELD_OBSERVACOES_ID) or None
 
+        # Lista de cronograma: o campo "% Concluído" existe em todas as tarefas dela.
+        # Nessas, o prazo é a data de fim nativa — é o motor que a calcula e grava.
+        custom_fields = task.get("custom_fields") or []
+        percent_field = find_field(custom_fields, FIELD_PERCENT, "manual_progress")
+        progress_pct = duration_days = calendar_type = None
+        schedule_due = False
+        if percent_field is not None:
+            progress_pct = read_percent(percent_field) or 0.0
+            duration_days = read_number(find_field(custom_fields, FIELD_DURATION, "number"))
+            calendar_type = read_calendar(find_field(custom_fields, FIELD_CALENDAR, "drop_down"))
+            due_date = task.get("due_date")
+            schedule_due = True
+
+        # type 1 = "task_id espera por depends_on"; o registo vem nas duas tarefas do par
+        depends_on = sorted({
+            str(dep["depends_on"]) for dep in task.get("dependencies") or []
+            if dep.get("type", 1) == 1 and dep.get("depends_on") and str(dep.get("task_id")) == str(task["id"])
+        })
+
         stmt = sqlite_insert(ClickUpTaskCache).values(
             task_id=str(task["id"]),
             list_id=actual_list_id,
@@ -206,12 +293,16 @@ class CacheRepository:
             status_color=status_color,
             assignees_json=assignees_json,
             tags_json=tags_json,
-            due_date=_ms_to_dt(due_date),
+            due_date=_end_of_day(_ms_to_dt(due_date)) if schedule_due else _ms_to_dt(due_date),
             start_date=_ms_to_dt(task.get("start_date")),
             date_created=_ms_to_dt(task.get("date_created")),
             date_updated=_ms_to_dt(task.get("date_updated")),
             date_closed=_ms_to_dt(date_closed),
             observacoes=observacoes,
+            progress_pct=progress_pct,
+            duration_days=duration_days,
+            calendar_type=calendar_type,
+            depends_on_json=json.dumps(depends_on),
             url=task.get("url"),
             last_refreshed_at=datetime.utcnow(),
         )
@@ -230,6 +321,11 @@ class CacheRepository:
                 "date_updated": stmt.excluded.date_updated,
                 "date_closed": stmt.excluded.date_closed,
                 "observacoes": stmt.excluded.observacoes,
+                "progress_pct": stmt.excluded.progress_pct,
+                "duration_days": stmt.excluded.duration_days,
+                "calendar_type": stmt.excluded.calendar_type,
+                "depends_on_json": stmt.excluded.depends_on_json,
+                "parent_task_id": stmt.excluded.parent_task_id,
                 "last_refreshed_at": stmt.excluded.last_refreshed_at,
             },
         ))
@@ -581,6 +677,29 @@ class CacheRepository:
             .order_by(ClickUpTaskCache.date_created)
         )).scalars().all())
         return task, subtasks
+
+    async def get_tasks_by_ids(self, task_ids) -> list[ClickUpTaskCache]:
+        ids = [i for i in set(task_ids) if i]
+        if not ids:
+            return []
+        return list((await self._db.execute(
+            select(ClickUpTaskCache).where(ClickUpTaskCache.task_id.in_(ids))
+        )).scalars().all())
+
+    async def get_task_ancestors(self, task: ClickUpTaskCache) -> list[ClickUpTaskCache]:
+        """Pais da tarefa, do topo até o pai direto. Limite de 10 níveis como
+        proteção contra um ciclo no cache."""
+        chain: list[ClickUpTaskCache] = []
+        parent_id = task.parent_task_id
+        while parent_id and len(chain) < 10:
+            parent = (await self._db.execute(
+                select(ClickUpTaskCache).where(ClickUpTaskCache.task_id == parent_id)
+            )).scalar_one_or_none()
+            if parent is None:
+                break
+            chain.append(parent)
+            parent_id = parent.parent_task_id
+        return list(reversed(chain))
 
     async def get_assignee_task_stats(self, space_id: str) -> list[dict]:
         stmt = (

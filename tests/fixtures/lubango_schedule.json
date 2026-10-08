@@ -1,0 +1,1273 @@
+{
+ "province": "Lubango",
+ "project": "Transmitter Site Retrofit",
+ "start": "2026-10-13",
+ "weekend_mask": "0000001",
+ "holidays": [
+  [
+   "2026-11-02",
+   "Dia dos Finados"
+  ],
+  [
+   "2026-11-11",
+   "Dia da Independência Nacional"
+  ],
+  [
+   "2026-12-25",
+   "Dia de Natal"
+  ],
+  [
+   "2027-01-01",
+   "Dia do Ano Novo"
+  ],
+  [
+   "2027-01-04",
+   "Dia dos Mártires da Repressão Colonial"
+  ],
+  [
+   "2027-02-04",
+   "Dia do Início da Luta Armada"
+  ]
+ ],
+ "tasks": [
+  {
+   "key": "Obra Civil:1",
+   "name": "Transmitters Civil Works",
+   "level": 1,
+   "parent_key": null,
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-30",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Obra Civil:2",
+   "name": "Concrete Base for Satellite Antenna",
+   "level": 2,
+   "parent_key": "Obra Civil:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-30",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Obra Civil:3",
+   "name": "Regularização de Solo e Compactação",
+   "level": 3,
+   "parent_key": "Obra Civil:2",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-14",
+   "expected_pos_start": 0.0,
+   "expected_pos_finish": 2.0
+  },
+  {
+   "key": "Obra Civil:4",
+   "name": "Preparação de Forma e Armação para a Fundação Antena Parabólica",
+   "level": 3,
+   "parent_key": "Obra Civil:2",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:3"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-15",
+   "expected_finish": "2026-10-15",
+   "expected_pos_start": 2.0,
+   "expected_pos_finish": 3.0
+  },
+  {
+   "key": "Obra Civil:5",
+   "name": "Concretagem da Fundação",
+   "level": 3,
+   "parent_key": "Obra Civil:2",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:4"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-16",
+   "expected_finish": "2026-10-16",
+   "expected_pos_start": 3.0,
+   "expected_pos_finish": 4.0
+  },
+  {
+   "key": "Obra Civil:6",
+   "name": "Cura do Concreto",
+   "level": 3,
+   "parent_key": "Obra Civil:2",
+   "is_summary": false,
+   "duration": 14.0,
+   "calendar": "corrido",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:5"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-17",
+   "expected_finish": "2026-10-30",
+   "expected_pos_start": 4.0,
+   "expected_pos_finish": 16.0
+  },
+  {
+   "key": "Obra Civil:7",
+   "name": "Concrete Base for Generator",
+   "level": 2,
+   "parent_key": "Obra Civil:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-30",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Obra Civil:8",
+   "name": "Regularização de Solo e Compactação",
+   "level": 3,
+   "parent_key": "Obra Civil:7",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 100.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-14",
+   "expected_pos_start": 0.0,
+   "expected_pos_finish": 2.0
+  },
+  {
+   "key": "Obra Civil:9",
+   "name": "Preparação de Forma e Armação para a Fundação Gerador",
+   "level": 3,
+   "parent_key": "Obra Civil:7",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 100.0,
+   "predecessors": [
+    "Obra Civil:8"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-15",
+   "expected_finish": "2026-10-15",
+   "expected_pos_start": 2.0,
+   "expected_pos_finish": 3.0
+  },
+  {
+   "key": "Obra Civil:10",
+   "name": "Concretagem da Fundação",
+   "level": 3,
+   "parent_key": "Obra Civil:7",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 100.0,
+   "predecessors": [
+    "Obra Civil:9"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-16",
+   "expected_finish": "2026-10-16",
+   "expected_pos_start": 3.0,
+   "expected_pos_finish": 4.0
+  },
+  {
+   "key": "Obra Civil:11",
+   "name": "Cura do Concreto",
+   "level": 3,
+   "parent_key": "Obra Civil:7",
+   "is_summary": false,
+   "duration": 14.0,
+   "calendar": "corrido",
+   "percent": 100.0,
+   "predecessors": [
+    "Obra Civil:10"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-17",
+   "expected_finish": "2026-10-30",
+   "expected_pos_start": 4.0,
+   "expected_pos_finish": 16.0
+  },
+  {
+   "key": "Obra Civil:12",
+   "name": "Window Closing",
+   "level": 2,
+   "parent_key": "Obra Civil:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-15",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Obra Civil:13",
+   "name": "Removal of Existing Frame",
+   "level": 3,
+   "parent_key": "Obra Civil:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-13",
+   "expected_finish": "2026-10-13",
+   "expected_pos_start": 0.0,
+   "expected_pos_finish": 1.0
+  },
+  {
+   "key": "Obra Civil:14",
+   "name": "Closing Gap with Cement Block",
+   "level": 3,
+   "parent_key": "Obra Civil:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:13"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-14",
+   "expected_finish": "2026-10-14",
+   "expected_pos_start": 1.0,
+   "expected_pos_finish": 2.0
+  },
+  {
+   "key": "Obra Civil:15",
+   "name": "Sandblasted Plaster",
+   "level": 3,
+   "parent_key": "Obra Civil:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:14"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-15",
+   "expected_finish": "2026-10-15",
+   "expected_pos_start": 2.0,
+   "expected_pos_finish": 3.0
+  },
+  {
+   "key": "Obra Civil:16",
+   "name": "Interior Painting",
+   "level": 2,
+   "parent_key": "Obra Civil:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-16",
+   "expected_finish": "2026-10-20",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Obra Civil:17",
+   "name": "Repair, Cleaning, Preparation for Painting of Walls and Ceilings",
+   "level": 3,
+   "parent_key": "Obra Civil:16",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:15"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-16",
+   "expected_finish": "2026-10-17",
+   "expected_pos_start": 3.0,
+   "expected_pos_finish": 5.0
+  },
+  {
+   "key": "Obra Civil:18",
+   "name": "Wall Painting",
+   "level": 3,
+   "parent_key": "Obra Civil:16",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:17"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-19",
+   "expected_finish": "2026-10-19",
+   "expected_pos_start": 5.0,
+   "expected_pos_finish": 6.0
+  },
+  {
+   "key": "Obra Civil:19",
+   "name": "Ceiling Painting",
+   "level": 3,
+   "parent_key": "Obra Civil:16",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:18"
+   ],
+   "resources": [
+    "PROEF"
+   ],
+   "expected_start": "2026-10-20",
+   "expected_finish": "2026-10-20",
+   "expected_pos_start": 6.0,
+   "expected_pos_finish": 7.0
+  },
+  {
+   "key": "Logística:1",
+   "name": "Logistics & Transportation (Containers)",
+   "level": 1,
+   "parent_key": null,
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-16",
+   "expected_finish": "2026-10-22",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Logística:2",
+   "name": "Containers Transport from Viana Site",
+   "level": 2,
+   "parent_key": "Logística:1",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 100.0,
+   "predecessors": [
+    "Obra Civil:15"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-16",
+   "expected_finish": "2026-10-17",
+   "expected_pos_start": 3.0,
+   "expected_pos_finish": 5.0
+  },
+  {
+   "key": "Logística:3",
+   "name": "Equipment Allocation in the Room",
+   "level": 2,
+   "parent_key": "Logística:1",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 100.0,
+   "predecessors": [
+    "Logística:2",
+    "Obra Civil:19"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-21",
+   "expected_finish": "2026-10-21",
+   "expected_pos_start": 7.0,
+   "expected_pos_finish": 8.0
+  },
+  {
+   "key": "Logística:4",
+   "name": "Equipment Unpacking",
+   "level": 2,
+   "parent_key": "Logística:1",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 100.0,
+   "predecessors": [
+    "Logística:3"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-22",
+   "expected_finish": "2026-10-22",
+   "expected_pos_start": 8.0,
+   "expected_pos_finish": 9.0
+  },
+  {
+   "key": "Área Técnica:1",
+   "name": "Transmitter Site Retrofit – Área Técnica (Elétrica, Equipamentos, Testes e Aceitação)",
+   "level": 1,
+   "parent_key": null,
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [],
+   "expected_start": "2026-10-21",
+   "expected_finish": "2026-11-28",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Área Técnica:2",
+   "name": "Electrical Installations",
+   "level": 2,
+   "parent_key": "Área Técnica:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-21",
+   "expected_finish": "2026-11-12",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Área Técnica:3",
+   "name": "AC Distribution Panel",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 0.5,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Obra Civil:19"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-21",
+   "expected_finish": "2026-10-21",
+   "expected_pos_start": 7.0,
+   "expected_pos_finish": 7.5
+  },
+  {
+   "key": "Área Técnica:4",
+   "name": "Surge Suppressor",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 0.5,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:3"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-21",
+   "expected_finish": "2026-10-21",
+   "expected_pos_start": 7.5,
+   "expected_pos_finish": 8.0
+  },
+  {
+   "key": "Área Técnica:5",
+   "name": "Exhausting System & Air Duct",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:4"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-22",
+   "expected_finish": "2026-10-22",
+   "expected_pos_start": 8.0,
+   "expected_pos_finish": 9.0
+  },
+  {
+   "key": "Área Técnica:6",
+   "name": "165 kVA Generator",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:5",
+    "Obra Civil:11"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-10-31",
+   "expected_finish": "2026-10-31",
+   "expected_pos_start": 16.0,
+   "expected_pos_finish": 17.0
+  },
+  {
+   "key": "Área Técnica:7",
+   "name": "Automatic Transfer Switch",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:6"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-11-03",
+   "expected_finish": "2026-11-03",
+   "expected_pos_start": 17.0,
+   "expected_pos_finish": 18.0
+  },
+  {
+   "key": "Área Técnica:8",
+   "name": "Air Conditioner",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:7"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-11-04",
+   "expected_finish": "2026-11-05",
+   "expected_pos_start": 18.0,
+   "expected_pos_finish": 20.0
+  },
+  {
+   "key": "Área Técnica:9",
+   "name": "UPS Systems - Control Unit & Battery Cabinet",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:8",
+    "Logística:4"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-11-06",
+   "expected_finish": "2026-11-07",
+   "expected_pos_start": 20.0,
+   "expected_pos_finish": 22.0
+  },
+  {
+   "key": "Área Técnica:10",
+   "name": "Cable Tray",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 0.2,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:9"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-11-09",
+   "expected_finish": "2026-11-09",
+   "expected_pos_start": 22.0,
+   "expected_pos_finish": 22.2
+  },
+  {
+   "key": "Área Técnica:11",
+   "name": "Grounding System",
+   "level": 3,
+   "parent_key": "Área Técnica:2",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:10"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "PROEF"
+   ],
+   "expected_start": "2026-11-09",
+   "expected_finish": "2026-11-12",
+   "expected_pos_start": 22.2,
+   "expected_pos_finish": 24.2
+  },
+  {
+   "key": "Área Técnica:12",
+   "name": "Equipment Installation",
+   "level": 2,
+   "parent_key": "Área Técnica:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-12",
+   "expected_finish": "2026-11-23",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Área Técnica:13",
+   "name": "Instalação de Antena Parabólica",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:11",
+    "Obra Civil:6"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-12",
+   "expected_finish": "2026-11-13",
+   "expected_pos_start": 24.2,
+   "expected_pos_finish": 25.2
+  },
+  {
+   "key": "Área Técnica:14",
+   "name": "Transmitters, Pie Racks & N+1 Control",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:11",
+    "Logística:4"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-12",
+   "expected_finish": "2026-11-13",
+   "expected_pos_start": 24.2,
+   "expected_pos_finish": 25.2
+  },
+  {
+   "key": "Área Técnica:15",
+   "name": "5-Way Combiner",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:14"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-13",
+   "expected_finish": "2026-11-14",
+   "expected_pos_start": 25.2,
+   "expected_pos_finish": 26.2
+  },
+  {
+   "key": "Área Técnica:16",
+   "name": "FM Antenna System",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:15"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-14",
+   "expected_finish": "2026-11-16",
+   "expected_pos_start": 26.2,
+   "expected_pos_finish": 27.2
+  },
+  {
+   "key": "Área Técnica:17",
+   "name": "FM - Transmission Line 4\" 120 meters",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:16"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-16",
+   "expected_finish": "2026-11-18",
+   "expected_pos_start": 27.2,
+   "expected_pos_finish": 29.2
+  },
+  {
+   "key": "Área Técnica:18",
+   "name": "Dehydrator",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 0.5,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:17"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-18",
+   "expected_finish": "2026-11-18",
+   "expected_pos_start": 29.2,
+   "expected_pos_finish": 29.7
+  },
+  {
+   "key": "Área Técnica:19",
+   "name": "STL Antenna Systems - Dishes 1,80 m & 0,9 m",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:18"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-18",
+   "expected_finish": "2026-11-20",
+   "expected_pos_start": 29.7,
+   "expected_pos_finish": 31.7
+  },
+  {
+   "key": "Área Técnica:20",
+   "name": "STL - Transmission Lines 1/2\"",
+   "level": 3,
+   "parent_key": "Área Técnica:12",
+   "is_summary": false,
+   "duration": 2.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:19"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-20",
+   "expected_finish": "2026-11-23",
+   "expected_pos_start": 31.7,
+   "expected_pos_finish": 33.7
+  },
+  {
+   "key": "Área Técnica:21",
+   "name": "Pre-Commissioning Tests",
+   "level": 2,
+   "parent_key": "Área Técnica:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-23",
+   "expected_finish": "2026-11-25",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Área Técnica:22",
+   "name": "Energy & Generators",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:13",
+    "Área Técnica:20"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-23",
+   "expected_finish": "2026-11-23",
+   "expected_pos_start": 33.7,
+   "expected_pos_finish": 33.95
+  },
+  {
+   "key": "Área Técnica:23",
+   "name": "Satellite Reception",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:22"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-23",
+   "expected_finish": "2026-11-24",
+   "expected_pos_start": 33.95,
+   "expected_pos_finish": 34.2
+  },
+  {
+   "key": "Área Técnica:24",
+   "name": "STL System",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:23"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-24",
+   "expected_finish": "2026-11-24",
+   "expected_pos_start": 34.2,
+   "expected_pos_finish": 34.45
+  },
+  {
+   "key": "Área Técnica:25",
+   "name": "Antenna & Transmission Line",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:24"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-24",
+   "expected_finish": "2026-11-24",
+   "expected_pos_start": 34.45,
+   "expected_pos_finish": 34.7
+  },
+  {
+   "key": "Área Técnica:26",
+   "name": "FM Combining System",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:25"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-24",
+   "expected_finish": "2026-11-24",
+   "expected_pos_start": 34.7,
+   "expected_pos_finish": 34.95
+  },
+  {
+   "key": "Área Técnica:27",
+   "name": "Transmitters",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:26"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-24",
+   "expected_finish": "2026-11-25",
+   "expected_pos_start": 34.95,
+   "expected_pos_finish": 35.2
+  },
+  {
+   "key": "Área Técnica:28",
+   "name": "NOC System",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:27"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-25",
+   "expected_finish": "2026-11-25",
+   "expected_pos_start": 35.2,
+   "expected_pos_finish": 35.45
+  },
+  {
+   "key": "Área Técnica:29",
+   "name": "Inventory List",
+   "level": 3,
+   "parent_key": "Área Técnica:21",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:28"
+   ],
+   "resources": [
+    "U2 BROADCAST"
+   ],
+   "expected_start": "2026-11-25",
+   "expected_finish": "2026-11-25",
+   "expected_pos_start": 35.45,
+   "expected_pos_finish": 35.7
+  },
+  {
+   "key": "Área Técnica:30",
+   "name": "SAT Accepting Tests",
+   "level": 2,
+   "parent_key": "Área Técnica:1",
+   "is_summary": true,
+   "duration": 0.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-25",
+   "expected_finish": "2026-11-27",
+   "expected_pos_start": null,
+   "expected_pos_finish": null
+  },
+  {
+   "key": "Área Técnica:31",
+   "name": "Energy & Generators",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:29"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-25",
+   "expected_finish": "2026-11-25",
+   "expected_pos_start": 35.7,
+   "expected_pos_finish": 35.95
+  },
+  {
+   "key": "Área Técnica:32",
+   "name": "Satellite Reception",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:31"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-25",
+   "expected_finish": "2026-11-26",
+   "expected_pos_start": 35.95,
+   "expected_pos_finish": 36.2
+  },
+  {
+   "key": "Área Técnica:33",
+   "name": "STL System",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:32"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-26",
+   "expected_finish": "2026-11-26",
+   "expected_pos_start": 36.2,
+   "expected_pos_finish": 36.45
+  },
+  {
+   "key": "Área Técnica:34",
+   "name": "Antenna & Transmission Line",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:33"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-26",
+   "expected_finish": "2026-11-26",
+   "expected_pos_start": 36.45,
+   "expected_pos_finish": 36.7
+  },
+  {
+   "key": "Área Técnica:35",
+   "name": "FM Combining System",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:34"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-26",
+   "expected_finish": "2026-11-26",
+   "expected_pos_start": 36.7,
+   "expected_pos_finish": 36.95
+  },
+  {
+   "key": "Área Técnica:36",
+   "name": "Transmitters",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:35"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-26",
+   "expected_finish": "2026-11-27",
+   "expected_pos_start": 36.95,
+   "expected_pos_finish": 37.2
+  },
+  {
+   "key": "Área Técnica:37",
+   "name": "NOC System",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:36"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-27",
+   "expected_finish": "2026-11-27",
+   "expected_pos_start": 37.2,
+   "expected_pos_finish": 37.45
+  },
+  {
+   "key": "Área Técnica:38",
+   "name": "Inventory List",
+   "level": 3,
+   "parent_key": "Área Técnica:30",
+   "is_summary": false,
+   "duration": 0.25,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:37"
+   ],
+   "resources": [
+    "U2 BROADCAST",
+    "RNA"
+   ],
+   "expected_start": "2026-11-27",
+   "expected_finish": "2026-11-27",
+   "expected_pos_start": 37.45,
+   "expected_pos_finish": 37.7
+  },
+  {
+   "key": "Área Técnica:39",
+   "name": "Aceitação & Transferência",
+   "level": 2,
+   "parent_key": "Área Técnica:1",
+   "is_summary": false,
+   "duration": 1.0,
+   "calendar": "util",
+   "percent": 0.0,
+   "predecessors": [
+    "Área Técnica:38"
+   ],
+   "resources": [
+    "RNA"
+   ],
+   "expected_start": "2026-11-27",
+   "expected_finish": "2026-11-28",
+   "expected_pos_start": 37.7,
+   "expected_pos_finish": 38.7
+  }
+ ]
+}

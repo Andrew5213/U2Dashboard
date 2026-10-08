@@ -71,7 +71,8 @@ src/
 │   ├── civil_models.py      # ORM: CivilProject, CivilSite + 9 child tables (report, resource, activity, material, occurrence, quality_check, photo, next_day_plan, signature)
 │   ├── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
 │   ├── document_models.py   # ORM: Document (PDF metadata for the Documentações module)
-│   └── authorization_models.py # ORM: AuthorizationToken (links de decisão de uso único)
+│   ├── authorization_models.py # ORM: AuthorizationToken (links de decisão de uso único)
+│   └── schedule_models.py   # ORM: ScheduleTaskState (último %/status visto pelo motor)
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
 │   ├── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
@@ -99,6 +100,10 @@ src/
 │   ├── document_service.py  # DocumentService: saves/deletes PDF files on disk + document table rows
 │   ├── smtp_sender.py       # send_smtp() — envio SMTP compartilhado (relatórios + autorizações)
 │   ├── authorization_service.py # Autorização de serviço: e-mail ao gestor → decisão → ClickUp
+│   ├── schedule_engine.py   # Motor do cronograma (puro): calendário, datas, reprogramação, % × status
+│   ├── schedule_fields.py   # Campos do ClickUp usados pelo cronograma (casados por nome)
+│   ├── schedule_service.py  # Lê a lista, roda o motor e grava só as diferenças
+│   ├── schedule_xlsx.py     # Leitura das planilhas PMEx (importador e fixture de teste)
 │   └── authorization_emails.py  # HTML dos e-mails de pedido e de decisão
 ├── api/
 │   ├── health.py            # GET /health
@@ -115,11 +120,13 @@ src/
 │   ├── civil.py             # /civil/* — Projects, Sites, DailyReports (RDO), photo upload
 │   ├── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
 │   ├── documents.py         # /documents/* — folders (dropdown), list, upload, download, delete PDFs
-│   └── authorizations.py    # POST /webhooks/autorizacoes + GET/POST /autorizacoes/decidir/{token}
+│   ├── authorizations.py    # POST /webhooks/autorizacoes + GET/POST /autorizacoes/decidir/{token}
+│   └── schedule.py          # GET /schedule/lists, POST /schedule/{list_id}/recalculate
 └── workers/
     ├── polling_worker.py    # APScheduler: ClickUp → Airbox sync on interval
     ├── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
-    └── email_worker.py      # APScheduler: sends weekly PDF report via email on configured weekday/hour UTC
+    ├── email_worker.py      # APScheduler: sends weekly PDF report via email on configured weekday/hour UTC
+    └── schedule_worker.py   # Recálculo do cronograma: por webhook (debounce) e periódico
 ```
 
 ## Sync Flows
@@ -426,6 +433,94 @@ ClickUp devolve os campos em ordem alfabética, péssima para leitura rápida. O
 **prefixo normalizado**, para o nome sobreviver a mudanças de unidade (`Duração Estimada (h)` virou
 `(min)` sem quebrar nada). Campos novos criados no ClickUp aparecem no fim.
 
+## Cronograma de Obra (Schedule Engine)
+
+Substitui as planilhas PMEx (um ficheiro Excel por disciplina, com Cronograma/Gantt/Resumo/Parâmetros).
+A lista "Site FM" de uma província passa a ser o cronograma: **editado só no ClickUp**, calculado pelo
+backend. Ligado por `SCHEDULE_ENABLED` + `SCHEDULE_LIST_IDS`; listas fora dessa lista não são tocadas.
+
+**Estrutura no ClickUp** — três níveis via subtarefas aninhadas (ClickApp *Nested Subtasks* tem de
+estar ligado no space; sem ele a API devolve `ITEM_002 Cannot make subtasks of subtasks`):
+
+```
+Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
+  └─ Disciplina (Obra Civil, Logística, Área Técnica)
+       └─ Grupo (Concrete Base for Generator…)
+            └─ Tarefa           ← o que o utilizador edita
+```
+
+| Dado | Onde vive no ClickUp | Quem escreve |
+|---|---|---|
+| Duração, tipo (Útil/Corrido) | campos `Duração (dias)` (number) e `Calendário` (drop_down) | utilizador (folhas); motor (duração dos resumos) |
+| % concluído | campo `% Concluído` (manual_progress — barra nativa) | utilizador (folhas); motor (resumos) |
+| Status | status nativo | os dois — ver regra abaixo |
+| Antecessores | dependências nativas ("waiting on") | utilizador |
+| Início / fim | `start_date` / `due_date` **nativos**, só o dia | motor |
+| Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
+| Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
+| Data de início do projeto | `start_date` da lista | utilizador |
+| Folga semanal | linha `folga=dom` na descrição da lista (padrão `SCHEDULE_WEEKEND_MASK`) | utilizador |
+| Feriados | lista `SCHEDULE_HOLIDAYS_LIST_ID`: uma tarefa por feriado, data = vencimento | utilizador |
+
+Os campos são criados **por lista** (a API v2 não cria campos a nível de Space), então cada lista tem
+ids próprios — `schedule_fields.py` casa tudo por **nome**. Renomear um campo no ClickUp quebra a leitura.
+
+**Motor** (`schedule_engine.py`, puro, sem ClickUp nem banco) — porta fiel da aba Cronograma: tudo é
+calculado em *posição* (dias úteis desde o primeiro dia útil) e só depois vira data.
+`compute_schedule(..., reschedule=False)` reproduz a planilha e é o que `test_schedule_engine.py` confere
+contra `tests/fixtures/lubango_schedule.json` (51 tarefas, 11 resumos). Com `reschedule=True`:
+- **concluída** → termina na data real e libera as sucessoras a partir dela;
+- **em andamento** → o que falta (`duração × (1 − %)`) é executado a partir de hoje;
+- **não iniciada** → nunca começa antes de hoje (uma tarefa atrasada desliza um dia por dia).
+
+Dependência de/para um resumo é expandida para todas as folhas dele. "Corrido" converte por
+`dias × dias_úteis_semana / 7` (cura de 14 dias = 12 úteis), como a planilha — um feriado dentro da
+cura estica o prazo, limitação herdada. Os "marcos externos" (CIV-01, LOG-01…) não existem mais:
+com tudo na mesma lista viraram dependências comuns (o importador faz essa conversão).
+
+**% × status** (`reconcile_leaf`): 0% = aberto, 1–99% = fazendo, 100% = complete. Quando discordam,
+vence o que o utilizador acabou de mexer — por isso existe a tabela `schedule_task_state` com o último
+(%, concluída?) visto. Marcar complete leva o % a 100; baixar o % de uma concluída reabre; reabrir pelo
+status tira o % de 100 (vira 99). Status fora do trio (impedimento, revisão) nunca é trocado. Os
+resumos têm %, status, datas e duração **calculados** — editar um resumo à mão é desfeito no próximo
+recálculo (exceto um status fora do trio, que é respeitado).
+
+**Sem laço de webhook**: `ScheduleService.recalculate` grava só as diferenças. As gravações disparam
+webhooks, que agendam outro recálculo, que não encontra nada para gravar. Qualquer campo novo
+gravado pelo motor tem de convergir (comparar o que se lê com o que se gravaria) — senão vira laço.
+
+**Gatilhos** (`schedule_worker.py`): webhook de qualquer tarefa da lista → espera
+`SCHEDULE_DEBOUNCE_SECONDS` (reinicia a cada novo evento) → recalcula; e um job a cada
+`SCHEDULE_INTERVAL_SECONDS`. O job periódico não é redundância: o ClickUp **não envia webhook quando
+uma dependência é removida** (criar envia `taskUpdated` nas duas tarefas) nem quando a lista de
+feriados muda. `POST /schedule/{list_id}/recalculate?dry_run=true` mostra o que mudaria sem gravar.
+
+**Pré-requisitos no space (manuais, verificados em 2026-10-08):** *Nested Subtasks* ligado e
+*Reschedule Dependencies* **desligado** — ligado, o ClickUp move sozinho as tarefas dependentes com
+regras próprias (sem feriados nem sábado útil) e briga com o motor. Todo membro de uma equipe precisa
+ter acesso à lista, senão o ClickUp recusa a atribuição (`ACCESS_200`).
+
+**Dashboard**: o cache guarda `progress_pct` / `duration_days` / `calendar_type`
+(`progress_pct` não nulo é o que marca uma tarefa de cronograma). Nessas, `due_date` vem da data
+nativa (fim do dia), não do campo "Vencimento". `_build_schedule_tree` achata os 3 níveis para o
+formato de 2 que `weights_config.py` espera, com `weight` (duração útil) e `progress` (0..1) explícitos
+em cada folha — é isso que faz o progresso da lista ser ponderado por duração em vez dos pesos por nome.
+As listas que não são de cronograma seguem exatamente como antes. Dentro da província cada lista
+continua valendo igual (Site FM e Estudios 50/50, salvo `discipline_weights`).
+
+**Dependências na dashboard**: `upsert_task` guarda em `depends_on_json` os ids de que a tarefa
+depende (só o lado que espera — o ClickUp devolve o mesmo registo nas duas tarefas do par).
+`_DependencyIndex` (`dashboard_service.py`) monta `depends_on` e `blocks` para exibição; num grupo
+entram só as dependências que cruzam a fronteira do grupo. Como a remoção de uma dependência não
+gera webhook, ela só some do cache no refresh seguinte.
+
+Como o motor reprograma, **uma tarefa de cronograma quase nunca aparece "em atraso"**: o atraso
+aparece como a data de fim do projeto a andar. Não há linha de base guardada para comparar.
+
+**Importar uma província:** `python scripts/import_schedule.py civil.xlsx logistica.xlsx tecnica.xlsx
+--list-id <id> --replace "Site FM" --holidays-list-id <id> --recalculate --yes` (sem `--yes` é ensaio).
+`--replace` apaga todas as tarefas da lista antes e exige o nome exato dela como confirmação.
+
 ## Agreement ↔ List Matching
 
 Lists and agreements are matched **by name** (case-insensitive). If names don't match:
@@ -466,6 +561,9 @@ Tables:
 
 **Authorization table** (in `authorization_models.py`, imported in `main.py`):
 - `authorization_token` — par de tokens por requisição (`task_id`, `action`, `token`, `expires_at`, `used_at`, `used_note`). Consumir um marca os dois como usados.
+
+**Schedule table** (in `schedule_models.py`, imported in `main.py`):
+- `schedule_task_state` — último (%, concluída?) que o motor viu por tarefa; decide quem vence quando % e status discordam
 
 **Document table** (in `document_models.py`, imported in `main.py`):
 - `document` — one row per uploaded PDF; `folder_id`/`folder_name` denormalized from `clickup_folder_cache` at upload time; `stored_filename` is a random UUID, `original_filename` is restored on download
@@ -520,6 +618,13 @@ Tables:
 | `AUTHORIZATION_STATUS_PENDING` | Status inicial que dispara a notificação | `Solicitado` |
 | `AUTHORIZATION_STATUS_APPROVED` | Status gravado ao autorizar | `Autorizado` |
 | `AUTHORIZATION_STATUS_REJECTED` | Status gravado ao recusar | `Recusado` |
+| `SCHEDULE_ENABLED` | Liga o motor do cronograma (worker, webhook, rota `/schedule`) | `false` |
+| `SCHEDULE_LIST_IDS` | Listas geridas pelo motor, separadas por vírgula | `""` |
+| `SCHEDULE_HOLIDAYS_LIST_ID` | Lista de feriados (fora do space sincronizado) | `""` |
+| `SCHEDULE_WEEKEND_MASK` | Folga semanal padrão, Seg→Dom, `1` = folga | `0000001` |
+| `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular | `20` |
+| `SCHEDULE_INTERVAL_SECONDS` | Intervalo do recálculo periódico | `300` |
+| `SCHEDULE_UTC_OFFSET_HOURS` | Fuso da obra (define "hoje" para o motor); Angola = 1 | `1` |
 
 ## mapper.py Constants (require manual setup)
 
@@ -576,6 +681,9 @@ Unit tests:
 - `test_cache_repository.py` — CacheRepository upsert and query methods
 - `test_authorization_service.py` — formatação de custom fields, ordem do resumo, validação do motivo
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
+- `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status
+- `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada)
+- `test_schedule_cache.py` — cache, progresso ponderado por duração e telas com 3 níveis
 
 Unit tests:
 - `test_civil_progress.py` — pure EVM calculation functions from `progress_service.py` (pct, contribution, site/global progress)

@@ -228,6 +228,27 @@ class ClickUpClient:
         """PUT enxuto só com o nome — não toca em status nem em datas."""
         return await self._put(f"/task/{task_id}", {"name": name})
 
+    # ─── Cronograma de obra ──────────────────────────────────────────────────
+
+    async def update_task_fields(self, task_id: str, payload: dict) -> dict:
+        """PUT com payload bruto (datas nativas, status, group_assignees…)."""
+        return await self._put(f"/task/{task_id}", payload)
+
+    async def update_list(self, list_id: str, payload: dict) -> dict:
+        return await self._put(f"/list/{list_id}", payload)
+
+    async def clear_custom_field(self, task_id: str, field_id: str) -> None:
+        await self._delete(f"/task/{task_id}/field/{field_id}")
+
+    async def add_dependency(self, task_id: str, depends_on: str) -> dict:
+        """`task_id` passa a esperar por `depends_on` (término → início)."""
+        return await self._post(f"/task/{task_id}/dependency", {"depends_on": depends_on})
+
+    async def get_groups(self) -> list[dict]:
+        """Equipes (user groups) do workspace."""
+        data = await self._get("/group", {"team_id": settings.clickup_team_id})
+        return data.get("groups", [])
+
     async def create_comment(self, task_id: str, comment_text: str, notify_all: bool = True) -> dict:
         payload = {"comment_text": comment_text, "notify_all": notify_all}
         return await self._post(f"/task/{task_id}/comment", payload)

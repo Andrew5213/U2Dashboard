@@ -1266,6 +1266,21 @@ def _format_task_row(task, now: datetime, t: dict) -> dict:
 _EXCLUDED_DISCIPLINES = {"aceitação transferência", "aceitacao transferencia", "end of work"}
 
 
+_DEEP_PREFIX = "> "
+
+
+def _descendants(parent_id: str, children_by_parent: dict[str, list], depth: int = 1) -> list[tuple]:
+    """Todos os níveis abaixo de `parent_id`, em profundidade: [(item, nível)].
+    As listas de cronograma têm disciplina → grupo → tarefa; as demais param no nível 1."""
+    found: list[tuple] = []
+    for child in children_by_parent.get(parent_id, []):
+        child_id = child["task_id"] if isinstance(child, dict) else child.task_id
+        found.append((child, depth))
+        if depth < 10:   # proteção contra ciclo no cache
+            found.extend(_descendants(child_id, children_by_parent, depth + 1))
+    return found
+
+
 def _activity_row(item, indent: bool, lang: str, t: dict) -> dict:
     """Converte uma task/subtask do cache em uma linha do relatorio de disciplina/lista:
     nome + status indentado, com Observacao anexada quando o status for Impedimento."""
@@ -1457,7 +1472,9 @@ class ProvinceReportService:
                     row["weight_norm"] = task_weight_by_id.get(row["task_id"])
                     row["task_progress"] = task_progress_by_id.get(row["task_id"])
                     ordered.append(row)
-                    for sub in subtasks_by_parent.get(row["task_id"], []):
+                    for sub, depth in _descendants(row["task_id"], subtasks_by_parent):
+                        if depth > 1:
+                            sub["name"] = _DEEP_PREFIX * (depth - 1) + sub["name"]
                         ordered.append(sub)
             disc_map = {d["list_id"]: d for d in disciplines}
             disc = disc_map.get(lst["list_id"], {})
@@ -1590,7 +1607,21 @@ class DisciplineReportService:
             folder = await self._repo.get_folder_by_id(list_kpis["folder_id"])
             folder_name = folder.name if folder else ""
 
-        rows = [_activity_row(task, False, lang, t)] + [_activity_row(s, True, lang, t) for s in subtasks]
+        rows = [_activity_row(task, False, lang, t)]
+        if any(s.progress_pct is not None for s in subtasks):
+            # cronograma: os filhos diretos são grupos — o relatório desce até as tarefas
+            children_by_parent: dict[str, list] = {}
+            for tk in await self._repo.get_tasks_by_list(task.list_id, include_subtasks=True):
+                if tk.parent_task_id:
+                    children_by_parent.setdefault(tk.parent_task_id, []).append(tk)
+            subtasks = []
+            for item, depth in _descendants(task.task_id, children_by_parent):
+                row = _activity_row(item, True, lang, t)
+                row["name"] = _DEEP_PREFIX * (depth - 1) + row["name"]
+                rows.append(row)
+                subtasks.append(item)
+        else:
+            rows += [_activity_row(s, True, lang, t) for s in subtasks]
 
         return {
             "discipline_name": translate(task.name, lang),
@@ -1649,10 +1680,12 @@ class ListReportService:
         rows: list[dict] = []
         total_activities = 0
         for parent in parents:
-            children = subtasks_by_parent.get(parent.task_id, [])
+            children = _descendants(parent.task_id, subtasks_by_parent)
             rows.append(_activity_row(parent, False, lang, t))
-            for child in children:
-                rows.append(_activity_row(child, True, lang, t))
+            for child, depth in children:
+                row = _activity_row(child, True, lang, t)
+                row["name"] = _DEEP_PREFIX * (depth - 1) + row["name"]
+                rows.append(row)
             total_activities += len(children)
 
         return {
