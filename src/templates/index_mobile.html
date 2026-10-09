@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/theme-dark.css?v=34" />
-  <link rel="stylesheet" href="/static/mobile.css?v=34" />
+  <link rel="stylesheet" href="/static/mobile.css?v=35" />
 </head>
 <body class="theme-dark bg-gray-100 font-sans" style="padding-top:env(safe-area-inset-top)">
 
@@ -829,11 +829,15 @@
       try {
         const folders = await fetch('/reports/folders').then(r=>r.json());
         list.innerHTML = folders.length
-          ? folders.map(f=>`<button class="mob-provincia-btn" onclick="exportProvincia('${f.folder_id}')">${f.name}</button>`).join('')
+          ? folders.map(f=>`<div class="mob-provincia-row"><button class="mob-provincia-btn" onclick="exportProvincia('${f.folder_id}')">${f.name}</button><button class="mob-provincia-gantt" onclick="exportGantt('${f.folder_id}')">Gantt</button></div>`).join('')
           : '<div style="padding:10px 8px 10px 56px;font-size:12px;color:#94a3b8">Nenhuma área encontrada</div>';
         _provLoaded = true;
       } catch { list.innerHTML='<div style="padding:10px 8px 10px 56px;font-size:12px;color:#ef4444">Erro ao carregar</div>'; }
     }
+  }
+
+  function exportGantt(folderId) {
+    _exportWithSpinner('btn-pdf-provincia',`/reports/pdf/gantt?folder_id=${folderId}&lang=${_reportLang}`);
   }
 
   function exportProvincia(folderId) {

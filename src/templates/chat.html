@@ -338,13 +338,22 @@
           const folders = await fetch('/reports/folders').then(r => r.json());
           const list = document.getElementById('provincia-list');
           list.innerHTML = folders.length
-            ? folders.map(f => `<button onclick="exportProvincia('${f.folder_id}')"
-                class="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors block">
-                ${f.name}</button>`).join('')
+            ? folders.map(f => `<div class="flex items-center gap-1">
+                <button onclick="exportProvincia('${f.folder_id}')"
+                  class="flex-1 text-left px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors">
+                  ${f.name}</button>
+                <button onclick="exportGantt('${f.folder_id}')" title="Cronograma (Gantt) em PDF"
+                  class="shrink-0 px-1.5 py-1 mr-1 rounded text-[9px] font-bold text-gray-500 hover:bg-gray-800 hover:text-sky-400 transition-colors">GANTT</button>
+              </div>`).join('')
             : '<div class="px-3 py-1.5 text-xs text-gray-500">Nenhuma área encontrada</div>';
           _provinciasLoaded = true;
         } catch { document.getElementById('provincia-list').innerHTML = '<div class="px-3 py-1.5 text-xs text-red-400">Erro ao carregar</div>'; }
       }
+    }
+
+    function exportGantt(folderId) {
+      if (_submenuOpen) toggleProvinciaMenu();
+      _exportWithSpinner('btn-pdf-provincia', `/reports/pdf/gantt?folder_id=${folderId}&lang=${_reportLang}`);
     }
 
     function exportProvincia(folderId) {

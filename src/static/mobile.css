@@ -478,6 +478,24 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 .mob-provincia-btn:last-child { border-bottom: none; }
+.mob-provincia-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--u2-line); }
+.mob-provincia-row:last-child { border-bottom: none; }
+.mob-provincia-row .mob-provincia-btn { flex: 1; width: auto; border-bottom: none; }
+.mob-provincia-gantt {
+  flex: 0 0 auto;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--u2-red);
+  background: none;
+  border: none;
+  border-left: 1px solid var(--u2-line);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mob-provincia-gantt:active { background: var(--u2-panel-2); }
 .mob-provincia-btn:active { background: var(--u2-panel-2); color: var(--u2-red); }
 
 /* ── SSE status chip ─────────────────────────────────────────────── */

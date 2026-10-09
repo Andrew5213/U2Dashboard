@@ -1,7 +1,8 @@
 import json
 import unicodedata
 from datetime import datetime, timezone
-from sqlalchemy import select, delete, func, case, and_
+from sqlalchemy import select, delete, func, case, and_, or_
+from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
@@ -79,6 +80,27 @@ def _leaf_tasks_clause():
         .scalar_subquery()
     )
     return ClickUpTaskCache.task_id.notin_(parent_ids)
+
+
+def _listing_tasks_clause():
+    """Linhas das listagens (em atraso, próximas entregas): a tarefa de topo nas listas
+    comuns; nas de cronograma, a tarefa-folha — lá o topo é um resumo calculado, com
+    prazo igual ao fim da disciplina inteira."""
+    is_schedule = ClickUpTaskCache.progress_pct.isnot(None)
+    return or_(
+        and_(ClickUpTaskCache.parent_task_id.is_(None), ~is_schedule),
+        and_(is_schedule, _leaf_tasks_clause()),
+    )
+
+
+_ParentTask = aliased(ClickUpTaskCache, name="listing_parent")
+
+
+def _listing_name(task: ClickUpTaskCache, parent_name: str | None) -> str:
+    """Tarefa de cronograma leva o grupo no nome: "Cura do Concreto" existe em vários."""
+    if task.progress_pct is not None and parent_name:
+        return f"{parent_name} / {task.name}"
+    return task.name
 
 
 def _closed_at(task: ClickUpTaskCache, is_done: bool) -> datetime | None:
@@ -814,15 +836,17 @@ class CacheRepository:
                 ClickUpTaskCache,
                 ClickUpListCache.name.label("list_name"),
                 ClickUpFolderCache.name.label("folder_name"),
+                _ParentTask.name.label("parent_name"),
             )
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .outerjoin(_ParentTask, ClickUpTaskCache.parent_task_id == _ParentTask.task_id)
             .where(and_(
                 ClickUpListCache.space_id == space_id,
                 ClickUpTaskCache.due_date >= now,
                 ClickUpTaskCache.due_date <= cutoff,
                 ClickUpTaskCache.status_type.notin_(["done", "closed"]),
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _listing_tasks_clause(),
             ))
             .order_by(ClickUpTaskCache.due_date)
             .limit(50)
@@ -837,7 +861,7 @@ class CacheRepository:
                 assignees = []
             out.append({
                 "task_id": task.task_id,
-                "name": task.name,
+                "name": _listing_name(task, row.parent_name),
                 "status": task.status,
                 "status_color": task.status_color,
                 "due_date": task.due_date.isoformat() if task.due_date else None,
@@ -1000,14 +1024,15 @@ class CacheRepository:
     async def get_overdue_tasks_by_folder(self, folder_id: str, limit: int = 50) -> list[dict]:
         now = datetime.utcnow()
         stmt = (
-            select(ClickUpTaskCache, ClickUpListCache.name.label("list_name"))
+            select(ClickUpTaskCache, ClickUpListCache.name.label("list_name"), _ParentTask.name.label("parent_name"))
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+            .outerjoin(_ParentTask, ClickUpTaskCache.parent_task_id == _ParentTask.task_id)
             .where(and_(
                 ClickUpListCache.folder_id == folder_id,
                 ClickUpTaskCache.due_date.isnot(None),
                 ClickUpTaskCache.due_date < now,
                 ClickUpTaskCache.status_type.notin_(["done", "closed"]),
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _listing_tasks_clause(),
             ))
             .order_by(ClickUpTaskCache.due_date)
             .limit(limit)
@@ -1021,7 +1046,7 @@ class CacheRepository:
                 assignees = []
             out.append({
                 "task_id": task.task_id,
-                "name": task.name,
+                "name": _listing_name(task, row.parent_name),
                 "due_date": task.due_date,
                 "days_overdue": (now - task.due_date).days,
                 "assignees": [a.get("username") or "?" for a in assignees],
@@ -1035,14 +1060,15 @@ class CacheRepository:
         now = datetime.utcnow()
         cutoff = now + timedelta(days=days)
         stmt = (
-            select(ClickUpTaskCache, ClickUpListCache.name.label("list_name"))
+            select(ClickUpTaskCache, ClickUpListCache.name.label("list_name"), _ParentTask.name.label("parent_name"))
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+            .outerjoin(_ParentTask, ClickUpTaskCache.parent_task_id == _ParentTask.task_id)
             .where(and_(
                 ClickUpListCache.folder_id == folder_id,
                 ClickUpTaskCache.due_date >= now,
                 ClickUpTaskCache.due_date <= cutoff,
                 ClickUpTaskCache.status_type.notin_(["done", "closed"]),
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _listing_tasks_clause(),
             ))
             .order_by(ClickUpTaskCache.due_date)
         )
@@ -1056,7 +1082,7 @@ class CacheRepository:
             due_fmt = task.due_date.strftime("%d/%m/%Y") if task.due_date else "N/D"
             out.append({
                 "task_id": task.task_id,
-                "name": task.name,
+                "name": _listing_name(task, row.parent_name),
                 "status": task.status,
                 "due_date_fmt": due_fmt,
                 "assignees_str": ", ".join(a.get("username") or "?" for a in assignees) or "N/D",
@@ -1113,15 +1139,17 @@ class CacheRepository:
                 ClickUpTaskCache,
                 ClickUpListCache.name.label("list_name"),
                 ClickUpFolderCache.name.label("folder_name"),
+                _ParentTask.name.label("parent_name"),
             )
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .outerjoin(_ParentTask, ClickUpTaskCache.parent_task_id == _ParentTask.task_id)
             .where(and_(
                 ClickUpListCache.space_id == space_id,
                 ClickUpTaskCache.due_date.isnot(None),
                 ClickUpTaskCache.due_date < now,
                 ClickUpTaskCache.status_type.notin_(["done", "closed"]),
-                ClickUpTaskCache.parent_task_id.is_(None),
+                _listing_tasks_clause(),
             ))
             .order_by(ClickUpTaskCache.due_date)
             .limit(limit)
@@ -1136,7 +1164,7 @@ class CacheRepository:
                 assignees = []
             out.append({
                 "task_id": task.task_id,
-                "name": task.name,
+                "name": _listing_name(task, row.parent_name),
                 "due_date": task.due_date,
                 "days_overdue": (now - task.due_date).days,
                 "assignees": [a.get("username") or "?" for a in assignees],
@@ -1336,11 +1364,39 @@ class CacheRepository:
         """Tasks + subtasks concluídas ou com progresso real (Fazendo/Revisão/Aprovação/
         Concluído) no período, agrupadas por pasta. Tarefas recém-criadas que ainda
         estão em "planejando" (ou qualquer outro status fora dessa lista) são
-        descartadas — não aparecem nos relatórios como se fossem uma atualização."""
+        descartadas — não aparecem nos relatórios como se fossem uma atualização.
+
+        Lista de cronograma (3 níveis): só a tarefa-folha conta como atualização. Os
+        resumos (disciplina, grupo) têm status e datas regravados pelo motor a cada
+        recálculo e apareceriam todo dia; a disciplina entra apenas como contêiner e
+        o grupo vai no nome da tarefa ("Grupo / Tarefa")."""
         import json as _json
         import re as _re
-        from sqlalchemy import or_
-        from sqlalchemy.orm import aliased
+
+        schedule = {
+            row.task_id: row for row in (await self._db.execute(
+                select(
+                    ClickUpTaskCache.task_id, ClickUpTaskCache.parent_task_id,
+                    ClickUpTaskCache.name, ClickUpTaskCache.status,
+                )
+                .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+                .where(and_(
+                    ClickUpListCache.space_id == space_id,
+                    ClickUpTaskCache.progress_pct.isnot(None),
+                ))
+            )).all()
+        }
+        schedule_summaries = {row.parent_task_id for row in schedule.values() if row.parent_task_id}
+
+        def _schedule_root(task_id: str):
+            """Disciplina de topo de uma tarefa de cronograma."""
+            node = schedule[task_id]
+            for _ in range(10):   # proteção contra ciclo no cache
+                parent = schedule.get(node.parent_task_id)
+                if parent is None:
+                    break
+                node = parent
+            return node
 
         def _cat(task) -> tuple[str, object] | None:
             if task.date_closed is not None and since <= task.date_closed <= until:
@@ -1394,6 +1450,8 @@ class CacheRepository:
 
         for row in parent_rows:
             task, list_name, folder_id, folder_name = row[0], row[1], row[2], row[3]
+            if task.task_id in schedule_summaries:
+                continue
             cat_result = _cat(task)
             if cat_result is None:
                 continue
@@ -1402,6 +1460,7 @@ class CacheRepository:
                 "task_id": task.task_id,
                 "name": task.name or "",
                 "status": task.status or "",
+                "progress_pct": task.progress_pct,
                 "list_name": list_name or "",
                 "assignees_str": _asgn(task),
                 "description": _desc(task),
@@ -1446,14 +1505,23 @@ class CacheRepository:
             task, par_id, par_name, par_status, list_name, folder_id, folder_name = (
                 row[0], row[1], row[2], row[3], row[4], row[5], row[6]
             )
+            if task.task_id in schedule_summaries:
+                continue
             cat_result = _cat(task)
             if cat_result is None:
                 continue
             cat, date_ref = cat_result
+            sub_name = task.name or ""
+            if task.task_id in schedule:
+                root = _schedule_root(task.task_id)
+                if root.task_id != par_id:
+                    sub_name = f"{par_name} / {sub_name}"
+                    par_id, par_name, par_status = root.task_id, root.name, root.status
             sub = {
                 "task_id": task.task_id,
-                "name": task.name or "",
+                "name": sub_name,
                 "status": task.status or "",
+                "progress_pct": task.progress_pct,
                 "assignees_str": _asgn(task),
                 "date_ref": date_ref,
                 "category": cat,

@@ -88,6 +88,7 @@ src/
 │   ├── event_broadcaster.py # In-process asyncio pub/sub for SSE events
 │   ├── dashboard_service.py # Reads from cache tables to serve dashboard API
 │   ├── report_service.py    # Generates PDF reports via fpdf2 (ReportService + ProvinceReportService + PeriodicReportService)
+│   ├── gantt_report_service.py # PDF de Gantt de uma província (paisagem), reaproveita o _Report de report_service
 │   ├── report_strings.py    # Bilingual string dictionaries for PDF text (PT/EN), keyed by get_strings(lang)
 │   ├── translation.py       # Static PT→EN dict for ClickUp field names (disciplines, activities, statuses) via translate()
 │   ├── weights_config.py    # EVM weight constants + compute_province_progress / compute_list_progress / build_province_evolution
@@ -166,7 +167,7 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **Dashboard UI**: served at `GET /` via `src/templates/index.html` (or `index_mobile.html`). The frontend calls `/dashboard/*` REST endpoints and connects to `/dashboard/stream` for live updates.
 
-**Completion-rate unit of measure**: `get_overview_kpis`, `get_folders_with_metrics`, `get_lists_with_metrics`, `get_gantt_overview`, `get_folder_kpis`, `get_assignee_task_stats`, and `get_assignee_stats_by_folder` (`cache_repository.py`) count progress in terms of "leaf tasks" — via the `_leaf_tasks_clause()` helper (task_id not present as anyone's `parent_task_id`) — not top-level tasks. This means a top-level task (Discipline) with subtasks is excluded from the count and its subtasks (Activities) are counted instead; a top-level task with no subtasks still counts as itself. This affects the overview KPIs, province/module cards, the status donut, the general Gantt, the AI assistant's per-province progress tool, and every PDF/XLSX report's completion percentages (executive + província summary cards, team performance table) — all now measure progress at Activity granularity rather than Discipline granularity. Listing-style queries (`get_overdue_tasks_by_folder`, `get_upcoming_tasks_by_folder`, `get_overdue_tasks_detail`, `get_tasks_by_status`, `get_recent_changes`, `get_period_updates`) were intentionally left on top-level-only filtering, since they enumerate individual task rows rather than compute a percentage. The weighted EVM system (`weights_config.py`) is unaffected — it already worked from subtasks.
+**Completion-rate unit of measure**: `get_overview_kpis`, `get_folders_with_metrics`, `get_lists_with_metrics`, `get_gantt_overview`, `get_folder_kpis`, `get_assignee_task_stats`, and `get_assignee_stats_by_folder` (`cache_repository.py`) count progress in terms of "leaf tasks" — via the `_leaf_tasks_clause()` helper (task_id not present as anyone's `parent_task_id`) — not top-level tasks. This means a top-level task (Discipline) with subtasks is excluded from the count and its subtasks (Activities) are counted instead; a top-level task with no subtasks still counts as itself. This affects the overview KPIs, province/module cards, the status donut, the general Gantt, the AI assistant's per-province progress tool, and every PDF/XLSX report's completion percentages (executive + província summary cards, team performance table) — all now measure progress at Activity granularity rather than Discipline granularity. Listing-style queries (`get_overdue_tasks_by_folder`, `get_upcoming_tasks_by_folder`, `get_overdue_tasks_detail`, `get_tasks_by_status`, `get_recent_changes`, `get_period_updates`) were intentionally left on top-level-only filtering, since they enumerate individual task rows rather than compute a percentage (exception: on schedule lists the overdue/upcoming listings enumerate leaf tasks — see "Cronograma de Obra → Relatórios"). The weighted EVM system (`weights_config.py`) is unaffected — it already worked from subtasks.
 
 **Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. `GET /`, `GET /assistente`, and `GET /documentacoes` follow this pattern. `/rdo` and `/progresso-civil` do not have mobile variants (no mobile UI was ever built for the RDO module).
 
@@ -210,10 +211,11 @@ CSS/JS faz o navegador servir o arquivo antigo — vale para o deploy e para o t
 
 ## PDF Reports
 
-Four report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use `_s()` helper to sanitize em-dashes, curly quotes, etc.). Every PDF endpoint accepts `?lang=pt|en` (default `pt`) and `?inline=true` to stream in-browser.
+Five report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use `_s()` helper to sanitize em-dashes, curly quotes, etc.). Every PDF endpoint accepts `?lang=pt|en` (default `pt`) and `?inline=true` to stream in-browser.
 
 - **`GET /reports/pdf`** — executive report for the full space (cover + summary + project health + overdue + upcoming + team performance). Uses `ReportService`.
 - **`GET /reports/pdf/provincia?folder_id=<id>`** — detailed report for a single folder/province (cover + summary + per-list detail with task-level breakdown). Uses `ProvinceReportService`. Incorporates EVM weighted progress when discipline weights are configured.
+- **`GET /reports/pdf/gantt?folder_id=<id>`** — Gantt da província em A4 paisagem: tabela (tarefa, início, término, %) à esquerda e barras numa linha do tempo à direita, com a linha de "hoje". Usa `GanttReportService` (`gantt_report_service.py`). Entram todas as listas da pasta que têm tarefas com datas — nas de cronograma, os 3 níveis com as datas do motor; nas comuns, o que houver (início nativo e "Vencimento"), e a tarefa-mãe sem data própria cobre o intervalo das filhas. Lista sem nenhuma data fica fora do gráfico e é citada no rodapé. A grade é semanal enquanto couber (≥ 4,5 mm por semana) e mensal em prazos longos. Na UI é o botão "GANTT" ao lado de cada província no menu de relatórios (desktop e mobile).
 - **`GET /reports/pdf/daily`** — daily updates report (tasks completed/updated yesterday and today). Uses `PeriodicReportService`.
 - **`GET /reports/pdf/weekly`** — weekly updates report (last 7 days). Uses `PeriodicReportService`.
 - **`GET /reports/folders`** — lists folders available for province reports (reads from cache).
@@ -514,6 +516,21 @@ depende (só o lado que espera — o ClickUp devolve o mesmo registo nas duas ta
 entram só as dependências que cruzam a fronteira do grupo. Como a remoção de uma dependência não
 gera webhook, ela só some do cache no refresh seguinte.
 
+**Relatórios**: lista de cronograma (`_is_schedule` em `report_service.py` — alguma tarefa com
+`progress_pct`) usa a tabela `_render_schedule_rows` em vez das tabelas de 2 níveis: nome indentado
+por nível, duração, início, término, barra de %, status e equipe. Vale para o detalhe da lista no
+relatório de província (PDF e XLSX) e para os relatórios de lista e de disciplina, que ganham também
+uma linha de resumo no cabeçalho (% ponderado por duração e intervalo de datas). Lista sem data de
+início sai com as colunas de data em branco. As listas comuns continuam com o layout antigo.
+- **Listagens** (`_listing_tasks_clause`: em atraso e próximas entregas, por pasta e por space — as
+  do space também alimentam a dashboard e o assistente): tarefa de topo nas listas comuns,
+  **tarefa-folha** nas de cronograma, com o grupo no nome (`"Grupo / Tarefa"`). O topo ali é um
+  resumo cujo prazo é o fim da disciplina inteira.
+- **Diário/semanal** (`get_period_updates`): só a tarefa-folha conta como atualização. Disciplina e
+  grupo têm status e datas regravados pelo motor a cada recálculo e apareceriam todo dia; a
+  disciplina entra só como contêiner e o grupo vai no nome. Tarefa em andamento mostra o % ao lado
+  do status (`fazendo 40%`).
+
 Como o motor reprograma, **uma tarefa de cronograma quase nunca aparece "em atraso"**: o atraso
 aparece como a data de fim do projeto a andar. Não há linha de base guardada para comparar.
 
@@ -701,6 +718,7 @@ Unit tests:
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada)
 - `test_schedule_cache.py` — cache, progresso ponderado por duração e telas com 3 níveis
+- `test_schedule_reports.py` — relatórios (PDF/XLSX), listagens, diário/semanal e Gantt de província sobre a lista de 3 níveis
 
 Unit tests:
 - `test_civil_progress.py` — pure EVM calculation functions from `progress_service.py` (pct, contribution, site/global progress)

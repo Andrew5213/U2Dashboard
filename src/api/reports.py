@@ -6,6 +6,7 @@ from src.core.database import get_db, AsyncSessionLocal
 from src.core.config import settings
 from src.core.logging import logger
 from src.services.report_service import ReportService, ProvinceReportService, PeriodicReportService, DisciplineReportService, ListReportService
+from src.services.gantt_report_service import GanttReportService
 from src.services.email_service import EmailService
 from src.services.report_strings import get_strings
 from src.repositories.cache_repository import CacheRepository
@@ -64,6 +65,33 @@ async def export_provincia_pdf(
 
     datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
     filename = get_strings(lang)["filename_province"].format(folder_id=folder_id, ts=datestamp)
+    disposition = "inline" if inline else f'attachment; filename="{filename}"'
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition},
+    )
+
+
+@router.get("/pdf/gantt", summary="Exportar o Gantt (cronograma) de uma província/área em PDF")
+async def export_gantt_pdf(
+    folder_id: str = Query(..., description="ID da pasta (província) no ClickUp"),
+    inline: bool = Query(default=False, description="Exibir inline no browser (para preview)"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando PDF de Gantt para folder {folder_id} (lang={lang})")
+    try:
+        pdf_bytes = await GanttReportService(db).generate_pdf(folder_id, lang=lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Erro ao gerar PDF de Gantt {folder_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = get_strings(lang)["filename_gantt"].format(folder_id=folder_id, ts=datestamp)
     disposition = "inline" if inline else f'attachment; filename="{filename}"'
     return Response(
         content=pdf_bytes,

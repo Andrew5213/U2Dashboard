@@ -4,6 +4,9 @@ Cada render_* recebe o MESMO dict retornado por _build_data — nenhuma lógica 
 busca de dados é duplicada aqui, só a escrita em planilha."""
 from io import BytesIO
 
+from copy import copy
+
+from src.services.report_service import _status_with_progress
 from src.services.xlsx_utils import (
     AMBER, BLUE, GRAY_200, GREEN, NAVY, RED,
     new_workbook, write_footer, write_kpis, write_kv_rows, write_section, write_table, write_title,
@@ -93,6 +96,37 @@ def render_executive_xlsx(data: dict) -> bytes:
 
 # ── Provincia (ProvinceReportService) ──────────────────────────────────────────
 
+_SCHEDULE_LEVELS = ("Disciplina", "Grupo", "Tarefa")
+
+
+def _write_schedule_detail(ws, row: int, tasks: list[dict]) -> int:
+    """Detalhe de uma lista de cronograma: uma linha por disciplina, grupo e tarefa,
+    com as mesmas colunas da tabela do PDF."""
+    rows = []
+    for tk in tasks:
+        level = tk.get("level", 0)
+        kind = _SCHEDULE_LEVELS[min(level, 2)] if tk.get("is_summary") or level == 0 else _SCHEDULE_LEVELS[2]
+        pct = tk.get("progress_pct")
+        rows.append([
+            "    " * level + tk["name"], kind, tk.get("duration_fmt", "-"), tk.get("start_fmt", "-"),
+            tk.get("end_fmt", "-"), None if pct is None else pct / 100, tk.get("status", ""),
+            tk.get("assignees_str", ""),
+        ])
+    header_row = row
+    row = write_table(
+        ws, row,
+        ["Disciplina / Grupo / Tarefa", "Nivel", "Duracao", "Inicio", "Termino", "% Concluido", "Status", "Equipe"],
+        rows, col_widths=[44, 16, 12, 12, 12, 12, 16, 22],
+    )
+    for r in range(header_row + 1, row - 1):
+        ws.cell(row=r, column=6).number_format = "0%"
+        if rows[r - header_row - 1][1] != _SCHEDULE_LEVELS[2]:
+            bold = copy(ws.cell(row=r, column=1).font)
+            bold.bold = True
+            ws.cell(row=r, column=1).font = bold
+    return row
+
+
 def render_province_xlsx(data: dict) -> bytes:
     wb, ws = new_workbook(data["folder_name"])
     row = write_title(ws, 1, "RELATORIO DE PROVINCIA", f"{data['folder_name']}  |  {data['space_name']}")
@@ -129,6 +163,9 @@ def render_province_xlsx(data: dict) -> bytes:
         if not tasks:
             continue
         row = write_section(ws, row, f"Detalhe - {lst['name']}")
+        if lst.get("is_schedule"):
+            row = _write_schedule_detail(ws, row, tasks)
+            continue
         rows = [
             [tk["name"], tk.get("status", ""), tk.get("assignees_str", ""), tk.get("due_date_fmt", ""),
              "Sub-tarefa" if tk.get("parent_task_id") else "Disciplina"]
@@ -182,9 +219,9 @@ def render_periodic_xlsx(data: dict) -> bytes:
         row = write_section(ws, row, title)
         rows = []
         for tk in tasks:
-            rows.append([tk.get("name", ""), tk.get("status", ""), tk.get("list_name", ""), tk.get("assignees_str", ""), tk.get("date_ref")])
+            rows.append([tk.get("name", ""), _status_with_progress(tk), tk.get("list_name", ""), tk.get("assignees_str", ""), tk.get("date_ref")])
             for sub in tk.get("subtasks") or []:
-                rows.append([f"  ↳ {sub.get('name', '')}", sub.get("status", ""), sub.get("list_name", ""), sub.get("assignees_str", ""), sub.get("date_ref")])
+                rows.append([f"  ↳ {sub.get('name', '')}", _status_with_progress(sub), sub.get("list_name", ""), sub.get("assignees_str", ""), sub.get("date_ref")])
         header_row = row
         row = write_table(ws, row, ["Tarefa", "Status", "Lista", "Responsaveis", "Data"], rows,
                            col_widths=[34, 16, 18, 22, 18])

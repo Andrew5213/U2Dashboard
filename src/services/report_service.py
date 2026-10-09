@@ -3,8 +3,8 @@ from datetime import datetime
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.repositories.cache_repository import CacheRepository
-from src.services.weights_config import compute_province_progress
+from src.repositories.cache_repository import CacheRepository, _build_task_tree
+from src.services.weights_config import compute_list_progress, compute_province_progress
 from src.services.report_strings import get_strings
 from src.services.translation import translate, translate_task_row
 from src.core.logging import logger
@@ -1007,6 +1007,14 @@ class _Report(FPDF):
                           new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 continue
 
+            if lst.get("is_schedule"):
+                self._render_schedule_rows(
+                    tasks,
+                    on_new_page=lambda name=lst["name"]: self._section_header(
+                        t["list_cont"].format(name=_s(name))),
+                )
+                continue
+
             self._table_header(cols)
             for i, task in enumerate(tasks):
                 row_y = self.get_y()
@@ -1065,6 +1073,155 @@ class _Report(FPDF):
                         self._set_text(peso_color)
                         self.cell(10, 5, w_pct_txt, align="C")
                         self.set_y(row_y + 6)
+
+    # ── Cronograma (lista com disciplina → grupo → tarefa) ───────────────────
+
+    def _fit(self, text: str, width: float) -> str:
+        """Corta o texto na largura disponível, com a fonte corrente."""
+        text = _s(text)
+        if self.get_string_width(text) <= width:
+            return text
+        while text and self.get_string_width(text + "...") > width:
+            text = text[:-1]
+        return text.rstrip() + "..."
+
+    def _render_schedule_rows(self, rows: list[dict], on_new_page=None) -> None:
+        """Tabela de cronograma: nome indentado por nível + duração, início, término,
+        barra de %, status e equipe. A disciplina e o grupo são resumos (negrito); a
+        Observacao aparece abaixo da linha quando o status for Impedimento."""
+        t = self.t
+        cols = list(zip(
+            (t["col_task"], t["col_duration"], t["col_start"], t["col_end"],
+             t["col_pct"], t["col_status"], t["col_team"]),
+            _SCHEDULE_COL_W,
+            ("L", "C", "C", "C", "C", "L", "L"),
+        ))
+        name_w, dur_w, start_w, end_w, pct_w, status_w, team_w = _SCHEDULE_COL_W
+        self._table_header(cols)
+
+        for i, row in enumerate(rows):
+            level = row.get("level", 0)
+            is_summary = bool(row.get("is_summary"))
+            row_h = 6.5 if level == 0 else 5.0
+            if self.get_y() + row_h > 268:
+                self.add_page()
+                if on_new_page:
+                    on_new_page()
+                self._table_header(cols)
+            y = self.get_y()
+
+            is_done = row.get("is_done", row.get("status_type") in ("done", "closed"))
+            if level == 0:
+                self.set_fill_color(*BLUE_BG)
+                self.rect(14, y, 182, row_h, style="F")
+                color, style, size = BLUE_TXT, "B", 8
+            elif is_summary:
+                self.set_fill_color(*GRAY_50)
+                self.rect(14, y, 182, row_h, style="F")
+                color, style, size = DARK, "B", 7
+            else:
+                if i % 2 == 0:
+                    self.set_fill_color(248, 248, 252)
+                    self.rect(14, y, 182, row_h, style="F")
+                color, style, size = GRAY_600, "", 7
+            if is_done and level > 0:
+                color = GRAY_400
+            elif row.get("is_overdue"):
+                color = RED
+
+            indent = 1.5 + 4 * level
+            self.set_font("Helvetica", style=style, size=size)
+            self._set_text(color)
+            self.set_xy(14 + indent, y)
+            self.cell(name_w - indent, row_h, self._fit(row["name"], name_w - indent - 1), align="L")
+
+            self.set_font("Helvetica", style=style, size=6.5)
+            x = 14 + name_w
+            for text, w in ((row.get("duration_fmt"), dur_w), (row.get("start_fmt"), start_w),
+                            (row.get("end_fmt"), end_w)):
+                self.set_xy(x, y)
+                self.cell(w, row_h, _s(text or "-"), align="C")
+                x += w
+
+            pct = row.get("progress_pct")
+            if pct is None:
+                self.set_xy(x, y)
+                self.cell(pct_w, row_h, "-", align="C")
+            else:
+                bar_w = 11.0
+                self.set_fill_color(*GRAY_200)
+                self.rect(x + 1.5, y + row_h / 2 - 1, bar_w, 2, style="F")
+                if pct > 0:
+                    self.set_fill_color(*(GREEN if pct >= 100 else BLUE))
+                    self.rect(x + 1.5, y + row_h / 2 - 1, bar_w * min(pct, 100) / 100, 2, style="F")
+                self.set_xy(x + 1.5 + bar_w, y)
+                self.cell(pct_w - bar_w - 2.5, row_h, _fmt_progress(pct), align="R")
+            x += pct_w
+
+            status_color = _hex_to_rgb(row.get("color"), color)
+            self.set_fill_color(*status_color)
+            self.rect(x + 1, y + row_h / 2 - 1, 2, 2, style="F")
+            self.set_font("Helvetica", style="B", size=6.5)
+            self._set_text(GRAY_400 if is_done and level > 0 else status_color)
+            self.set_xy(x + 4, y)
+            self.cell(status_w - 4, row_h, self._fit(row.get("status") or "-", status_w - 5), align="L")
+            x += status_w
+
+            self.set_font("Helvetica", style=style, size=6.5)
+            self._set_text(color)
+            self.set_xy(x, y)
+            self.cell(team_w, row_h, self._fit(row.get("assignees_str") or "-", team_w - 1), align="L")
+
+            self.set_y(y + row_h)
+
+            if row.get("note"):
+                note_x = 14 + indent
+                self.set_x(note_x)
+                self.set_font("Helvetica", style="I", size=7)
+                self._set_text(RED)
+                self.multi_cell(182 - indent, 3.8, _s(f"{t['disc_note_label']}: {row['note']}"), align="L")
+                self.ln(1)
+
+    def _schedule_report_header(self, eyebrow: str, title: str, meta: str, summary: str) -> None:
+        """Faixa de título dos relatórios de lista/disciplina de cronograma."""
+        self.set_fill_color(*NAVY)
+        self.rect(0, 0, 210, 44, style="F")
+        self.set_xy(14, 10)
+        self.set_font("Helvetica", style="B", size=7)
+        self.set_text_color(147, 197, 253)
+        self.cell(0, 4, _s(eyebrow), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_xy(14, 15)
+        self.set_font("Helvetica", style="B", size=17)
+        self._set_text(WHITE)
+        self.cell(0, 9, self._fit(title, 182), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_xy(14, 27)
+        self.set_font("Helvetica", style="B", size=9)
+        self._set_text(WHITE)
+        self.cell(0, 5, _s(summary), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_xy(14, 34)
+        self.set_font("Helvetica", size=8)
+        self.set_text_color(191, 219, 254)
+        self.cell(0, 5, _s(meta), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_y(52)
+
+    def _schedule_report_body(self, data: dict) -> None:
+        t = self.t
+        rows = data.get("rows", [])
+        if not rows:
+            self.set_font("Helvetica", "I", size=9)
+            self._set_text(GRAY_400)
+            self.cell(182, 10, t["disc_no_activities"], align="C",
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            return
+        self._render_schedule_rows(rows)
+        self.ln(2)
+        self.set_draw_color(*GRAY_200)
+        self.set_line_width(0.2)
+        self.line(14, self.get_y(), 196, self.get_y())
+        self.ln(3)
+        self.set_font("Helvetica", size=7)
+        self._set_text(GRAY_400)
+        self.multi_cell(182, 4, _s(t["disc_footnote"].format(date=data["generated_at"])))
 
     # ── Relatório por Disciplina / Lista (tarefas + atividades indentadas) ───
 
@@ -1131,10 +1288,20 @@ class _Report(FPDF):
         t = self.t
         self.add_page()
 
+        breadcrumb = " / ".join(filter(None, [data.get("folder_name"), data.get("list_name")]))
+        if data.get("is_schedule"):
+            self._schedule_report_header(
+                breadcrumb.upper() if breadcrumb else t["disc_report_eyebrow"],
+                data["discipline_name"],
+                t["sched_disc_meta"].format(n=data["total_activities"], date=data["generated_at"]),
+                data["schedule_summary"],
+            )
+            self._schedule_report_body(data)
+            return
+
         self.set_fill_color(*NAVY)
         self.rect(0, 0, 210, 38, style="F")
 
-        breadcrumb = " / ".join(filter(None, [data.get("folder_name"), data.get("list_name")]))
         self.set_xy(14, 10)
         self.set_font("Helvetica", style="B", size=7)
         self.set_text_color(147, 197, 253)
@@ -1178,6 +1345,17 @@ class _Report(FPDF):
     def build_list_report(self, data: dict) -> None:
         t = self.t
         self.add_page()
+
+        if data.get("is_schedule"):
+            self._schedule_report_header(
+                (data.get("folder_name") or t["disc_report_eyebrow"]).upper(),
+                data["list_name"],
+                t["sched_list_meta"].format(d=data["total_disciplines"], n=data["total_activities"],
+                                            date=data["generated_at"]),
+                data["schedule_summary"],
+            )
+            self._schedule_report_body(data)
+            return
 
         self.set_fill_color(*NAVY)
         self.rect(0, 0, 210, 38, style="F")
@@ -1241,6 +1419,68 @@ class _Report(FPDF):
 
 # ── Serviço público ───────────────────────────────────────────────────────────
 
+_SCHEDULE_COL_W = (58, 15, 17, 17, 22, 21, 32)   # soma 182 mm
+
+
+def _assignees_str(task, t: dict) -> str:
+    import json as _json
+    try:
+        assignees = _json.loads(task.assignees_json or "[]")
+    except Exception:
+        assignees = []
+    return ", ".join(a.get("username") or "?" for a in assignees) or t["na"]
+
+
+def _fmt_progress(pct: float) -> str:
+    """% inteiro, sem virar 100 antes da hora nem 0 depois de começar."""
+    if pct >= 100:
+        return "100%"
+    if pct <= 0:
+        return "0%"
+    return f"{min(99, max(1, round(pct)))}%"
+
+
+def _fmt_day(moment: datetime | None) -> str:
+    return moment.strftime("%d/%m/%Y") if moment else "-"
+
+
+def _fmt_duration(task, t: dict) -> str:
+    if task.duration_days is None:
+        return "-"
+    days = f"{task.duration_days:g}".replace(".", t["decimal_sep"])
+    key = "dur_calendar_days" if task.calendar_type == "corrido" else "dur_days"
+    return t[key].format(n=days)
+
+
+def _is_schedule(tasks) -> bool:
+    """Lista de cronograma = alguma tarefa com % Concluído (ver cache_repository)."""
+    return any(tk.progress_pct is not None for tk in tasks)
+
+
+def _schedule_fields(task, level: int, is_summary: bool, t: dict) -> dict:
+    """Colunas de cronograma de uma tarefa do cache, para PDF e XLSX."""
+    return {
+        "level": level,
+        "is_summary": is_summary,
+        "duration_fmt": _fmt_duration(task, t),
+        "start_fmt": _fmt_day(task.start_date),
+        "end_fmt": _fmt_day(task.due_date),
+        "progress_pct": task.progress_pct,
+        "color": task.status_color,
+    }
+
+
+def _schedule_summary(progress: float | None, tasks, t: dict) -> str:
+    """Linha de resumo do cabeçalho: % e o intervalo de datas coberto pelas tarefas."""
+    starts = [tk.start_date for tk in tasks if tk.start_date]
+    ends = [tk.due_date for tk in tasks if tk.due_date]
+    return t["sched_summary"].format(
+        pct=_fmt_progress(progress) if progress is not None else "-",
+        start=_fmt_day(min(starts)) if starts else "-",
+        end=_fmt_day(max(ends)) if ends else "-",
+    )
+
+
 def _format_task_row(task, now: datetime, t: dict) -> dict:
     import json as _json
     try:
@@ -1264,9 +1504,6 @@ def _format_task_row(task, now: datetime, t: dict) -> dict:
 
 
 _EXCLUDED_DISCIPLINES = {"aceitação transferência", "aceitacao transferencia", "end of work"}
-
-
-_DEEP_PREFIX = "> "
 
 
 def _descendants(parent_id: str, children_by_parent: dict[str, list], depth: int = 1) -> list[tuple]:
@@ -1462,6 +1699,8 @@ class ProvinceReportService:
                 tk.task_id: translate_task_row(_format_task_row(tk, now, t), lang)
                 for tk in tasks_orm
             }
+            is_schedule = _is_schedule(tasks_orm)
+            orm_by_id = {tk.task_id: tk for tk in tasks_orm}
             subtasks_by_parent: dict[str, list] = {}
             for row in all_rows.values():
                 if row["parent_task_id"]:
@@ -1472,10 +1711,16 @@ class ProvinceReportService:
                     row["weight_norm"] = task_weight_by_id.get(row["task_id"])
                     row["task_progress"] = task_progress_by_id.get(row["task_id"])
                     ordered.append(row)
+                    row["level"] = 0
                     for sub, depth in _descendants(row["task_id"], subtasks_by_parent):
-                        if depth > 1:
-                            sub["name"] = _DEEP_PREFIX * (depth - 1) + sub["name"]
+                        sub["level"] = depth
                         ordered.append(sub)
+            if is_schedule:
+                for row in ordered:
+                    row.update(_schedule_fields(
+                        orm_by_id[row["task_id"]], row["level"],
+                        row["task_id"] in subtasks_by_parent, t,
+                    ))
             disc_map = {d["list_id"]: d for d in disciplines}
             disc = disc_map.get(lst["list_id"], {})
             weighted_rate = disc.get("completion_rate", lst["completion_rate"])
@@ -1496,6 +1741,7 @@ class ProvinceReportService:
                 "completion_rate": weighted_rate,
                 "completion_pct": _pct(weighted_rate),
                 "tasks": ordered,
+                "is_schedule": is_schedule,
                 "task_details": translated_task_details,
             })
 
@@ -1608,18 +1854,24 @@ class DisciplineReportService:
             folder_name = folder.name if folder else ""
 
         rows = [_activity_row(task, False, lang, t)]
-        if any(s.progress_pct is not None for s in subtasks):
-            # cronograma: os filhos diretos são grupos — o relatório desce até as tarefas
+        is_schedule = _is_schedule([task, *subtasks])
+        schedule_summary = None
+        if is_schedule:
+            # cronograma: os filhos diretos podem ser grupos — o relatório desce até as tarefas
             children_by_parent: dict[str, list] = {}
             for tk in await self._repo.get_tasks_by_list(task.list_id, include_subtasks=True):
                 if tk.parent_task_id:
                     children_by_parent.setdefault(tk.parent_task_id, []).append(tk)
-            subtasks = []
-            for item, depth in _descendants(task.task_id, children_by_parent):
+            below = _descendants(task.task_id, children_by_parent)
+            rows[0].update(_schedule_fields(task, 0, bool(below), t), assignees_str=_assignees_str(task, t))
+            for item, depth in below:
                 row = _activity_row(item, True, lang, t)
-                row["name"] = _DEEP_PREFIX * (depth - 1) + row["name"]
+                row.update(_schedule_fields(item, depth, item.task_id in children_by_parent, t),
+                           assignees_str=_assignees_str(item, t))
                 rows.append(row)
-                subtasks.append(item)
+            # só as tarefas-folha contam como atividade; os grupos são resumos
+            subtasks = [item for item, _ in below if item.task_id not in children_by_parent]
+            schedule_summary = _schedule_summary(task.progress_pct, [task, *subtasks], t)
         else:
             rows += [_activity_row(s, True, lang, t) for s in subtasks]
 
@@ -1628,6 +1880,8 @@ class DisciplineReportService:
             "list_name": list_name,
             "folder_name": folder_name,
             "total_activities": len(subtasks),
+            "is_schedule": is_schedule,
+            "schedule_summary": schedule_summary,
             "rows": rows,
             "generated_at": datetime.utcnow().strftime("%d/%m/%Y" + t["at_time"] + "%H:%M"),
             "lang": lang,
@@ -1677,22 +1931,39 @@ class ListReportService:
             if tk.parent_task_id:
                 subtasks_by_parent.setdefault(tk.parent_task_id, []).append(tk)
 
+        is_schedule = _is_schedule(all_tasks)
         rows: list[dict] = []
         total_activities = 0
         for parent in parents:
             children = _descendants(parent.task_id, subtasks_by_parent)
             rows.append(_activity_row(parent, False, lang, t))
+            if is_schedule:
+                rows[-1].update(_schedule_fields(parent, 0, bool(children), t),
+                                assignees_str=_assignees_str(parent, t))
             for child, depth in children:
                 row = _activity_row(child, True, lang, t)
-                row["name"] = _DEEP_PREFIX * (depth - 1) + row["name"]
+                if is_schedule:
+                    row.update(_schedule_fields(child, depth, child.task_id in subtasks_by_parent, t),
+                               assignees_str=_assignees_str(child, t))
                 rows.append(row)
-            total_activities += len(children)
+            if is_schedule:
+                # só as tarefas-folha contam como atividade; os grupos são resumos
+                total_activities += sum(1 for child, _ in children if child.task_id not in subtasks_by_parent) or 1
+            else:
+                total_activities += len(children)
+
+        schedule_summary = None
+        if is_schedule:
+            progress, _ = compute_list_progress(_build_task_tree(all_tasks))
+            schedule_summary = _schedule_summary(progress * 100, all_tasks, t)
 
         return {
             "list_name": translate(list_kpis["name"], lang),
             "folder_name": folder_name,
             "total_disciplines": len(parents),
             "total_activities": total_activities,
+            "is_schedule": is_schedule,
+            "schedule_summary": schedule_summary,
             "rows": rows,
             "generated_at": datetime.utcnow().strftime("%d/%m/%Y" + t["at_time"] + "%H:%M"),
             "lang": lang,
@@ -1723,6 +1994,15 @@ _PCOLS_EN = [
     ("Date",           18, "C"),
 ]
 _PCOL_W = (91, 28, 45, 18)
+
+
+def _status_with_progress(row: dict) -> str:
+    """Status da linha; em tarefa de cronograma ainda aberta, com o % ao lado."""
+    status = _s(row.get("status") or "")
+    pct = row.get("progress_pct")
+    if pct is None or pct <= 0 or pct >= 100:
+        return status
+    return f"{status} {_fmt_progress(pct)}"
 
 
 class _PeriodicReport(_Report):
@@ -1852,7 +2132,7 @@ class _PeriodicReport(_Report):
 
         self._table_row([
             (name_txt,                   name_w,   "L"),
-            (_s(task["status"])[:18],     status_w, "L"),
+            (_status_with_progress(task)[:18], status_w, "L"),
             (task["assignees_str"][:28],  resp_w,   "L"),
             (date_str,                   date_w,   "C"),
         ], fill=even, text_color=txt_color, bold=(not is_done))
@@ -1880,7 +2160,7 @@ class _PeriodicReport(_Report):
             self._set_text(sub_color)
             self.set_xy(23, sub_y + 0.8)
             self.cell(name_w - 9, 4, sub_name, align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.cell(status_w,   4, _s(sub["status"])[:18], align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            self.cell(status_w,   4, _status_with_progress(sub)[:18], align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
             self.cell(resp_w,     4, sub["assignees_str"][:28], align="L", new_x=XPos.RIGHT, new_y=YPos.TOP)
             self.cell(date_w,     4, sub_date, align="C", new_x=XPos.LMARGIN, new_y=YPos.TOP)
             self.set_y(sub_y + 5)
