@@ -373,3 +373,59 @@ def test_zero_timestamp_means_no_date():
 def test_status_names_picks_the_three_automatic_statuses():
     names = status_names(STATUSES)
     assert (names.open, names.in_progress, names.done) == ("planejando", "fazendo", "complete")
+
+
+class TestBaseline:
+    """Linha de base: o plano fixado contra o qual o atraso é medido."""
+
+    async def _rows(self, db):
+        from sqlalchemy import select
+        from src.models.schedule_models import ScheduleBaseline
+        return {r.task_id: r for r in (await db.execute(select(ScheduleBaseline))).scalars().all()}
+
+    async def test_first_run_stores_the_plan(self, db):
+        summary = await _run(db, FakeClickUp(_project()))
+        assert summary.baseline_captured
+        assert summary.baseline_finish == date(2026, 10, 29) and summary.delay_days == 0
+        rows = await self._rows(db)
+        assert set(rows) == {"n1", "n2", "a", "b", "c"}
+        assert (rows["a"].start, rows["a"].finish) == (date(2026, 10, 13), date(2026, 10, 14))
+        assert all(r.list_id == LIST_ID for r in rows.values())
+
+    async def test_slipping_shows_as_delay_and_the_baseline_stays_put(self, db):
+        clickup = FakeClickUp(_project())
+        await _run(db, clickup)
+        late = await _run(db, clickup, today=date(2026, 10, 20))   # nada começou: tudo desliza
+        assert not late.baseline_captured
+        assert late.baseline_finish == date(2026, 10, 29)
+        assert late.project_finish > date(2026, 10, 29)
+        assert late.delay_days == (late.project_finish - date(2026, 10, 29)).days > 0
+
+    async def test_first_baseline_is_the_plan_not_the_progress(self, db):
+        tasks = _project()
+        tasks[2] = make_task("a", parent="n2", duration=2, status="complete", percent=100,
+                             completed=date(2026, 10, 13))            # terminou um dia antes do plano
+        depends(tasks, "b", "a")
+        summary = await _run(db, FakeClickUp(tasks), today=date(2026, 10, 13))
+        assert summary.baseline_finish == date(2026, 10, 29)          # o plano puro, sem o adiantamento
+        assert summary.delay_days is not None and summary.delay_days < 0
+
+    async def test_dry_run_does_not_store_a_baseline(self, db):
+        summary = await _run(db, FakeClickUp(_project()), dry_run=True)
+        assert summary.baseline_finish is None and summary.delay_days is None
+        assert await self._rows(db) == {}
+
+    async def test_rebaseline_adopts_the_current_schedule_without_writing_to_clickup(self, db):
+        clickup = FakeClickUp(_project())
+        await _run(db, clickup)
+        late = await _run(db, clickup, today=date(2026, 10, 20))
+        writes = len(clickup.writes)
+        reset = await ScheduleService(db, clickup).recalculate(
+            LIST_ID, dry_run=True, today=date(2026, 10, 20), rebaseline=True)
+        assert reset.baseline_captured and reset.delay_days == 0
+        assert reset.baseline_finish == late.project_finish
+        assert len(clickup.writes) == writes
+
+    async def test_list_without_start_date_gets_no_baseline(self, db):
+        summary = await _run(db, FakeClickUp(_project(), start=None))
+        assert not summary.ok and await self._rows(db) == {}

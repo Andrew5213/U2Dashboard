@@ -193,3 +193,6 @@ html.embed .mob-header > img { display: none; }
 /* o título do painel já diz "Relatórios": do cabeçalho da seção fica só o PT/EN */
 html.embed aside.embed-panel .embed-first p { display: none; }
 html.embed aside.embed-panel .embed-first > div:last-child { justify-content: flex-end; }
+
+/* com a busca na barra, é ela que empurra para a direita; o botão vem colado */
+html.embed #global-search + .embed-reports-btn { margin-left: 0; }

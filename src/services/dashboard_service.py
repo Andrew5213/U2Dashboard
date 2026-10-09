@@ -66,8 +66,18 @@ class _DependencyIndex:
         return self._refs(self._blocks.get(task_id, []))
 
 
+def _baseline_fields(task: ClickUpTaskCache, baseline: dict | None) -> dict:
+    """Término na linha de base e desvio (dias) de uma tarefa de cronograma."""
+    row = (baseline or {}).get(task.task_id)
+    if row is None:
+        return {}
+    delay = (task.due_date.date() - row.finish).days if task.due_date else None
+    return {"baseline_due": row.finish, "delay_days": delay}
+
+
 def _task_to_summary(
-    task: ClickUpTaskCache, has_subtasks: bool = False, deps: "_DependencyIndex | None" = None
+    task: ClickUpTaskCache, has_subtasks: bool = False, deps: "_DependencyIndex | None" = None,
+    baseline: dict | None = None,
 ) -> TaskSummary:
     now = datetime.utcnow()
     is_overdue = (
@@ -98,6 +108,7 @@ def _task_to_summary(
         duration_days=task.duration_days,
         calendar_type=task.calendar_type,
         depends_on=deps.depends_on(task.task_id) if deps else [],
+        **_baseline_fields(task, baseline),
     )
 
 
@@ -129,10 +140,14 @@ class DashboardService:
         tasks = await self._repo.get_tasks_by_list(list_id, include_subtasks=False)
         subtask_counts = await self._repo.get_subtask_count_by_parent(list_id)
         deps = await self._dependency_index(list_id)
+        baseline = await self._repo.get_baseline_by_task(list_id)
         return [
-            _task_to_summary(t, has_subtasks=subtask_counts.get(t.task_id, 0) > 0, deps=deps)
+            _task_to_summary(t, has_subtasks=subtask_counts.get(t.task_id, 0) > 0, deps=deps, baseline=baseline)
             for t in tasks
         ]
+
+    async def search_tasks(self, space_id: str, query: str) -> list[dict]:
+        return await self._repo.search_tasks(space_id, query)
 
     async def _dependency_index(self, list_id: str) -> _DependencyIndex | None:
         """None quando a lista não tem nenhuma dependência — o caso de quase todas."""
@@ -240,6 +255,7 @@ class DashboardService:
         subtask_counts = await self._repo.get_subtask_count_by_parent(task.list_id)
         ancestors = await self._repo.get_task_ancestors(task)
         deps = await self._dependency_index(task.list_id)
+        baseline = await self._repo.get_baseline_by_task(task.list_id)
         return TaskDetail(
             task_id=task.task_id,
             name=task.name,
@@ -257,6 +273,7 @@ class DashboardService:
             progress_pct=task.progress_pct,
             duration_days=task.duration_days,
             calendar_type=task.calendar_type,
+            **_baseline_fields(task, baseline),
             ancestors=[{"task_id": a.task_id, "name": a.name} for a in ancestors],
             depends_on=deps.depends_on(task.task_id) if deps else [],
             blocks=deps.blocks(task.task_id) if deps else [],
@@ -265,7 +282,7 @@ class DashboardService:
             date_created=task.date_created,
             date_updated=task.date_updated,
             subtasks=[
-                _task_to_summary(s, has_subtasks=subtask_counts.get(s.task_id, 0) > 0, deps=deps)
+                _task_to_summary(s, has_subtasks=subtask_counts.get(s.task_id, 0) > 0, deps=deps, baseline=baseline)
                 for s in subtasks
             ],
         )

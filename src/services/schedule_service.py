@@ -9,17 +9,17 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.core.logging import logger
-from src.models.schedule_models import ScheduleTaskState
+from src.models.schedule_models import ScheduleBaseline, ScheduleTaskState
 from src.services.clickup_client import ClickUpClient
 from src.services.schedule_engine import (
     ScheduleTask,
@@ -62,6 +62,11 @@ class ScheduleRunSummary:
     percent: float | None = None
     project_start: date | None = None
     project_finish: date | None = None
+    # Linha de base: término planeado e o desvio do término atual, em dias corridos
+    # (positivo = atrasado). `baseline_captured` diz se foi gravada nesta execução.
+    baseline_finish: date | None = None
+    delay_days: int | None = None
+    baseline_captured: bool = False
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     changes: list[dict] = field(default_factory=list)
@@ -104,18 +109,22 @@ class ScheduleService:
         self._clickup = clickup
 
     async def recalculate(
-        self, list_id: str, dry_run: bool = False, today: date | None = None
+        self, list_id: str, dry_run: bool = False, today: date | None = None, rebaseline: bool = False,
     ) -> ScheduleRunSummary:
+        """`rebaseline=True` adota o cronograma atual como a nova linha de base (com
+        `dry_run=True` faz só isso, sem gravar nada no ClickUp)."""
         summary = ScheduleRunSummary(list_id=list_id, dry_run=dry_run)
         today = today or local_today()
         try:
-            await self._run(list_id, dry_run, today, summary)
+            await self._run(list_id, dry_run, today, summary, rebaseline)
         except Exception as exc:  # noqa: BLE001 — o worker não pode morrer por uma lista
             logger.exception(f"Cronograma: falha ao recalcular a lista {list_id}")
             summary.errors.append(f"{type(exc).__name__}: {exc}")
         return summary
 
-    async def _run(self, list_id: str, dry_run: bool, today: date, summary: ScheduleRunSummary) -> None:
+    async def _run(
+        self, list_id: str, dry_run: bool, today: date, summary: ScheduleRunSummary, rebaseline: bool = False,
+    ) -> None:
         lst = await self._call(lambda: self._clickup.get_list(list_id))
         fields = await self._call(lambda: self._clickup.get_list_fields(list_id))
         f_percent = find_field(fields, FIELD_PERCENT, "manual_progress")
@@ -186,6 +195,22 @@ class ScheduleService:
             summary.percent = round(sum(r.duration_util * r.percent for r in leaves) / total, 2) if total else None
             summary.project_start = min(r.start for r in leaves)
             summary.project_finish = max(r.finish for r in leaves)
+
+        if rebaseline:
+            await self._save_baseline(list_id, output.results)
+            summary.baseline_captured = True
+        elif not dry_run and await self._baseline_finish(list_id) is None:
+            # Primeiro cálculo da lista: guarda o plano puro, sem o andamento — é
+            # contra ele que o atraso passa a ser medido.
+            plan = compute_schedule(
+                [replace(t, percent=0.0, start=None, finished_on=None) for t in engine_tasks],
+                calendar, today, reschedule=False,
+            )
+            await self._save_baseline(list_id, plan.results)
+            summary.baseline_captured = True
+        summary.baseline_finish = await self._baseline_finish(list_id)
+        if summary.baseline_finish and summary.project_finish:
+            summary.delay_days = (summary.project_finish - summary.baseline_finish).days
 
         plans: list[dict] = []
         for c in sorted(current.values(), key=lambda item: -depth[item.id]):  # folhas antes dos resumos
@@ -282,6 +307,29 @@ class ScheduleService:
         )
         _holidays_cache[list_id] = (time.monotonic(), days)
         return days
+
+    # ─── Linha de base ───────────────────────────────────────────────────────
+
+    async def _baseline_finish(self, list_id: str) -> date | None:
+        return (await self._db.execute(
+            select(func.max(ScheduleBaseline.finish)).where(ScheduleBaseline.list_id == list_id)
+        )).scalar()
+
+    async def _save_baseline(self, list_id: str, results: dict) -> None:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        await self._db.execute(delete(ScheduleBaseline).where(ScheduleBaseline.list_id == list_id))
+        rows = [
+            {"task_id": r.id, "list_id": list_id, "start": r.start, "finish": r.finish, "captured_at": now}
+            for r in results.values() if r.start and r.finish
+        ]
+        if rows:
+            # uma tarefa movida de outra lista pode já ter linha própria
+            await self._db.execute(delete(ScheduleBaseline).where(
+                ScheduleBaseline.task_id.in_([row["task_id"] for row in rows])
+            ))
+            await self._db.execute(sqlite_insert(ScheduleBaseline), rows)
+        await self._db.commit()
+        logger.info(f"Cronograma [{list_id}]: linha de base gravada ({len(rows)} tarefas)")
 
     # ─── Estado anterior ─────────────────────────────────────────────────────
 

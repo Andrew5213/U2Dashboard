@@ -120,13 +120,12 @@ const Charts = (function () {
           stack: 'total',
           data: open,
           itemStyle: { color: (U2_DARK() ? U2_TRACK : '#e2e8f0'), borderRadius: [0, 3, 3, 0], cursor: onClickItem ? 'pointer' : 'default' },
+          // Em percentual só a parte concluída leva rótulo: o "100%" da parte em
+          // aberto de uma província a 0% lia-se como 100% concluído.
           label: {
-            show: true,
+            show: !asPercent,
             position: 'inside',
-            formatter: function (p) {
-              if (!p.value) return '';
-              return asPercent ? p.value + '%' : p.value;
-            },
+            formatter: function (p) { return p.value || ''; },
             fontSize: 10,
             color: (U2_DARK() ? '#8b8b93' : '#64748b'),
           },
@@ -170,13 +169,8 @@ const Charts = (function () {
       return { name: name, value: value, itemStyle: { color: color } };
     });
 
-    // "Planejando" vem desativado por padrão (oculto do donut), mas o usuário
-    // pode reativar clicando na legenda — comportamento nativo do ECharts.
-    var legendSelected = {};
-    data.forEach(function (d) {
-      if (d.name.toLowerCase() === 'planejando') legendSelected[d.name] = false;
-    });
-
+    // Todos os status entram na rosca. "Planejando" já veio oculto por padrão, mas
+    // sem ele a rosca ficava quase toda verde — parecia que estava tudo concluído.
     chart.setOption({
       tooltip: {
         trigger: 'item',
@@ -189,7 +183,6 @@ const Charts = (function () {
         itemWidth: 10,
         itemHeight: 10,
         textStyle: { fontSize: 10 },
-        selected: legendSelected,
         formatter: function (name) {
           var item = data.find(function (d) { return d.name === name; });
           return item ? name + ' (' + item.value + ')' : name;

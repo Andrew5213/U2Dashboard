@@ -84,6 +84,18 @@ async def get_assignee_tasks(
     return DashboardEnvelope(data=data)
 
 
+@router.get("/search", response_model=DashboardEnvelope)
+async def search_tasks(
+    response: Response,
+    q: str = Query(..., min_length=2, max_length=80, description="trecho do nome da tarefa"),
+    svc: DashboardService = Depends(_svc),
+):
+    """Busca tarefas pelo nome em todo o space (sem diferenciar caixa nem acento)."""
+    _no_cache(response)
+    data = await svc.search_tasks(settings.clickup_default_space_id, q)
+    return DashboardEnvelope(data=data)
+
+
 @router.get("/upcoming", response_model=DashboardEnvelope)
 async def get_upcoming(response: Response, days: int = 30, svc: DashboardService = Depends(_svc)):
     _no_cache(response)

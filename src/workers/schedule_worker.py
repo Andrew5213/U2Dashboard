@@ -20,12 +20,12 @@ def is_schedule_list(list_id: str | None) -> bool:
     return bool(settings.schedule_enabled and list_id and list_id in settings.schedule_lists)
 
 
-async def run_recalculation(list_id: str, dry_run: bool = False) -> ScheduleRunSummary:
+async def run_recalculation(list_id: str, dry_run: bool = False, rebaseline: bool = False) -> ScheduleRunSummary:
     """Uma execução por lista de cada vez — duas em paralelo gravariam por cima uma da outra."""
     lock = _locks.setdefault(list_id, asyncio.Lock())
     async with lock:
         async with AsyncSessionLocal() as db, ClickUpClient() as clickup:
-            return await ScheduleService(db, clickup).recalculate(list_id, dry_run=dry_run)
+            return await ScheduleService(db, clickup).recalculate(list_id, dry_run=dry_run, rebaseline=rebaseline)
 
 
 async def _debounced(list_id: str) -> None:

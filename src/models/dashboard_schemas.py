@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from pydantic import BaseModel
 
@@ -23,6 +23,11 @@ class FolderMetrics(BaseModel):
     completed_tasks: int
     overdue_tasks: int
     completion_rate: float
+    # Cronograma: término atual × linha de base. `delay_days` positivo = atrasada;
+    # nulo quando nenhuma lista da província tem linha de base.
+    schedule_finish: date | None = None
+    baseline_finish: date | None = None
+    delay_days: int | None = None
 
 
 class ListMetrics(BaseModel):
@@ -33,6 +38,9 @@ class ListMetrics(BaseModel):
     completed_tasks: int
     overdue_tasks: int
     completion_rate: float
+    schedule_finish: date | None = None
+    baseline_finish: date | None = None
+    delay_days: int | None = None
 
 
 class DependencyRef(BaseModel):
@@ -67,6 +75,9 @@ class TaskSummary(BaseModel):
     progress_pct: float | None = None
     duration_days: float | None = None
     calendar_type: str | None = None
+    # Término na linha de base e desvio do término atual (dias; positivo = atrasada)
+    baseline_due: date | None = None
+    delay_days: int | None = None
     # De que tarefas esta depende. Num grupo, são as dependências das tarefas dele
     # que apontam para fora do grupo.
     depends_on: list[DependencyRef] = []
@@ -89,6 +100,8 @@ class AssigneeStats(BaseModel):
     open: int
     completed: int
     overdue: int
+    in_progress: int = 0    # abertas já iniciadas (status em andamento ou % entre 1 e 99)
+    next_7_days: int = 0    # abertas que começam ou terminam nos próximos 7 dias
 
 
 class UpcomingTask(BaseModel):

@@ -318,3 +318,69 @@ class TestGanttReport:
         from src.services.gantt_report_service import GanttReportService
         with pytest.raises(ValueError):
             await GanttReportService(db).generate_pdf("nao-existe")
+
+
+class TestScheduleDeviation:
+    """Atraso em dias: término atual das tarefas em cache × linha de base."""
+
+    async def _baseline(self, db, finish_by_task: dict) -> None:
+        from src.models.schedule_models import ScheduleBaseline
+        for task_id, finish in finish_by_task.items():
+            db.add(ScheduleBaseline(task_id=task_id, list_id="L1", start=finish, finish=finish))
+        await db.commit()
+
+    async def test_list_and_folder_carry_the_delay_in_days(self, repo, db):
+        await self._baseline(db, {"Cura do Concreto": TODAY + timedelta(days=1), "Concretagem": TODAY - timedelta(days=1)})
+        lists = {lst["name"]: lst for lst in await repo.get_lists_with_metrics("F")}
+        assert lists["Site FM"]["delay_days"] == 2            # termina em +3, plano em +1
+        assert lists["Site FM"]["baseline_finish"] == TODAY + timedelta(days=1)
+        assert lists["Site FM"]["schedule_finish"] == TODAY + timedelta(days=3)
+        assert "delay_days" not in lists["Estudios"]
+        folder = (await repo.get_folders_with_metrics("S"))[0]
+        assert folder["delay_days"] == 2
+        assert (await repo.get_list_kpis("L1"))["delay_days"] == 2
+
+    async def test_without_baseline_nothing_is_reported(self, repo):
+        assert "delay_days" not in (await repo.get_lists_with_metrics("F"))[0]
+        assert "delay_days" not in (await repo.get_folders_with_metrics("S"))[0]
+
+    async def test_each_task_shows_its_own_deviation(self, repo, db):
+        from src.services.dashboard_service import DashboardService
+        await self._baseline(db, {"Obra Civil": TODAY, "Cura do Concreto": TODAY + timedelta(days=5)})
+        tasks = {t.name: t for t in await DashboardService(db).get_list_tasks("L1")}
+        assert tasks["Obra Civil"].delay_days == 3 and tasks["Obra Civil"].baseline_due == TODAY
+        assert tasks["Logística"].delay_days is None            # criada depois da linha de base
+        detail = await DashboardService(db).get_task_detail("Base do Gerador")
+        cure = next(s for s in detail.subtasks if s.name == "Cura do Concreto")
+        assert cure.delay_days == -2                            # adiantada
+
+
+class TestSearch:
+    async def test_matches_every_word_ignoring_case_and_accents(self, repo):
+        found = await repo.search_tasks("S", "CURA concreto")
+        assert [t["name"] for t in found] == ["Cura do Concreto"]
+        assert found[0]["parent_name"] == "Base do Gerador" and found[0]["folder_name"] == "LUBANGO"
+        assert [t["name"] for t in await repo.search_tasks("S", "logistica")] == ["Logística"]
+
+    async def test_reaches_every_list_and_level(self, repo):
+        names = {t["name"] for t in await repo.search_tasks("S", "o")}
+        assert {"Obra Civil", "Montagem", "Concretagem"} <= names
+
+    async def test_blank_or_unmatched_query_finds_nothing(self, repo):
+        assert await repo.search_tasks("S", "   ") == []
+        assert await repo.search_tasks("S", "transmissor inexistente") == []
+
+
+class TestTeamView:
+    async def test_stats_count_what_is_running_and_what_comes_this_week(self, repo):
+        stats = {s["assignee"]: s for s in await repo.get_assignee_task_stats("S")}
+        proef = stats["PROEF"]
+        assert (proef["open"], proef["completed"]) == (1, 1)
+        assert proef["in_progress"] == 1 and proef["next_7_days"] == 1
+
+    async def test_tasks_carry_start_group_and_started_flag(self, repo):
+        tasks = {t["name"]: t for t in await repo.get_tasks_by_assignee("S", "PROEF")}
+        cure = tasks["Cura do Concreto"]
+        assert cure["is_started"] and cure["parent_name"] == "Base do Gerador"
+        assert cure["start_date"].date() == TODAY
+        assert not tasks["Concretagem"]["is_started"]           # concluída não está "em andamento"

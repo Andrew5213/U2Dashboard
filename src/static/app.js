@@ -16,12 +16,46 @@
   const WARN_ICON = `<svg class="w-3.5 h-3.5 inline-block align-text-bottom shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>`;
 
   /* ── Semáforo de saúde da província ─────────────────────────────── */
-  function healthStatus(rate, overdue) {
-    if (overdue > 0)
-      return { border: 'border-l-red-400',   dot: 'bg-red-500',     badge: 'bg-red-50 text-red-600',     label: 'Em risco' };
-    if (rate < 0.1)
-      return { border: 'border-l-amber-300', dot: 'bg-amber-400',   badge: 'bg-amber-50 text-amber-700', label: 'Atenção' };
-    return   { border: 'border-l-emerald-400', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700', label: 'No prazo' };
+  const HEALTH = {
+    red:   { border: 'border-l-red-400',     dot: 'bg-red-500',     badge: 'bg-red-50 text-red-600' },
+    amber: { border: 'border-l-amber-300',   dot: 'bg-amber-400',   badge: 'bg-amber-50 text-amber-700' },
+    green: { border: 'border-l-emerald-400', dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700' },
+    gray:  { border: 'border-l-slate-300',   dot: 'bg-slate-300',   badge: 'bg-slate-50 text-gray-500' },
+  };
+
+  function hasDelay(item) {
+    return item.delay_days !== null && item.delay_days !== undefined;
+  }
+
+  // "+4 d" / "−2 d" / "no prazo": desvio do término atual contra a linha de base.
+  function fmtDelay(days) {
+    if (days > 0) return '+' + days + ' d';
+    if (days < 0) return '\u2212' + (-days) + ' d';
+    return 'no prazo';
+  }
+
+  // Selo de uma província. Com linha de base, o selo é o desvio do cronograma em
+  // dias. Sem ela não há prazo para comparar: o selo só descreve o andamento —
+  // antes, toda província não iniciada aparecia como "Atenção".
+  function healthStatus(f) {
+    const tone = function (key, label) { return Object.assign({ label: label }, HEALTH[key]); };
+    if (hasDelay(f)) {
+      if (f.delay_days > 0) return tone('red', 'Atrasada ' + f.delay_days + ' d');
+      if (f.delay_days < 0) return tone('green', 'Adiantada ' + (-f.delay_days) + ' d');
+      return tone('green', 'No prazo');
+    }
+    if (f.overdue_tasks > 0) return tone('red', 'Tarefas vencidas');
+    const rate = f.completion_rate || 0;
+    if (rate >= 0.995) return tone('green', 'Concluída');
+    if (rate > 0) return tone('amber', 'Em andamento');
+    return tone('gray', 'Não iniciada');
+  }
+
+  // Linha "Término 24/11/2026 · plano 20/11/2026" de quem tem linha de base.
+  function scheduleLine(item) {
+    if (!hasDelay(item)) return '';
+    const cls = item.delay_days > 0 ? 'text-red-500' : 'text-gray-400';
+    return `<p class="text-xs ${cls} mt-2">Término ${fmtDay(item.schedule_finish)} · plano ${fmtDay(item.baseline_finish)}</p>`;
   }
 
   /* ── Utilitários ─────────────────────────────────────────────────── */
@@ -43,6 +77,13 @@
     try {
       return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     } catch (_) { return iso; }
+  }
+
+  // Data pura (AAAA-MM-DD) sem passar por Date: new Date('2026-11-20') é meia-noite
+  // UTC e, num fuso a oeste de Greenwich, sairia como dia 19.
+  function fmtDay(iso) {
+    const parts = String(iso || '').slice(0, 10).split('-');
+    return parts.length === 3 ? parts[2] + '/' + parts[1] + '/' + parts[0] : '—';
   }
 
   function fmtPct(rate) {
@@ -87,11 +128,18 @@
     const dueCls = task.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
     return `<td class="${pad} text-sm text-gray-500 whitespace-nowrap">${fmtDate(task.start_date)}</td>
         <td class="${pad} text-sm ${dueCls} whitespace-nowrap">${task.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(task.due_date)}</td>
+        <td class="${pad} text-sm whitespace-nowrap">${delayCell(task)}</td>
         <td class="${pad} text-sm text-gray-500 whitespace-nowrap">${fmtDuration(task)}</td>
         <td class="${pad}">${percentCell(task)}</td>`;
   }
 
-  const SCHEDULE_HEADERS = ['Início', 'Fim', 'Duração', 'Progresso'].map(function (label) {
+  function delayCell(task) {
+    if (!hasDelay(task)) return '<span class="text-gray-400">—</span>';
+    const cls = task.delay_days > 0 ? 'text-red-500 font-medium' : task.delay_days < 0 ? 'text-emerald-600' : 'text-gray-400';
+    return `<span class="${cls}" title="Plano: ${fmtDay(task.baseline_due)}">${fmtDelay(task.delay_days)}</span>`;
+  }
+
+  const SCHEDULE_HEADERS = ['Início', 'Fim', 'Desvio', 'Duração', 'Progresso'].map(function (label) {
     return `<th class="py-2 px-4 text-left font-medium">${label}</th>`;
   }).join('');
 
@@ -302,10 +350,41 @@
     setLastRefresh(overview.last_refresh_at);
 
     const pct = fmtPctPrecise(overview.completion_rate);
-    const overdueColor = overview.overdue_tasks > 0 ? 'text-red-600' : 'text-gray-800';
+    // "Concluídas" conta tarefas; "Progresso geral" é a média ponderada das
+    // províncias. São contas diferentes e cada cartão diz qual é a sua.
+    const countPct = overview.total_tasks > 0
+      ? (overview.completed_tasks / overview.total_tasks * 100).toFixed(1).replace('.', ',') + '%' : '0%';
+
+    const tracked = folders.filter(hasDelay);
+    const delayed = tracked.filter(function (f) { return f.delay_days > 0; })
+      .sort(function (a, b) { return b.delay_days - a.delay_days; });
+    const overdueNote = overview.overdue_tasks > 0 ? overview.overdue_tasks + ' tarefa(s) vencida(s)' : '';
+    const delayCard = tracked.length
+      ? kpiCard(ICONS.clock, 'Províncias em Atraso', delayed.length,
+          [delayed.length ? 'maior: ' + fmtDelay(delayed[0].delay_days) + ' (' + delayed[0].name + ')'
+                          : 'de ' + tracked.length + ' com linha de base', overdueNote].filter(Boolean).join(' · '),
+          delayed.length ? 'text-red-600' : 'text-emerald-600')
+      : kpiCard(ICONS.clock, 'Em Atraso', overview.overdue_tasks, 'tarefas vencidas',
+          overview.overdue_tasks > 0 ? 'text-red-600' : 'text-gray-800');
+
+    const teams = assignees.filter(function (a) { return a.open > 0; })
+      .sort(function (a, b) { return (b.next_7_days - a.next_7_days) || (b.in_progress - a.in_progress) || (b.open - a.open); })
+      .slice(0, 6);
+    const teamsHTML = teams.map(function (a) {
+      return `<a href="#/assignee/${encodeURIComponent(a.assignee)}"
+                 class="bg-white rounded-xl border border-gray-200 p-4 card-hover block">
+        <p class="font-semibold text-gray-800 truncate">${esc(a.assignee)}</p>
+        <div class="flex items-end gap-5 mt-2">
+          <div><p class="text-xl font-bold text-gray-800 leading-none">${a.next_7_days}</p><p class="text-xs text-gray-400 mt-1">próximos 7 dias</p></div>
+          <div><p class="text-xl font-bold text-amber-600 leading-none">${a.in_progress}</p><p class="text-xs text-gray-400 mt-1">em andamento</p></div>
+          <div><p class="text-xl font-bold text-gray-500 leading-none">${a.open}</p><p class="text-xs text-gray-400 mt-1">em aberto</p></div>
+        </div>
+        ${a.overdue > 0 ? `<p class="text-xs text-red-500 mt-2 flex items-center gap-1">${WARN_ICON} ${a.overdue} vencida(s)</p>` : ''}
+      </a>`;
+    }).join('');
 
     const foldersHTML = folders.map(function (f) {
-      const h = healthStatus(f.completion_rate, f.overdue_tasks);
+      const h = healthStatus(f);
       return `<div class="bg-white rounded-xl border border-gray-200 border-l-4 ${h.border} p-4 card-hover cursor-pointer"
                onclick="location.hash='#/folder/${esc(f.folder_id)}'; window.__folderName=${jsStr(f.name)}">
         <div class="flex items-start justify-between gap-2">
@@ -315,8 +394,9 @@
           </div>
           <span class="text-xs font-medium px-2 py-0.5 rounded-full ${h.badge} shrink-0">${h.label}</span>
         </div>
-        <p class="text-xs text-gray-400 mt-1.5 ml-4">${f.total_lists} área(s) · ${f.total_tasks} task(s) · ${fmtPct(f.completion_rate)} concluído</p>
+        <p class="text-xs text-gray-400 mt-1.5 ml-4">${f.total_lists} área(s) · ${f.total_tasks} tarefa(s) · ${fmtPct(f.completion_rate)} concluído</p>
         ${progressBar(f.completion_rate)}
+        ${scheduleLine(f)}
         ${f.overdue_tasks > 0 ? `<p class="text-xs text-red-500 mt-2 flex items-center gap-1">${WARN_ICON} ${f.overdue_tasks} em atraso</p>` : ''}
       </div>`;
     }).join('');
@@ -344,12 +424,19 @@
     setView(`
       <!-- KPIs -->
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-        ${kpiCard(ICONS.tasks,    'Total de Tasks', overview.total_tasks, null, '')}
-        ${kpiCard(ICONS.check,    'Concluídas', overview.completed_tasks, pct + ' do total', 'text-emerald-600')}
-        ${kpiCard(ICONS.chartBar, 'Progresso Geral', pct, overview.completed_tasks + ' de ' + overview.total_tasks, 'text-red-600')}
-        ${kpiCard(ICONS.clock,    'Em Atraso', overview.overdue_tasks, 'tasks vencidas', overdueColor)}
-        ${kpiCard(ICONS.calendar, 'Sem Data', overview.tasks_without_due_date, 'sem due date', 'text-gray-500')}
+        ${kpiCard(ICONS.tasks,    'Total de Tarefas', overview.total_tasks, null, '')}
+        ${kpiCard(ICONS.check,    'Concluídas', overview.completed_tasks, countPct + ' das tarefas', 'text-emerald-600')}
+        ${kpiCard(ICONS.chartBar, 'Progresso Geral', pct, 'média ponderada das províncias', 'text-red-600')}
+        ${delayCard}
+        ${kpiCard(ICONS.calendar, 'Sem Data', overview.tasks_without_due_date, 'tarefas sem prazo definido', 'text-gray-500')}
       </div>
+
+      ${teams.length ? `<!-- Carga por equipe -->
+      <div class="flex items-baseline justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700">Equipes e responsáveis</h2>
+        <span class="text-xs text-gray-400">Clique para ver as tarefas por período</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">${teamsHTML}</div>` : ''}
 
       <!-- Charts row -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 items-start">
@@ -457,6 +544,7 @@
     const overdueTasks   = lists.reduce(function (s, l) { return s + l.overdue_tasks; }, 0);
     const rate           = lists.length ? lists.reduce(function (s, l) { return s + (l.completion_rate || 0); }, 0) / lists.length : 0;
     const wp             = disciplines && disciplines.weights_configured ? disciplines.weighted_progress : null;
+    const worstDelay     = lists.filter(hasDelay).sort(function (a, b) { return b.delay_days - a.delay_days; })[0] || null;
     const wpPct          = wp !== null && wp !== undefined ? fmtPct(wp) : null;
 
     const listsHTML = lists.map(function (l) {
@@ -477,8 +565,9 @@
             ${fmtPct(l.completion_rate)}
           </span>
         </div>
-        <p class="text-xs text-gray-400 mt-0.5">${l.total_tasks} task(s)</p>
+        <p class="text-xs text-gray-400 mt-0.5">${l.total_tasks} tarefa(s)${hasDelay(l) ? ' · <span class="' + (l.delay_days > 0 ? 'text-red-500 font-medium' : 'text-emerald-600') + '">' + fmtDelay(l.delay_days) + '</span>' : ''}</p>
         ${progressBar(l.completion_rate)}
+        ${scheduleLine(l)}
         ${l.overdue_tasks > 0 ? `<p class="text-xs text-red-500 mt-1.5 flex items-center gap-1">${WARN_ICON} ${l.overdue_tasks} em atraso</p>` : ''}
       </div>`;
     }).join('');
@@ -506,9 +595,13 @@
       <!-- KPIs -->
       <div class="grid grid-cols-2 ${wpPct ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3 mb-6">
         ${kpiCard(ICONS.folder, 'Áreas / Disciplinas', lists.length)}
-        ${kpiCard(ICONS.tasks,  'Tasks', totalTasks)}
+        ${kpiCard(ICONS.tasks,  'Tarefas', totalTasks)}
         ${kpiCard(ICONS.check,  'Concluídas', fmtPct(rate), completedTasks + ' de ' + totalTasks, 'text-emerald-600')}
-        ${kpiCard(ICONS.clock,  'Em Atraso', overdueTasks, null, overdueTasks > 0 ? 'text-red-600' : '')}
+        ${worstDelay
+          ? kpiCard(ICONS.clock, 'Desvio do Prazo', fmtDelay(worstDelay.delay_days),
+              'término ' + fmtDay(worstDelay.schedule_finish) + ' · plano ' + fmtDay(worstDelay.baseline_finish),
+              worstDelay.delay_days > 0 ? 'text-red-600' : 'text-emerald-600')
+          : kpiCard(ICONS.clock, 'Em Atraso', overdueTasks, 'tarefas vencidas', overdueTasks > 0 ? 'text-red-600' : '')}
         ${wpCard}
       </div>
 
@@ -714,6 +807,17 @@
     const rate      = kpis ? (kpis.completion_rate || 0) : (total > 0 ? completed / total : 0);
 
     const schedule = isSchedule(tasks);
+    // Em andamento = aberta e já iniciada. "total − concluídas − atrasadas" contava
+    // como em andamento também o que nem começou.
+    const inProgress = tasks.filter(function (t) {
+      if (t.status_type === 'done' || t.status_type === 'closed') return false;
+      return t.status_type === 'custom' || (t.progress_pct > 0 && t.progress_pct < 100);
+    }).length;
+    const deviationCard = kpis && hasDelay(kpis)
+      ? kpiCard(ICONS.clock, 'Desvio do Prazo', fmtDelay(kpis.delay_days),
+          'término ' + fmtDay(kpis.schedule_finish) + ' · plano ' + fmtDay(kpis.baseline_finish),
+          kpis.delay_days > 0 ? 'text-red-600' : 'text-emerald-600')
+      : kpiCard(ICONS.clock, 'Em Atraso', overdue, schedule ? 'sem linha de base ainda' : null, overdue > 0 ? 'text-red-600' : '');
     const rows = tasks.map(function (t) {
       const assigneeNames = (t.assignees || []).map(function (a) { return a.username || '?'; }).join(', ') || '—';
       const dueCls = t.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
@@ -737,17 +841,22 @@
 
     setView(`
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        ${kpiCard(ICONS.tasks,    'Tasks', total)}
-        ${kpiCard(ICONS.check,    'Concluídas', completed, fmtPct(rate), 'text-emerald-600')}
-        ${kpiCard(ICONS.sync,     'Em Andamento', total - completed - overdue, null, 'text-blue-600')}
-        ${kpiCard(ICONS.clock,    'Em Atraso', overdue, null, overdue > 0 ? 'text-red-600' : '')}
+        ${kpiCard(ICONS.tasks,    schedule ? 'Disciplinas' : 'Tarefas', total)}
+        ${kpiCard(ICONS.check,    'Concluídas', completed, fmtPct(rate) + ' de progresso', 'text-emerald-600')}
+        ${kpiCard(ICONS.sync,     'Em Andamento', inProgress, null, 'text-blue-600')}
+        ${deviationCard}
       </div>
 
       <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-gray-700">${esc(listName)} — Tasks (${total})</h2>
+          <h2 class="text-sm font-semibold text-gray-700">${esc(listName)} (${total})</h2>
           <div class="flex items-center gap-3">
             <div class="w-32">${progressBar(rate)}</div>
+            ${schedule && kpis && hasDelay(kpis) ? `<button type="button" onclick="resetBaseline('${esc(listId)}')"
+              title="Adota o cronograma atual como o novo plano; o desvio volta a zero"
+              class="text-xs bg-slate-50 text-slate-600 px-2.5 py-1 rounded-lg hover:bg-slate-100 transition-colors font-medium shrink-0">
+              Redefinir linha de base
+            </button>` : ''}
             ${total > 0 ? `<button type="button" id="btn-pdf-lista" onclick="exportListaPdf('${esc(listId)}')"
               class="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors font-medium flex items-center gap-1 shrink-0">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -768,7 +877,7 @@
           <table class="w-full text-sm">
             <thead>
               <tr class="text-xs text-gray-400 uppercase tracking-wide border-b border-slate-100">
-                <th class="py-2 px-4 text-left font-medium ${schedule ? 'w-1/3' : 'w-1/2'}">Task</th>
+                <th class="py-2 px-4 text-left font-medium ${schedule ? 'w-1/3' : 'w-1/2'}">Tarefa</th>
                 <th class="py-2 px-4 text-left font-medium">Status</th>
                 <th class="py-2 px-4 text-left font-medium">Responsável</th>
                 ${schedule ? SCHEDULE_HEADERS : '<th class="py-2 px-4 text-left font-medium">Prazo</th>'}
@@ -783,9 +892,29 @@
     `);
   }
 
-  /* ── VIEW: Responsável (tarefas da pessoa) ───────────────────────── */
-  /* Chega-se aqui clicando numa barra do gráfico de produtividade. A contagem
-     bate com a barra porque o endpoint usa a mesma unidade (tarefas-folha). */
+  /* ── VIEW: Equipe / responsável (tarefas por período) ────────────── */
+  /* Chega-se aqui pelos cartões "Equipes e responsáveis" ou clicando numa barra do
+     gráfico de produtividade. Responde "o que esta equipe tem para fazer agora":
+     as tarefas abertas saem agrupadas por janela de tempo, não numa lista única. */
+  const TEAM_BUCKETS = [
+    { key: 'overdue',  label: 'Vencidas',            hint: 'prazo já passou' },
+    { key: 'started',  label: 'Em andamento',        hint: 'já iniciadas' },
+    { key: 'week',     label: 'Próximos 7 dias',     hint: 'começam ou terminam até lá' },
+    { key: 'month',    label: 'De 8 a 30 dias',      hint: '' },
+    { key: 'later',    label: 'Mais adiante',        hint: 'depois de 30 dias' },
+    { key: 'undated',  label: 'Sem data',            hint: 'cronograma ainda sem início' },
+  ];
+
+  function teamBucket(t, now) {
+    if (t.is_overdue) return 'overdue';
+    if (t.is_started) return 'started';
+    const dates = [t.start_date, t.due_date].filter(Boolean).map(function (d) { return new Date(d).getTime(); })
+      .filter(function (ms) { return ms >= now; });
+    if (!dates.length) return (t.start_date || t.due_date) ? 'later' : 'undated';
+    const days = (Math.min.apply(null, dates) - now) / 86400000;
+    return days <= 7 ? 'week' : days <= 30 ? 'month' : 'later';
+  }
+
   async function renderAssignee(name) {
     setBreadcrumb([
       { label: 'Visão Geral', href: '#/' },
@@ -800,60 +929,173 @@
       return;
     }
 
-    const total     = tasks.length;
-    const completed = tasks.filter(function (t) { return t.is_done; }).length;
-    const overdue   = tasks.filter(function (t) { return t.is_overdue; }).length;
-    const rate      = total > 0 ? completed / total : 0;
+    const provinces = Array.from(new Set(tasks.map(function (t) { return t.folder_name; }))).sort();
 
-    const rows = tasks.map(function (t) {
-      const dueCls = t.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
-      return `<tr class="hover:bg-slate-50 cursor-pointer"
-                  onclick="location.hash='#/task/${esc(t.task_id)}'; window.__taskName=${jsStr(t.name)}">
-        <td class="py-3 px-4">
-          <span class="font-medium text-gray-800">${esc(t.name)}</span>
-        </td>
-        <td class="py-3 px-4">${statusBadge(t.status, t.status_type, t.status_color)}</td>
-        <td class="py-3 px-4 text-sm text-gray-500">${esc(t.folder_name || '—')}</td>
-        <td class="py-3 px-4 text-sm text-gray-500">${esc(t.list_name || '—')}</td>
-        <td class="py-3 px-4 text-sm ${dueCls}">${t.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(t.due_date)}</td>
-      </tr>`;
-    }).join('');
+    function draw(province) {
+      const scoped = province ? tasks.filter(function (t) { return t.folder_name === province; }) : tasks;
+      const open = scoped.filter(function (t) { return !t.is_done; });
+      const done = scoped.filter(function (t) { return t.is_done; });
+      const now = Date.now();
+      const groups = {};
+      open.forEach(function (t) { (groups[teamBucket(t, now)] = groups[teamBucket(t, now)] || []).push(t); });
+      const count = function (key) { return (groups[key] || []).length; };
 
-    const emptyMsg = total === 0
-      ? `<tr><td colspan="5" class="py-12 text-center text-gray-400 text-sm">
-           Nenhuma tarefa atribuída a esta pessoa</td></tr>`
-      : '';
+      const row = function (t) {
+        const dueCls = t.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
+        const pct = t.progress_pct !== null && t.progress_pct !== undefined
+          ? `<span class="text-xs text-gray-500 tabular-nums ml-2">${Math.round(t.progress_pct)}%</span>` : '';
+        return `<tr class="hover:bg-slate-50 cursor-pointer"
+                    onclick="location.hash='#/task/${esc(t.task_id)}'; window.__taskName=${jsStr(t.name)}">
+          <td class="py-2.5 px-4">
+            <span class="font-medium text-gray-800">${esc(t.name)}</span>
+            ${t.parent_name ? `<span class="block text-xs text-gray-400">${esc(t.parent_name)}</span>` : ''}
+          </td>
+          <td class="py-2.5 px-4 text-sm text-gray-500">${esc(t.folder_name || '—')}<span class="text-gray-400"> · ${esc(t.list_name || '—')}</span></td>
+          <td class="py-2.5 px-4 text-sm text-gray-500 whitespace-nowrap">${fmtDate(t.start_date)}</td>
+          <td class="py-2.5 px-4 text-sm ${dueCls} whitespace-nowrap">${t.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(t.due_date)}</td>
+          <td class="py-2.5 px-4 whitespace-nowrap">${statusBadge(t.status, t.status_type, t.status_color)}${pct}</td>
+        </tr>`;
+      };
+      const head = `<thead><tr class="text-xs text-gray-400 uppercase tracking-wide border-b border-slate-100">
+          <th class="py-2 px-4 text-left font-medium w-2/5">Tarefa</th>
+          <th class="py-2 px-4 text-left font-medium">Província · Módulo</th>
+          <th class="py-2 px-4 text-left font-medium">Início</th>
+          <th class="py-2 px-4 text-left font-medium">Fim</th>
+          <th class="py-2 px-4 text-left font-medium">Status</th>
+        </tr></thead>`;
+      const section = function (label, hint, list, collapsed) {
+        const body = `<div class="overflow-x-auto"><table class="w-full text-sm">${head}
+          <tbody class="divide-y divide-slate-50">${list.map(row).join('')}</tbody></table></div>`;
+        return `<details class="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4" ${collapsed ? '' : 'open'}>
+          <summary class="px-4 py-3 cursor-pointer flex items-baseline gap-2">
+            <span class="text-sm font-semibold text-gray-700">${label}</span>
+            <span class="text-xs font-semibold text-gray-500">${list.length}</span>
+            ${hint ? `<span class="text-xs text-gray-400">· ${hint}</span>` : ''}
+          </summary>${body}</details>`;
+      };
 
-    setView(`
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        ${kpiCard(ICONS.tasks, 'Tarefas', total)}
-        ${kpiCard(ICONS.check, 'Concluídas', completed, fmtPct(rate), 'text-emerald-600')}
-        ${kpiCard(ICONS.sync,  'Em Aberto', total - completed, null, 'text-blue-600')}
-        ${kpiCard(ICONS.clock, 'Em Atraso', overdue, null, overdue > 0 ? 'text-red-600' : '')}
-      </div>
+      const sections = TEAM_BUCKETS.filter(function (b) { return count(b.key) > 0; }).map(function (b) {
+        // janelas distantes e sem data começam fechadas: o foco é o que vem agora
+        return section(b.label, b.hint, groups[b.key], b.key === 'later' || b.key === 'undated');
+      }).join('');
+      const doneSection = done.length ? section('Concluídas', '', done, true) : '';
+      const empty = !scoped.length
+        ? `<div class="bg-white rounded-xl border border-gray-200 py-12 text-center text-gray-400 text-sm">Nenhuma tarefa atribuída</div>` : '';
 
-      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-100">
-          <h2 class="text-sm font-semibold text-gray-700">Tarefas de ${esc(name)}</h2>
-          <p class="text-xs text-gray-400 mt-0.5">Em aberto primeiro, as atrasadas no topo</p>
+      const filter = provinces.length > 1
+        ? `<select id="team-province" class="text-sm bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700">
+            <option value="">Todas as províncias</option>
+            ${provinces.map(function (p) { return `<option value="${esc(p)}" ${p === province ? 'selected' : ''}>${esc(p)}</option>`; }).join('')}
+          </select>` : '';
+
+      setView(`
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <h1 class="text-lg font-semibold text-gray-800 truncate">${esc(name)}</h1>
+          ${filter}
         </div>
-        <div class="overflow-x-auto">
-          <table class="w-full">
-            <thead class="bg-slate-50 border-b border-gray-100">
-              <tr>
-                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Tarefa</th>
-                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Província</th>
-                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Módulo</th>
-                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Vencimento</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-50">${rows}${emptyMsg}</tbody>
-          </table>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          ${kpiCard(ICONS.calendar, 'Próximos 7 dias', count('week'), 'começam ou terminam')}
+          ${kpiCard(ICONS.sync,  'Em Andamento', count('started'), null, 'text-blue-600')}
+          ${kpiCard(ICONS.tasks, 'Em Aberto', open.length, count('undated') ? count('undated') + ' sem data' : null)}
+          ${kpiCard(ICONS.check, 'Concluídas', done.length, scoped.length ? fmtPct(done.length / scoped.length) + ' das tarefas' : null, 'text-emerald-600')}
         </div>
-      </div>
-    `);
+        ${sections}${doneSection}${empty}
+      `);
+      const select = document.getElementById('team-province');
+      if (select) select.addEventListener('change', function () { draw(select.value); });
+    }
+
+    draw('');
   }
+
+  /* ── Linha de base do cronograma ─────────────────────────────────── */
+  window.resetBaseline = async function (listId) {
+    const sure = await U2Dialog.confirm(
+      'Redefinir a linha de base? O cronograma atual passa a ser o plano e o desvio volta a zero.',
+      { okLabel: 'Redefinir' });
+    if (!sure) return;
+    const password = await U2Dialog.prompt('Digite a senha para redefinir a linha de base:', { password: true });
+    if (password === null) return;
+    try {
+      const res = await fetch('/schedule/' + encodeURIComponent(listId) + '/baseline', {
+        method: 'POST', headers: { 'X-Delete-Password': password },
+      });
+      if (res.status === 403) { showToast('Senha incorreta.', 'error'); return; }
+      if (!res.ok) {
+        const detail = await res.json().catch(function () { return {}; });
+        showToast('Não foi possível redefinir: ' + (detail.detail || 'HTTP ' + res.status), 'error');
+        return;
+      }
+      showToast('Linha de base redefinida.', 'success');
+      router();
+    } catch (e) {
+      showToast('Falha ao redefinir a linha de base: ' + e.message, 'error');
+    }
+  };
+
+  /* ── Busca de tarefas (campo na barra do topo) ───────────────────── */
+  (function setupSearch() {
+    const input = document.getElementById('global-search-input');
+    const panel = document.getElementById('global-search-results');
+    if (!input || !panel) return;
+    let timer = null;
+    let seq = 0;
+
+    function close() { panel.classList.add('hidden'); }
+
+    async function run() {
+      const q = input.value.trim();
+      if (q.length < 2) { close(); return; }
+      const mine = ++seq;
+      let found;
+      try {
+        found = await api('/dashboard/search?q=' + encodeURIComponent(q));
+      } catch (e) {
+        found = null;
+      }
+      if (mine !== seq) return;   // chegou uma resposta de uma busca mais antiga
+      if (!found) {
+        panel.innerHTML = '<p class="px-4 py-3 text-sm text-red-500">Erro ao buscar.</p>';
+      } else if (!found.length) {
+        panel.innerHTML = '<p class="px-4 py-3 text-sm text-gray-400">Nenhuma tarefa encontrada.</p>';
+      } else {
+        panel.innerHTML = found.map(function (t) {
+          const where = [t.folder_name, t.list_name, t.parent_name].filter(Boolean).join(' · ');
+          return `<a href="#/task/${esc(t.task_id)}" data-name="${esc(t.name)}"
+                     class="flex items-center justify-between gap-3 px-4 py-2 hover:bg-slate-50">
+            <span class="min-w-0">
+              <span class="block text-sm text-gray-800 font-medium truncate">${esc(t.name)}</span>
+              <span class="block text-xs text-gray-400 truncate">${esc(where)}</span>
+            </span>
+            <span class="shrink-0">${statusBadge(t.status, t.status_type, t.status_color)}</span>
+          </a>`;
+        }).join('');
+      }
+      panel.classList.remove('hidden');
+    }
+
+    input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(run, 250); });
+    input.addEventListener('focus', function () { if (input.value.trim().length >= 2) run(); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { close(); input.blur(); }
+      if (e.key === 'Enter') { const first = panel.querySelector('a'); if (first) first.click(); }
+    });
+    panel.addEventListener('click', function (e) {
+      const link = e.target.closest('a');
+      if (!link) return;
+      window.__taskName = link.getAttribute('data-name');
+      close();
+      input.value = '';
+    });
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('#global-search')) close();
+    });
+    document.addEventListener('keydown', function (e) {
+      // "/" foca a busca, como em tantas outras ferramentas — menos quando já se está a escrever
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ''));
+      if (e.key === '/' && !typing) { e.preventDefault(); input.focus(); }
+    });
+  })();
 
   /* ── VIEW: Task (detalhe + subtasks) ─────────────────────────────── */
   async function renderTask(taskId) {

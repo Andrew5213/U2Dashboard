@@ -72,7 +72,7 @@ src/
 │   ├── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
 │   ├── document_models.py   # ORM: Document (PDF metadata for the Documentações module)
 │   ├── authorization_models.py # ORM: AuthorizationToken (links de decisão de uso único)
-│   └── schedule_models.py   # ORM: ScheduleTaskState (último %/status visto pelo motor)
+│   └── schedule_models.py   # ORM: ScheduleTaskState (último %/status visto pelo motor) + ScheduleBaseline (plano)
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
 │   ├── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
@@ -122,7 +122,7 @@ src/
 │   ├── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
 │   ├── documents.py         # /documents/* — folders (dropdown), list, upload, download, delete PDFs
 │   ├── authorizations.py    # POST /webhooks/autorizacoes + GET/POST /autorizacoes/decidir/{token}
-│   └── schedule.py          # GET /schedule/lists, POST /schedule/{list_id}/recalculate
+│   └── schedule.py          # GET /schedule/lists, POST /schedule/{list_id}/recalculate, POST /schedule/{list_id}/baseline
 └── workers/
     ├── polling_worker.py    # APScheduler: ClickUp → Airbox sync on interval
     ├── cache_worker.py      # APScheduler: refreshes local ClickUp cache on interval
@@ -225,6 +225,25 @@ fazem nada** — o layout com barra lateral é o mesmo de antes (tag `backup/lay
   marcar "redirect". A URL aceita `{uid}`, `{email}`, `{displayname}`, `{groups}`, `{language}`, `{locale}` e
   `{jwt}` — a app ainda não lê nenhum (não há login); é o caminho para uma futura página "Minhas tarefas".
   O template mobile continua sendo escolhido pelo user-agent, também dentro do iframe.
+
+**Números da visão geral — o que cada um mede**: "Concluídas" conta tarefas-folha (773 de 2349 =
+32,9%); "Progresso Geral" é a **média ponderada das províncias** (cada província vale igual), por isso
+os dois percentuais diferem e cada cartão diz qual é o seu. Na rosca de status todos os status entram
+(o "planejando" já veio oculto por padrão e a rosca parecia toda concluída), e nas barras de progresso
+em percentual só a parte concluída leva rótulo (o "100%" da parte em aberto lia-se como 100% feito).
+
+**Equipes e responsáveis**: os cartões da visão geral (até 6, ordenados por carga nos próximos 7 dias)
+e a tela `#/assignee/<nome>` respondem "o que esta equipe tem para fazer agora". `get_assignee_task_stats`
+devolve também `in_progress` (aberta e já iniciada — `_is_started`: status de andamento ou % entre 1 e
+99) e `next_7_days` (começa ou termina até lá); `get_tasks_by_assignee` devolve `start_date`,
+`parent_name` e `is_started`. A tela agrupa as tarefas abertas em janelas (vencidas, em andamento,
+próximos 7 dias, 8–30, mais adiante, sem data), com filtro por província; as janelas distantes e as
+concluídas começam recolhidas.
+
+**Busca** (`GET /dashboard/search?q=`, campo na barra do topo do dashboard desktop, atalho `/`):
+todas as palavras têm de aparecer no nome, sem diferenciar caixa nem acento. O filtro é em Python
+(`_search_key`) porque o `LIKE` do SQLite só ignora caixa em ASCII. O mobile ainda não tem busca nem
+a tela por equipe.
 
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
@@ -557,7 +576,26 @@ início sai com as colunas de data em branco. As listas comuns continuam com o l
   do status (`fazendo 40%`).
 
 Como o motor reprograma, **uma tarefa de cronograma quase nunca aparece "em atraso"**: o atraso
-aparece como a data de fim do projeto a andar. Não há linha de base guardada para comparar.
+aparece como a data de fim do projeto a andar. Quem mede isso é a linha de base.
+
+**Linha de base** (tabela `schedule_baseline`: início e término planeados por tarefa). É gravada
+sozinha no **primeiro cálculo real** de uma lista — o plano puro (`compute_schedule(reschedule=False)`
+sobre as tarefas sem %, início nem conclusão), não o andamento — e depois não muda. Um `dry_run` não
+grava. `POST /schedule/{list_id}/baseline` (senha `X-Delete-Password`) **redefine**: adota o cronograma
+atual (com a reprogramação) como o novo plano, sem escrever nada no ClickUp; na dashboard é o botão
+"Redefinir linha de base" da lista. Vive no SQLite da app, não no ClickUp — apagar o `sync.db` perde o
+plano e o próximo cálculo grava um novo a partir do estado daquele momento.
+- **Desvio** = término atual − término da linha de base, em dias corridos (positivo = atrasada).
+  `CacheRepository.get_schedule_deviation` compara o maior prazo das tarefas de cronograma em cache com
+  o maior término da linha de base; entra em `get_lists_with_metrics`, `get_list_kpis` e
+  `get_folders_with_metrics` (a província fica com o pior desvio das suas listas) como
+  `schedule_finish` / `baseline_finish` / `delay_days` — chaves **ausentes** quando não há linha de base.
+- Cada tarefa leva `baseline_due` / `delay_days` (`TaskSummary`); tarefa criada depois da linha de base
+  não tem desvio até alguém redefinir.
+- **Na tela**: o selo da província (`healthStatus` em `app.js`, `healthColor` no mobile) é o desvio
+  ("Atrasada 6 d", "Adiantada 2 d", "No prazo"); sem linha de base só descreve o andamento ("Não
+  iniciada", "Em andamento", "Concluída") — o antigo "Atenção" para toda província a 0% saiu. O cartão
+  "Províncias em Atraso" da visão geral e a coluna "Desvio" da lista vêm do mesmo número.
 
 **Importar uma província:** `python scripts/import_schedule.py civil.xlsx logistica.xlsx tecnica.xlsx
 --list-id <id> --replace "Site FM" --holidays-list-id <id> --recalculate --yes` (sem `--yes` é ensaio).
@@ -623,6 +661,7 @@ Tables:
 
 **Schedule table** (in `schedule_models.py`, imported in `main.py`):
 - `schedule_task_state` — último (%, concluída?) que o motor viu por tarefa; decide quem vence quando % e status discordam
+- `schedule_baseline` — linha de base: início e término planeados por tarefa (ver "Linha de base")
 
 **Document table** (in `document_models.py`, imported in `main.py`):
 - `document` — one row per uploaded PDF; `folder_id`/`folder_name` denormalized from `clickup_folder_cache` at upload time; `stored_filename` is a random UUID, `original_filename` is restored on download

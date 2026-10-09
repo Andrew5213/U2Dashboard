@@ -10,6 +10,7 @@ from src.services.schedule_engine import useful_duration
 from src.services.schedule_fields import (
     FIELD_CALENDAR, FIELD_DURATION, FIELD_PERCENT, find_field, read_calendar, read_number, read_percent,
 )
+from src.models.schedule_models import ScheduleBaseline
 from src.models.cache_models import (
     ClickUpSpaceCache, ClickUpFolderCache, ClickUpListCache,
     ClickUpTaskCache, ClickUpUserCache, CacheRefreshLog, DisciplineWeight,
@@ -196,9 +197,108 @@ def _build_schedule_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
     return tree
 
 
+def _search_key(text: str | None) -> str:
+    """Minúsculas e sem acento, para a busca achar "fundacao" em "Fundação"."""
+    nfkd = unicodedata.normalize("NFKD", text or "")
+    return "".join(ch for ch in nfkd if not unicodedata.combining(ch)).lower()
+
+
+def _is_started(task: ClickUpTaskCache) -> bool:
+    """Tarefa aberta que já começou: status de andamento ou % entre 1 e 99."""
+    if task.status_type in ("done", "closed"):
+        return False
+    if task.progress_pct is not None and 0 < task.progress_pct < 100:
+        return True
+    return _norm_status(task.status) in _REPORTABLE_ACTIVE_STATUSES
+
+
 class CacheRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
+
+    # ── Cronograma × linha de base ────────────────────────────────────────────
+
+    async def get_schedule_deviation(self, list_ids: list[str]) -> dict[str, dict]:
+        """{list_id: {schedule_finish, baseline_finish, delay_days}} para as listas que
+        têm linha de base. O término atual é o maior prazo das tarefas de cronograma
+        em cache; o atraso é a diferença em dias corridos (positivo = atrasada)."""
+        if not list_ids:
+            return {}
+        baselines = dict((await self._db.execute(
+            select(ScheduleBaseline.list_id, func.max(ScheduleBaseline.finish))
+            .where(ScheduleBaseline.list_id.in_(list_ids))
+            .group_by(ScheduleBaseline.list_id)
+        )).all())
+        if not baselines:
+            return {}
+        finishes = dict((await self._db.execute(
+            select(ClickUpTaskCache.list_id, func.max(ClickUpTaskCache.due_date))
+            .where(and_(
+                ClickUpTaskCache.list_id.in_(list(baselines)),
+                ClickUpTaskCache.progress_pct.isnot(None),
+            ))
+            .group_by(ClickUpTaskCache.list_id)
+        )).all())
+        out: dict[str, dict] = {}
+        for list_id, baseline_finish in baselines.items():
+            finish = finishes.get(list_id)
+            if not baseline_finish or not finish:
+                continue
+            out[list_id] = {
+                "schedule_finish": finish.date(),
+                "baseline_finish": baseline_finish,
+                "delay_days": (finish.date() - baseline_finish).days,
+            }
+        return out
+
+    async def get_baseline_by_task(self, list_id: str) -> dict[str, ScheduleBaseline]:
+        rows = (await self._db.execute(
+            select(ScheduleBaseline).where(ScheduleBaseline.list_id == list_id)
+        )).scalars().all()
+        return {row.task_id: row for row in rows}
+
+    async def search_tasks(self, space_id: str, query: str, limit: int = 30) -> list[dict]:
+        """Tarefas cujo nome contém todas as palavras da busca, sem diferenciar
+        maiúsculas nem acentos. O filtro é em Python: o LIKE do SQLite só ignora
+        caixa em ASCII e não conhece acento."""
+        words = _search_key(query).split()
+        if not words:
+            return []
+        rows = (await self._db.execute(
+            select(
+                ClickUpTaskCache,
+                ClickUpListCache.name.label("list_name"),
+                ClickUpFolderCache.name.label("folder_name"),
+                _ParentTask.name.label("parent_name"),
+            )
+            .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+            .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .outerjoin(_ParentTask, ClickUpTaskCache.parent_task_id == _ParentTask.task_id)
+            .where(ClickUpListCache.space_id == space_id)
+            .order_by(ClickUpFolderCache.name, ClickUpListCache.name, ClickUpTaskCache.date_created)
+        )).all()
+        found: list[dict] = []
+        for task, list_name, folder_name, parent_name in rows:
+            key = _search_key(task.name)
+            if not all(word in key for word in words):
+                continue
+            found.append({
+                "task_id": task.task_id,
+                "name": task.name,
+                "parent_name": parent_name,
+                "list_id": task.list_id,
+                "list_name": list_name,
+                "folder_name": folder_name or "—",
+                "status": task.status,
+                "status_type": task.status_type,
+                "status_color": task.status_color,
+                "due_date": task.due_date,
+                "progress_pct": task.progress_pct,
+            })
+        # nome que começa pela busca vem antes; depois os mais curtos (mais específicos)
+        first = words[0]
+        found.sort(key=lambda t: (not _search_key(t["name"]).startswith(first), len(t["name"] or "")))
+        return found[:limit]
 
     # ─── Upserts ─────────────────────────────────────────────────────────────
 
@@ -528,6 +628,17 @@ class CacheRepository:
             .order_by(ClickUpFolderCache.name)
         )).fetchall()
         folder_rates = await self._weighted_completion_by_folder(space_id)
+        list_rows = (await self._db.execute(
+            select(ClickUpListCache.list_id, ClickUpListCache.folder_id)
+            .where(ClickUpListCache.space_id == space_id)
+        )).all()
+        deviation = await self.get_schedule_deviation([row.list_id for row in list_rows])
+        # a província fica com o pior desvio entre as suas listas de cronograma
+        by_folder: dict[str, dict] = {}
+        for row in list_rows:
+            dev = deviation.get(row.list_id)
+            if dev and (row.folder_id not in by_folder or dev["delay_days"] > by_folder[row.folder_id]["delay_days"]):
+                by_folder[row.folder_id] = dev
         return [
             {
                 "folder_id": r.folder_id,
@@ -537,6 +648,7 @@ class CacheRepository:
                 "completed_tasks": r.completed or 0,
                 "overdue_tasks": r.overdue or 0,
                 "completion_rate": round(folder_rates.get(r.folder_id, 0.0), 4),
+                **by_folder.get(r.folder_id, {}),
             }
             for r in rows
         ]
@@ -577,6 +689,7 @@ class CacheRepository:
             .order_by(ClickUpListCache.name)
         )).fetchall()
         weighted_rates = await self._weighted_completion_by_list([r.list_id for r in rows])
+        deviation = await self.get_schedule_deviation([r.list_id for r in rows])
         return [
             {
                 "list_id": r.list_id,
@@ -586,6 +699,7 @@ class CacheRepository:
                 "completed_tasks": r.completed or 0,
                 "overdue_tasks": r.overdue or 0,
                 "completion_rate": round(weighted_rates.get(r.list_id, 0.0), 4),
+                **deviation.get(r.list_id, {}),
             }
             for r in rows
         ]
@@ -657,6 +771,7 @@ class CacheRepository:
         )).one()
 
         rates = await self._weighted_completion_by_list([list_id])
+        deviation = await self.get_schedule_deviation([list_id])
         return {
             "list_id": list_row.list_id,
             "name": list_row.name,
@@ -665,6 +780,7 @@ class CacheRepository:
             "completed_tasks": row.completed or 0,
             "overdue_tasks": row.overdue or 0,
             "completion_rate": round(rates.get(list_id, 0.0), 4),
+            **deviation.get(list_id, {}),
         }
 
     async def get_tasks_by_list(self, list_id: str, include_subtasks: bool = False) -> list[ClickUpTaskCache]:
@@ -735,8 +851,12 @@ class CacheRepository:
         tasks = list((await self._db.execute(stmt)).scalars().all())
 
         from collections import defaultdict
+        from datetime import timedelta
         now = datetime.utcnow()
-        stats: dict = defaultdict(lambda: {"open": 0, "completed": 0, "overdue": 0})
+        week = now + timedelta(days=7)
+        stats: dict = defaultdict(
+            lambda: {"open": 0, "completed": 0, "overdue": 0, "in_progress": 0, "next_7_days": 0}
+        )
         for task in tasks:
             try:
                 assignees = json.loads(task.assignees_json or "[]")
@@ -745,6 +865,10 @@ class CacheRepository:
             names = [a.get("username") for a in assignees if a.get("username")]
             is_done = task.status_type in ("done", "closed")
             is_overdue = task.due_date is not None and task.due_date < now and not is_done
+            started = _is_started(task)
+            soon = not is_done and any(
+                moment is not None and now <= moment <= week for moment in (task.start_date, task.due_date)
+            )
             for name in names:
                 if not name:
                     continue
@@ -754,9 +878,13 @@ class CacheRepository:
                     stats[name]["open"] += 1
                 if is_overdue:
                     stats[name]["overdue"] += 1
+                if started:
+                    stats[name]["in_progress"] += 1
+                if soon:
+                    stats[name]["next_7_days"] += 1
 
         return [
-            {"assignee": k, "open": v["open"], "completed": v["completed"], "overdue": v["overdue"]}
+            {"assignee": k, **v}
             for k, v in sorted(stats.items(), key=lambda x: -(x[1]["open"] + x[1]["completed"]))
         ]
 
@@ -781,9 +909,11 @@ class CacheRepository:
                 ClickUpTaskCache,
                 ClickUpListCache.name.label("list_name"),
                 ClickUpFolderCache.name.label("folder_name"),
+                _ParentTask.name.label("parent_name"),
             )
             .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
             .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .outerjoin(_ParentTask, ClickUpTaskCache.parent_task_id == _ParentTask.task_id)
             .where(and_(
                 ClickUpListCache.space_id == space_id,
                 _leaf_tasks_clause(),
@@ -793,7 +923,7 @@ class CacheRepository:
 
         now = datetime.utcnow()
         out: list[dict] = []
-        for task, list_name, folder_name in rows:
+        for task, list_name, folder_name, parent_name in rows:
             try:
                 assignees = json.loads(task.assignees_json or "[]")
             except (json.JSONDecodeError, TypeError):
@@ -810,11 +940,15 @@ class CacheRepository:
                 "status_type": task.status_type,
                 "status_color": task.status_color,
                 "assignees": names,
+                "start_date": task.start_date,
                 "due_date": task.due_date,
                 "is_overdue": (
                     task.due_date is not None and task.due_date < now and not is_done
                 ),
                 "is_done": is_done,
+                "is_started": _is_started(task),
+                "parent_name": parent_name,
+                "duration_days": task.duration_days,
                 "progress_pct": task.progress_pct,
                 "list_id": task.list_id,
                 "list_name": list_name,

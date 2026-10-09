@@ -14,7 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css?v=34" />
   <link rel="stylesheet" href="/static/theme-dark.css?v=34" />
-  <link rel="stylesheet" href="/static/embed.css?v=1" />
+  <link rel="stylesheet" href="/static/embed.css?v=2" />
   <script src="/static/embed.js?v=1"></script>
   <style>
     /* Submenu de províncias */
@@ -65,13 +65,6 @@
       </a>
       {% endif %}
 
-      <a href="https://centraldoconhecimento.up.railway.app" target="_blank" rel="noopener noreferrer"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors text-sm font-medium">
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-        </svg>
-        Central de Conhecimento
-      </a>
 
       <!-- Divisor + Obra Civil -->
       <div class="pt-3 pb-1">
@@ -210,7 +203,16 @@
 
     <!-- Topbar -->
     <header class="bg-white border-b border-gray-200 flex-shrink-0 h-14 flex items-center px-6 shadow-sm">
-      <nav id="breadcrumb" class="text-sm text-gray-500"></nav>
+      <nav id="breadcrumb" class="text-sm text-gray-500 truncate"></nav>
+      <div id="global-search" class="relative ml-auto w-72 max-w-[40%] shrink-0">
+        <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+        </svg>
+        <input id="global-search-input" type="search" autocomplete="off" placeholder="Buscar tarefa…  ( / )"
+          class="w-full bg-slate-50 border border-gray-200 rounded-lg pl-9 pr-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-red-400" />
+        <div id="global-search-results"
+          class="hidden absolute right-0 top-full mt-1 w-[28rem] max-w-[90vw] max-h-96 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg z-40 divide-y divide-slate-50"></div>
+      </div>
     </header>
 
     <!-- Conteúdo principal -->
@@ -235,8 +237,8 @@
   <div id="toast" class="fixed bottom-5 right-5 z-50 hidden max-w-sm"></div>
 
   <script src="/static/sse.js?v=34"></script>
-  <script src="/static/charts.js?v=34"></script>
-  <script src="/static/app.js?v=35"></script>
+  <script src="/static/charts.js?v=35"></script>
+  <script src="/static/app.js?v=36"></script>
   <script>
     function _exportWithSpinner(btnId, url) {
       const btn = document.getElementById(btnId);

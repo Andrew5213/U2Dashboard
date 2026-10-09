@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/theme-dark.css?v=34" />
-  <link rel="stylesheet" href="/static/embed.css?v=1" />
+  <link rel="stylesheet" href="/static/embed.css?v=2" />
   <script src="/static/embed.js?v=1"></script>
   <link rel="stylesheet" href="/static/mobile.css?v=35" />
 </head>
@@ -162,14 +162,6 @@
         <div>Documentações</div>
       </a>
 
-      <a href="https://centraldoconhecimento.up.railway.app" target="_blank" rel="noopener noreferrer" class="mob-drawer-item">
-        <span class="mob-drawer-item-icon" style="background:rgba(96,165,250,.18)">
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="1.75">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-          </svg>
-        </span>
-        <div>Central de Conhecimento</div>
-      </a>
 
       <button class="mob-drawer-item" onclick="closeMenu(); openDrawer();">
         <span class="mob-drawer-item-icon" style="background:rgba(52,211,153,.18)">
@@ -194,7 +186,7 @@
 
   <!-- ══ SCRIPTS ════════════════════════════════════════════════ -->
   <script src="/static/sse.js?v=34"></script>
-  <script src="/static/charts.js?v=34"></script>
+  <script src="/static/charts.js?v=35"></script>
 
   <script>
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -220,10 +212,23 @@
     // Duas casas — só nos KPIs do overview, igual ao desktop (fmtPctPrecise em app.js).
     function fmtPctPrecise(r) { return ((r||0)*100).toFixed(2)+'%'; }
 
-    function healthColor(rate, overdue) {
-      if (overdue > 0)  return { border:'#f87171', badge:'rgba(232,38,42,.14)', badgeTxt:'#dc2626', dot:'#ef4444', label:'Em risco' };
-      if (rate < 0.1)   return { border:'#fbbf24', badge:'rgba(251,191,36,.14)', badgeTxt:'var(--u2-amber)', dot:'var(--u2-amber)', label:'Atenção' };
-      return               { border:'#4ade80', badge:'rgba(52,211,153,.14)', badgeTxt:'var(--u2-green)', dot:'var(--u2-green)', label:'No prazo' };
+    // Mesma regra do desktop (healthStatus em app.js): com linha de base o selo é o
+    // desvio do cronograma em dias; sem ela, só descreve o andamento.
+    function healthColor(rate, overdue, delay) {
+      const red   = { border:'#f87171', badge:'rgba(232,38,42,.14)', badgeTxt:'#dc2626', dot:'#ef4444' };
+      const amber = { border:'#fbbf24', badge:'rgba(251,191,36,.14)', badgeTxt:'var(--u2-amber)', dot:'var(--u2-amber)' };
+      const green = { border:'#4ade80', badge:'rgba(52,211,153,.14)', badgeTxt:'var(--u2-green)', dot:'var(--u2-green)' };
+      const gray  = { border:'var(--u2-line)', badge:'var(--u2-panel-2)', badgeTxt:'var(--u2-gray)', dot:'var(--u2-gray)' };
+      const tone = (base, label) => Object.assign({ label }, base);
+      if (delay !== null && delay !== undefined) {
+        if (delay > 0) return tone(red, 'Atrasada ' + delay + ' d');
+        if (delay < 0) return tone(green, 'Adiantada ' + (-delay) + ' d');
+        return tone(green, 'No prazo');
+      }
+      if (overdue > 0) return tone(red, 'Tarefas vencidas');
+      if ((rate || 0) >= 0.995) return tone(green, 'Concluída');
+      if ((rate || 0) > 0) return tone(amber, 'Em andamento');
+      return tone(gray, 'Não iniciada');
     }
 
     function progressFill(rate) {
@@ -320,7 +325,7 @@
       const overdueClr = overview.overdue_tasks>0?'#dc2626':'var(--u2-white)';
 
       const foldersHTML = folders.map(f=>{
-        const h = healthColor(f.completion_rate, f.overdue_tasks);
+        const h = healthColor(f.completion_rate, f.overdue_tasks, f.delay_days);
         return `<div class="mob-card" style="border-left-color:${h.border}"
           onclick="location.hash='#/folder/${esc(f.folder_id)}';window.__folderName=${jsStr(f.name)}">
           <div class="mob-card-header">
@@ -358,10 +363,10 @@
       setView(`
         <!-- KPIs -->
         <div class="mob-kpi-grid">
-          ${kpiCard('Total de Tasks', overview.total_tasks, null, 'var(--u2-white)')}
-          ${kpiCard('Concluídas', overview.completed_tasks, pct+' do total', 'var(--u2-green)')}
-          ${kpiCard('Progresso', pct, overview.completed_tasks+' de '+overview.total_tasks, '#dc2626')}
-          ${kpiCard('Em Atraso', overview.overdue_tasks, 'tasks vencidas', overdueClr)}
+          ${kpiCard('Total de Tarefas', overview.total_tasks, null, 'var(--u2-white)')}
+          ${kpiCard('Concluídas', overview.completed_tasks, (overview.total_tasks ? (overview.completed_tasks/overview.total_tasks*100).toFixed(1).replace('.', ',') : '0')+'% das tarefas', 'var(--u2-green)')}
+          ${kpiCard('Progresso', pct, 'média ponderada das províncias', '#dc2626')}
+          ${kpiCard('Em Atraso', overview.overdue_tasks, 'tarefas vencidas', overdueClr)}
         </div>
 
         <!-- Gráfico progresso por província -->
