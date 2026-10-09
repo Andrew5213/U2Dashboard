@@ -364,6 +364,12 @@ def test_today_follows_the_site_timezone(monkeypatch):
     assert schedule_service.local_today() == date(2026, 10, 8)
 
 
+def test_zero_timestamp_means_no_date():
+    # limpar a data de início de uma lista pela API deixa 0, não null
+    assert ms_to_date(0) is None and ms_to_date("0") is None and ms_to_date(None) is None
+    assert ms_to_date(date_to_ms(date(2026, 10, 13))) == date(2026, 10, 13)
+
+
 def test_status_names_picks_the_three_automatic_statuses():
     names = status_names(STATUSES)
     assert (names.open, names.in_progress, names.done) == ("planejando", "fazendo", "complete")

@@ -15,7 +15,9 @@ Exemplos:
 """
 import argparse
 import asyncio
+import dataclasses
 import re
+from datetime import datetime
 import sys
 from pathlib import Path
 
@@ -28,6 +30,7 @@ from src.services.clickup_client import ClickUpClient  # noqa: E402
 from src.services.schedule_engine import reconcile_leaf  # noqa: E402
 from src.services.schedule_fields import (  # noqa: E402
     FIELD_CALENDAR,
+    FIELD_COMPLETION,
     FIELD_DEFS,
     FIELD_DURATION,
     FIELD_PERCENT,
@@ -71,7 +74,8 @@ def _team_key(name: str) -> str:
 def describe(schedule: XlsxSchedule) -> None:
     leaves = [t for t in schedule.tasks if not t.is_summary]
     print(f"Província: {schedule.province} | Projeto: {schedule.project}")
-    print(f"Início: {schedule.start:%d/%m/%Y} | Folga (Seg→Dom): {schedule.weekend_mask} | Feriados: {len(schedule.holidays)}")
+    start = schedule.start.strftime("%d/%m/%Y") if schedule.start else "em branco"
+    print(f"Início: {start} | Folga (Seg→Dom): {schedule.weekend_mask} | Feriados: {len(schedule.holidays)}")
     print(f"Linhas: {len(schedule.tasks)} ({len(schedule.tasks) - len(leaves)} resumos, {len(leaves)} tarefas)")
     print(f"Dependências: {sum(len(t.predecessors) for t in schedule.tasks)}")
     print(f"Equipes: {sorted({r for t in schedule.tasks for r in t.resources})}")
@@ -91,7 +95,7 @@ async def ensure_fields(clickup: ClickUpClient, list_id: str) -> list[dict]:
 
 async def configure_list(clickup: ClickUpClient, lst: dict, schedule: XlsxSchedule) -> None:
     payload: dict = {}
-    if ms_to_date(lst.get("start_date")) != schedule.start:
+    if schedule.start and ms_to_date(lst.get("start_date")) != schedule.start:
         payload.update({"start_date": date_to_ms(schedule.start), "start_date_time": False})
     content = lst.get("content") or ""
     if parse_weekend_mask(content, "") != schedule.weekend_mask:
@@ -99,7 +103,46 @@ async def configure_list(clickup: ClickUpClient, lst: dict, schedule: XlsxSchedu
         payload["content"] = (content + "\n" if content else "") + f"folga={days}"
     if payload:
         await call(lambda: clickup.update_list(lst["id"], payload))
-        print(f"  lista configurada: início {schedule.start:%d/%m/%Y}, folga {schedule.weekend_mask}")
+        start = f"{schedule.start:%d/%m/%Y}" if schedule.start else "em branco"
+        print(f"  lista configurada: início {start}, folga {schedule.weekend_mask}")
+
+
+async def ensure_views(clickup: ClickUpClient, list_id: str, fields: list[dict]) -> list[str]:
+    """Cria as vistas "Cronograma" (lista com as colunas do cronograma, subtarefas
+    abertas) e "Gantt". Os campos criados pela API não entram sozinhos em nenhuma
+    vista — sem isto a lista parece vazia."""
+    existing = await call(lambda: clickup._get(f"/list/{list_id}/view"))
+    names = {view["name"] for view in existing.get("views", [])}
+    custom = [
+        find_field(fields, FIELD_DURATION, "number"),
+        find_field(fields, FIELD_PERCENT, "manual_progress"),
+        find_field(fields, FIELD_CALENDAR, "drop_down"),
+    ]
+    completion = find_field(fields, FIELD_COMPLETION, "date")
+    columns = (
+        ["assignee", "startDate", "dueDate"]
+        + [f"cf_{f['id']}" for f in custom if f]
+        + ["dependencies"]
+        + ([f"cf_{completion['id']}"] if completion else [])
+    )
+    base = {
+        "grouping": {"field": "none", "dir": 1, "collapsed": [], "ignore": False},
+        "divide": {"field": None, "dir": None, "collapsed": []},
+        "sorting": {"fields": []},
+        "filters": {"op": "AND", "fields": [], "search": "", "show_closed": True},
+        "settings": {"show_subtasks": 2, "show_closed_subtasks": True, "show_assignees": True},
+    }
+    created = []
+    if "Cronograma" not in names:
+        view = {**base, "name": "Cronograma", "type": "list", "columns": {"fields": [
+            {"field": field, "idx": index, "width": 160, "hidden": False} for index, field in enumerate(columns)
+        ]}}
+        await call(lambda: clickup._post(f"/list/{list_id}/view", view), idempotent=False)
+        created.append("Cronograma")
+    if "Gantt" not in names:
+        await call(lambda: clickup._post(f"/list/{list_id}/view", {**base, "name": "Gantt", "type": "gantt"}), idempotent=False)
+        created.append("Gantt")
+    return created
 
 
 async def delete_existing(clickup: ClickUpClient, list_id: str) -> int:
@@ -186,6 +229,16 @@ async def ensure_holidays(clickup: ClickUpClient, list_id: str, schedule: XlsxSc
 
 async def main(args: argparse.Namespace) -> int:
     schedule = load_schedule(args.files)
+    if args.zero:
+        # mesma estrutura, sem andamento: modelo para uma província que ainda não começou
+        schedule = dataclasses.replace(
+            schedule, tasks=tuple(dataclasses.replace(task, percent=0.0) for task in schedule.tasks)
+        )
+    if args.no_start_date:
+        # província sem data definida: o motor não calcula nada até a lista ganhar início
+        schedule = dataclasses.replace(schedule, start=None)
+    if args.start_date:
+        schedule = dataclasses.replace(schedule, start=datetime.strptime(args.start_date, "%d/%m/%Y").date())
     describe(schedule)
     if not args.yes:
         print("\nENSAIO: nada foi escrito no ClickUp. Rode com --yes para executar.")
@@ -217,11 +270,16 @@ async def main(args: argparse.Namespace) -> int:
         created = await create_tasks(clickup, lst, fields, schedule)
         print(f"  {len(created)} tarefas criadas")
         print(f"  {await create_dependencies(clickup, schedule, created)} dependências criadas")
+        views = await ensure_views(clickup, list_id, fields)
+        if views:
+            print(f"  vistas criadas: {', '.join(views)}")
 
         if args.holidays_list_id:
             print(f"  {await ensure_holidays(clickup, args.holidays_list_id, schedule)} feriados adicionados")
 
-        if args.recalculate:
+        if args.recalculate and not schedule.start:
+            print("  sem data de início: o motor não foi executado e as tarefas ficam sem datas")
+        elif args.recalculate:
             await init_db()
             async with AsyncSessionLocal() as db:
                 summary = await ScheduleService(db, clickup).recalculate(list_id)
@@ -244,6 +302,10 @@ if __name__ == "__main__":
     parser.add_argument("--list-name", default="Site FM", help="nome da lista nova (com --folder-id)")
     parser.add_argument("--replace", metavar="NOME_DA_LISTA",
                         help="apaga as tarefas que já existem na lista; exige o nome exato dela como confirmação")
+    parser.add_argument("--zero", action="store_true", help="importa a estrutura com todo o progresso em 0%%")
+    parser.add_argument("--no-start-date", action="store_true",
+                        help="não define a data de início da lista; as tarefas ficam sem datas até ela ser preenchida")
+    parser.add_argument("--start-date", metavar="DD/MM/AAAA", help="data de início do projeto (padrão: a da planilha)")
     parser.add_argument("--holidays-list-id", help="lista de feriados a completar com os da planilha")
     parser.add_argument("--recalculate", action="store_true", help="roda o motor ao final para gravar as datas")
     parser.add_argument("--yes", action="store_true", help="executa de verdade")

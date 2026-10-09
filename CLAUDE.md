@@ -521,6 +521,23 @@ aparece como a data de fim do projeto a andar. Não há linha de base guardada p
 --list-id <id> --replace "Site FM" --holidays-list-id <id> --recalculate --yes` (sem `--yes` é ensaio).
 `--replace` apaga todas as tarefas da lista antes e exige o nome exato dela como confirmação.
 
+Cada província tem a sua planilha e elas diferem ("Torre existentes" = 62 linhas; "Torres Novas" = 71,
+com fundação e montagem de torre) — importar sempre a da própria província. O importador também:
+- cria as vistas "Cronograma" e "Gantt" (campos criados pela API não entram sozinhos em nenhuma vista,
+  e sem elas a lista parece vazia) e manda `null` para os outros dropdowns da lista, senão o ClickUp
+  preenche cada um com a primeira opção (foi assim que "Disciplinas" virou "CIVIL" em tudo);
+- `--zero` importa com todo o progresso em 0%; `--start-date` / `--no-start-date` sobrepõem a data da planilha.
+
+**Sem data de início, sem datas.** Planilha sem data de início → a lista fica sem `start_date`, o motor
+recusa calcular ("lista sem data de início") e as tarefas ficam sem datas até alguém preencher o início
+da lista no ClickUp. A API não aceita `null` para limpar o `start_date` de uma lista; aceita `0`, que
+`ms_to_date` trata como ausente (não como 01/01/1970).
+
+**Marco externo sem origem vira tarefa.** Um marco da coluna J que nenhum ficheiro fornece mas está
+declarado na aba Parâmetros (ex.: Saurimo, `EXT-01` "Torre entregue no site") é criado por
+`schedule_xlsx.py` como tarefa própria, logo antes de quem depende dela, sem duração nem equipe —
+preenche-se a duração no ClickUp com o prazo de entrega.
+
 ## Agreement ↔ List Matching
 
 Lists and agreements are matched **by name** (case-insensitive). If names don't match:

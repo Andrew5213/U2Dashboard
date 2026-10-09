@@ -16,6 +16,7 @@ from src.services.schedule_engine import CAL_CORRIDO, CAL_UTIL
 
 _FIRST_HOLIDAY_ROW, _LAST_HOLIDAY_ROW = 28, 57
 _FIRST_MILESTONE_ROW = 21
+_FIRST_EXTERNAL_ROW, _LAST_EXTERNAL_ROW = 16, 25
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,7 @@ class XlsxTask:
     level: int                  # 1 = disciplina, 2 = grupo, 3 = tarefa
     parent_key: str | None
     is_summary: bool
-    duration: float
+    duration: float | None      # None = ainda não se sabe (fica em branco no ClickUp)
     calendar: str
     percent: float              # 0..100
     predecessors: tuple[str, ...]
@@ -85,6 +86,12 @@ def load_schedule(paths: list[str]) -> XlsxSchedule:
             if day:
                 holidays[day] = str(params.cell(row, 2).value or "").strip()
 
+        # Marcos que esta disciplina recebe de fora (aba Parâmetros): código → descrição
+        declared = {
+            str(params.cell(row, 1).value).strip(): str(params.cell(row, 2).value or "").strip()
+            for row in range(_FIRST_EXTERNAL_ROW, _LAST_EXTERNAL_ROW + 1) if params.cell(row, 1).value
+        }
+
         sheet = book["Cronograma"]
         for row in range(2, sheet.max_row + 1):
             row_id = sheet.cell(row, 1).value
@@ -93,16 +100,29 @@ def load_schedule(paths: list[str]) -> XlsxSchedule:
             cell = lambda column: sheet[f"{column}{row}"].value  # noqa: E731
             is_summary = str(cell("C")).strip() == "Resumo"
             predecessors = [f"{discipline}:{int(p)}" for p in _split(cell("I"), ";")]
+            parent = cell("E")
+            parent_key = f"{discipline}:{int(parent)}" if parent else None
             for code in _split(cell("J"), ";"):
                 if code not in milestones:
-                    raise ValueError(f"{discipline} linha {row}: marco {code} não é fornecido por nenhum ficheiro")
+                    if code not in declared:
+                        raise ValueError(f"{discipline} linha {row}: marco {code} não é fornecido por nenhum ficheiro")
+                    # Marco de fora do projeto (ex.: "Torre entregue no site", do fornecedor):
+                    # vira uma tarefa própria logo antes de quem depende dela, sem duração —
+                    # o prazo de entrega não se sabe; preenche-se no ClickUp.
+                    milestones[code] = f"{discipline}:{code}"
+                    tasks.append(XlsxTask(
+                        key=milestones[code], name=declared[code].split(" (")[0] or code,
+                        level=int(cell("D")), parent_key=parent_key, is_summary=False,
+                        duration=None, calendar=CAL_UTIL, percent=0.0, predecessors=(), resources=(),
+                        expected_start=None, expected_finish=None,
+                        expected_pos_start=None, expected_pos_finish=None,
+                    ))
                 predecessors.append(milestones[code])
-            parent = cell("E")
             tasks.append(XlsxTask(
                 key=f"{discipline}:{int(row_id)}",
                 name=str(cell("B")).strip(),
                 level=int(cell("D")),
-                parent_key=f"{discipline}:{int(parent)}" if parent else None,
+                parent_key=parent_key,
                 is_summary=is_summary,
                 duration=0.0 if is_summary else float(cell("F") or 0),
                 calendar=CAL_CORRIDO if str(cell("L") or "").strip() == "Corrido" else CAL_UTIL,

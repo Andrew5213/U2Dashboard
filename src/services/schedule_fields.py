@@ -95,6 +95,10 @@ def ms_to_date(ms: str | int | None) -> date | None:
     if ms in (None, ""):
         return None
     try:
+        if int(ms) <= 0:
+            # a API do ClickUp não aceita null para limpar a data de início de uma
+            # lista; o que ela aceita é 0, que significa "sem data" e não 01/01/1970
+            return None
         return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).date()
     except (ValueError, OverflowError, OSError):
         return None
