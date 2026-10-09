@@ -738,6 +738,73 @@ class CacheRepository:
             for k, v in sorted(stats.items(), key=lambda x: -(x[1]["open"] + x[1]["completed"]))
         ]
 
+    async def get_tasks_by_assignee(self, space_id: str, assignee: str) -> list[dict]:
+        """Tarefas-folha atribuídas a uma pessoa, com o nome da província e do módulo.
+
+        Mesma unidade de medida do gráfico de produtividade (`get_assignee_task_stats`):
+        tarefas-folha, para que a contagem da barra bata com o tamanho desta lista.
+
+        Os responsáveis vivem num JSON de texto e o filtro é feito em Python, como
+        em `get_assignee_task_stats`. Um pré-filtro `LIKE` no SQL seria mais barato
+        mas está errado duas vezes: `json.dumps` escapa acentos ("João" fica
+        "Jo\u00e3o" na coluna, e o LIKE pelo nome real não casa) e um LIKE por
+        "Ana" acharia "Ana Paula".
+        """
+        wanted = (assignee or "").strip()
+        if not wanted:
+            return []
+
+        stmt = (
+            select(
+                ClickUpTaskCache,
+                ClickUpListCache.name.label("list_name"),
+                ClickUpFolderCache.name.label("folder_name"),
+            )
+            .join(ClickUpListCache, ClickUpTaskCache.list_id == ClickUpListCache.list_id)
+            .outerjoin(ClickUpFolderCache, ClickUpListCache.folder_id == ClickUpFolderCache.folder_id)
+            .where(and_(
+                ClickUpListCache.space_id == space_id,
+                _leaf_tasks_clause(),
+            ))
+        )
+        rows = (await self._db.execute(stmt)).all()
+
+        now = datetime.utcnow()
+        out: list[dict] = []
+        for task, list_name, folder_name in rows:
+            try:
+                assignees = json.loads(task.assignees_json or "[]")
+            except (json.JSONDecodeError, TypeError):
+                assignees = []
+            names = [a.get("username") for a in assignees if a.get("username")]
+            if wanted not in names:
+                continue
+
+            is_done = task.status_type in ("done", "closed")
+            out.append({
+                "task_id": task.task_id,
+                "name": task.name,
+                "status": task.status,
+                "status_type": task.status_type,
+                "status_color": task.status_color,
+                "assignees": names,
+                "due_date": task.due_date,
+                "is_overdue": (
+                    task.due_date is not None and task.due_date < now and not is_done
+                ),
+                "is_done": is_done,
+                "progress_pct": task.progress_pct,
+                "list_id": task.list_id,
+                "list_name": list_name,
+                "folder_name": folder_name or "—",
+                "url": task.url,
+            })
+
+        # Em aberto primeiro, atrasadas no topo; sem data vai para o fim.
+        far = datetime.max
+        out.sort(key=lambda t: (t["is_done"], t["due_date"] or far, t["name"] or ""))
+        return out
+
     async def get_upcoming_tasks(self, space_id: str, days: int) -> list[dict]:
         from datetime import timedelta
         now = datetime.utcnow()

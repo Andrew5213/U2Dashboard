@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal, get_db
@@ -69,6 +69,19 @@ async def get_assignees(response: Response, svc: DashboardService = Depends(_svc
     _no_cache(response)
     data = await svc.get_assignee_stats(settings.clickup_default_space_id)
     return DashboardEnvelope(data=[d.model_dump() for d in data])
+
+
+@router.get("/assignee/tasks", response_model=DashboardEnvelope)
+async def get_assignee_tasks(
+    response: Response,
+    name: str = Query(..., min_length=1, description="username exato, como vem de /dashboard/assignees"),
+    svc: DashboardService = Depends(_svc),
+):
+    """Tarefas atribuídas a uma pessoa. O nome vai em query string, não no path:
+    são usernames do ClickUp, com espaços e acentos."""
+    _no_cache(response)
+    data = await svc.get_assignee_tasks(settings.clickup_default_space_id, name)
+    return DashboardEnvelope(data=data)
 
 
 @router.get("/upcoming", response_model=DashboardEnvelope)

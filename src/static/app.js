@@ -421,7 +421,9 @@
           location.hash = '#/folder/' + f.folder_id;
         }, 'completion_rate');
         Charts.renderStatusDonut('chart-donut', overview.status_distribution);
-        Charts.renderAssigneeChart('chart-assignees', assignees);
+        Charts.renderAssigneeChart('chart-assignees', assignees, function (name) {
+          location.hash = '#/assignee/' + encodeURIComponent(name);
+        });
         Charts.renderEvolutionChart('chart-evolution', evolution);
       });
     });
@@ -775,6 +777,78 @@
             <tbody class="divide-y divide-slate-50">
               ${rows || emptyMsg}
             </tbody>
+          </table>
+        </div>
+      </div>
+    `);
+  }
+
+  /* ── VIEW: Responsável (tarefas da pessoa) ───────────────────────── */
+  /* Chega-se aqui clicando numa barra do gráfico de produtividade. A contagem
+     bate com a barra porque o endpoint usa a mesma unidade (tarefas-folha). */
+  async function renderAssignee(name) {
+    setBreadcrumb([
+      { label: 'Visão Geral', href: '#/' },
+      { label: name },
+    ]);
+
+    let tasks;
+    try {
+      tasks = await api('/dashboard/assignee/tasks?name=' + encodeURIComponent(name));
+    } catch (e) {
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      return;
+    }
+
+    const total     = tasks.length;
+    const completed = tasks.filter(function (t) { return t.is_done; }).length;
+    const overdue   = tasks.filter(function (t) { return t.is_overdue; }).length;
+    const rate      = total > 0 ? completed / total : 0;
+
+    const rows = tasks.map(function (t) {
+      const dueCls = t.is_overdue ? 'text-red-500 font-medium' : 'text-gray-500';
+      return `<tr class="hover:bg-slate-50 cursor-pointer"
+                  onclick="location.hash='#/task/${esc(t.task_id)}'; window.__taskName=${jsStr(t.name)}">
+        <td class="py-3 px-4">
+          <span class="font-medium text-gray-800">${esc(t.name)}</span>
+        </td>
+        <td class="py-3 px-4">${statusBadge(t.status, t.status_type, t.status_color)}</td>
+        <td class="py-3 px-4 text-sm text-gray-500">${esc(t.folder_name || '—')}</td>
+        <td class="py-3 px-4 text-sm text-gray-500">${esc(t.list_name || '—')}</td>
+        <td class="py-3 px-4 text-sm ${dueCls}">${t.is_overdue ? WARN_ICON + ' ' : ''}${fmtDate(t.due_date)}</td>
+      </tr>`;
+    }).join('');
+
+    const emptyMsg = total === 0
+      ? `<tr><td colspan="5" class="py-12 text-center text-gray-400 text-sm">
+           Nenhuma tarefa atribuída a esta pessoa</td></tr>`
+      : '';
+
+    setView(`
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        ${kpiCard(ICONS.tasks, 'Tarefas', total)}
+        ${kpiCard(ICONS.check, 'Concluídas', completed, fmtPct(rate), 'text-emerald-600')}
+        ${kpiCard(ICONS.sync,  'Em Aberto', total - completed, null, 'text-blue-600')}
+        ${kpiCard(ICONS.clock, 'Em Atraso', overdue, null, overdue > 0 ? 'text-red-600' : '')}
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-100">
+          <h2 class="text-sm font-semibold text-gray-700">Tarefas de ${esc(name)}</h2>
+          <p class="text-xs text-gray-400 mt-0.5">Em aberto primeiro, as atrasadas no topo</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-slate-50 border-b border-gray-100">
+              <tr>
+                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Tarefa</th>
+                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Província</th>
+                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Módulo</th>
+                <th class="py-2.5 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Vencimento</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">${rows}${emptyMsg}</tbody>
           </table>
         </div>
       </div>
@@ -1164,6 +1238,9 @@
       } else if (param) {
         renderGantt(param);
       }
+    } else if (route === 'assignee' && param) {
+      /* O username pode ter espaços e acentos; o hash guarda-o codificado. */
+      renderAssignee(decodeURIComponent(parts.slice(1).join('/')));
     } else if (route === 'task' && param) {
       renderTask(param);
     } else {

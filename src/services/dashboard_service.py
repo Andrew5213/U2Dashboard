@@ -148,6 +148,10 @@ class DashboardService:
         rows = await self._repo.get_assignee_task_stats(space_id)
         return [AssigneeStats(**r) for r in rows]
 
+    async def get_assignee_tasks(self, space_id: str, assignee: str) -> list[dict]:
+        """Tarefas de uma pessoa — o detalhe por trás da barra do gráfico de produtividade."""
+        return await self._repo.get_tasks_by_assignee(space_id, assignee)
+
     async def get_upcoming_tasks(self, space_id: str, days: int = 30) -> list[UpcomingTask]:
         rows = await self._repo.get_upcoming_tasks(space_id, days)
         return [UpcomingTask(**r) for r in rows]

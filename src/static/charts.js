@@ -256,7 +256,7 @@ const Charts = (function () {
 
   /* Barras verticais de produtividade por responsável.
      Altura = total de tasks; cor = taxa de conclusão (verde/amarelo/vermelho). */
-  function renderAssigneeChart(id, data) {
+  function renderAssigneeChart(id, data, onClickAssignee) {
     const chart = _init(id);
     if (!chart) return;
 
@@ -274,7 +274,9 @@ const Charts = (function () {
       var rate  = total > 0 ? d.completed / total : 0;
       var color = rate >= 0.7 ? '#4ade80' : rate >= 0.35 ? '#fbbf24' : '#f87171';
       return { value: total, rate: rate, open: d.open, completed: d.completed,
-               overdue: d.overdue, itemStyle: { color: color, borderRadius: [4, 4, 0, 0] } };
+               overdue: d.overdue,
+               itemStyle: { color: color, borderRadius: [4, 4, 0, 0],
+                            cursor: onClickAssignee ? 'pointer' : 'default' } };
     });
 
     chart.setOption({
@@ -287,7 +289,8 @@ const Charts = (function () {
             'Total: <b>' + d.value + '</b><br/>' +
             'Concluídas: <b>' + d.completed + '</b> (' + pct + '%)<br/>' +
             'Em aberto: <b>' + d.open + '</b>' +
-            (d.overdue ? '<br/><span style="color:#f87171">Em atraso: <b>' + d.overdue + '</b></span>' : '');
+            (d.overdue ? '<br/><span style="color:#f87171">Em atraso: <b>' + d.overdue + '</b></span>' : '') +
+            (onClickAssignee ? '<br/><span style="opacity:.65">clique para ver as tarefas</span>' : '');
         },
       },
       grid: { left: '2%', right: '2%', top: 24, bottom: 8, containLabel: true },
@@ -318,6 +321,25 @@ const Charts = (function () {
         },
       }],
     });
+
+    if (onClickAssignee) {
+      chart.off('click');
+      chart.on('click', function (params) {
+        var row = top[params.dataIndex];
+        if (row) { onClickAssignee(row.assignee); }
+      });
+      /* O clique só pega na barra; o rótulo do eixo é o alvo mais fácil num
+         gráfico com poucas pessoas. */
+      chart.getZr().on('click', function (ev) {
+        if (ev.target) return;                       // já tratado pelo chart.on acima
+        var pt = [ev.offsetX, ev.offsetY];
+        if (!chart.containPixel({ gridIndex: 0 }, pt)) {
+          var idx = chart.convertFromPixel({ xAxisIndex: 0 }, pt[0]);
+          var row = top[idx];
+          if (row) { onClickAssignee(row.assignee); }
+        }
+      });
+    }
   }
 
   /* Retorna (criando se necessário) o div de tooltip singleton do Gantt */
