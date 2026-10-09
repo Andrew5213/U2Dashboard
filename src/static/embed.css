@@ -1,0 +1,195 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Modo embutido (Nextcloud › External sites) — ver embed.js.
+
+   Tudo aqui está sob `html.embed`, classe que o embed.js só coloca quando a
+   página roda dentro de um iframe. Fora dele nenhuma regra se aplica — menos o
+   diálogo (.u2-dialog-*), que só existe no DOM em modo embutido.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Barra do topo: abas + conteúdo da página + botão de relatórios ───────── */
+html.embed .embed-header {
+  height: 44px;
+  padding-left: 12px;
+  padding-right: 12px;
+  gap: 14px;
+  box-shadow: none;
+  justify-content: flex-start;
+}
+html.embed .embed-header > * { min-width: 0; }
+
+html.embed .embed-tabs {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  flex-shrink: 0;
+  gap: 2px;
+  padding-right: 14px;
+  border-right: 1px solid var(--u2-line);
+}
+html.embed .embed-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--u2-gray);
+  border-bottom: 2px solid transparent;
+  border-top: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+html.embed .embed-tab:hover { color: var(--u2-white); }
+html.embed .embed-tab-active {
+  color: var(--u2-white);
+  border-bottom-color: var(--u2-red);
+}
+
+html.embed .embed-reports-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--u2-gray-light);
+  background: var(--u2-panel-2);
+  border: 1px solid var(--u2-line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+html.embed .embed-reports-btn:hover,
+html.embed.embed-panel-open .embed-reports-btn {
+  color: var(--u2-white);
+  border-color: var(--u2-red);
+}
+
+/* ── A barra lateral vira um painel que desliza pela direita ──────────────── */
+html.embed aside.embed-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: auto;
+  width: 280px;
+  max-width: 88vw;
+  height: 100%;
+  z-index: 60;
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform .2s ease, visibility 0s linear .2s;
+  border-left: 1px solid var(--u2-line);
+  box-shadow: -18px 0 40px rgba(0, 0, 0, .45);
+}
+html.embed.embed-panel-open aside.embed-panel {
+  transform: none;
+  visibility: visible;
+  transition: transform .2s ease, visibility 0s;
+}
+/* antes de o embed.js montar o painel a barra lateral não pode piscar na tela */
+html.embed body > aside:not(.embed-panel) { display: none; }
+
+html.embed aside.embed-panel > div:has(> img) { display: none; }   /* logo: a marca já está no Nextcloud */
+html.embed aside.embed-panel .embed-hidden { display: none; }
+html.embed aside.embed-panel nav { padding-top: 4px; }
+html.embed aside.embed-panel .embed-first { padding-top: 0; }
+html.embed aside.embed-panel .embed-first > .border-t { display: none; }
+
+html.embed .embed-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 8px 0 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--u2-white);
+  border-bottom: 1px solid var(--u2-line);
+}
+html.embed .embed-panel-close {
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--u2-gray);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+html.embed .embed-panel-close:hover { color: var(--u2-white); background: var(--u2-panel-2); }
+
+html.embed .embed-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, .45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+}
+html.embed.embed-panel-open .embed-backdrop { opacity: 1; pointer-events: auto; }
+
+/* ── Mobile: a marca já aparece na barra do Nextcloud ─────────────────────── */
+html.embed .mob-header > img { display: none; }
+
+/* ── Diálogo (substitui prompt/confirm dentro do iframe) ──────────────────── */
+.u2-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .6);
+}
+.u2-dialog {
+  width: 100%;
+  max-width: 380px;
+  padding: 20px;
+  font-family: var(--u2-font, system-ui, sans-serif);
+  color: var(--u2-white, #f4f4f2);
+  background: var(--u2-panel, #161618);
+  border: 1px solid var(--u2-line, #2a2a2e);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+}
+.u2-dialog-message { margin: 0 0 14px; font-size: 14px; line-height: 1.45; }
+.u2-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 16px;
+  padding: 9px 11px;
+  font-size: 14px;
+  color: var(--u2-white, #f4f4f2);
+  background: var(--u2-black, #0a0a0b);
+  border: 1px solid var(--u2-line, #2a2a2e);
+  border-radius: 8px;
+  outline: none;
+}
+.u2-dialog-input:focus { border-color: var(--u2-red, #e8262a); }
+.u2-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.u2-dialog-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--u2-gray-light, #c9c9cf);
+  background: var(--u2-panel-2, #1c1c20);
+  border: 1px solid var(--u2-line, #2a2a2e);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.u2-dialog-btn-primary {
+  color: #fff;
+  background: var(--u2-red, #e8262a);
+  border-color: var(--u2-red, #e8262a);
+}
+
+/* o título do painel já diz "Relatórios": do cabeçalho da seção fica só o PT/EN */
+html.embed aside.embed-panel .embed-first p { display: none; }
+html.embed aside.embed-panel .embed-first > div:last-child { justify-content: flex-end; }

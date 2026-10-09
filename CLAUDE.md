@@ -201,6 +201,31 @@ Fica fora de `charts.js` porque o chat não carrega aquele arquivo.
 **Assets são versionados à mão** com `?v=N` nos templates. Esquecer de incrementar depois de mexer em
 CSS/JS faz o navegador servir o arquivo antigo — vale para o deploy e para o teste local.
 
+**Modo embutido (Nextcloud › External sites)**: o External sites abre a app num `<iframe id="ifm" allowfullscreen>`
+simples, sem `sandbox` — downloads, SSE e `target="_blank"` funcionam sem ajuste. O que muda é a moldura: a
+barra superior, a marca e o menu de apps já são do Nextcloud, e sobra menos área. `src/static/embed.js` +
+`embed.css` (carregados nos 6 templates de dashboard/assistente/documentações, logo depois de `theme-dark.css`)
+detectam o iframe (`window.self !== window.top`) e põem a classe `embed` no `<html>`; **fora de um iframe não
+fazem nada** — o layout com barra lateral é o mesmo de antes (tag `backup/layout-pre-nextcloud`).
+- **Desktop**: a `<aside>` vira o painel "Relatórios", que desliza pela direita (botão no topo, fecha com Esc
+  ou clique fora); os links de navegação dela são copiados para abas na barra do topo (44 px em vez de 56) e o
+  logo some. Nada é duplicado nos templates: o `embed.js` monta as abas lendo os `<a>` que vêm antes do bloco
+  de relatórios (o que contém `#lang-pt`) — link novo na barra lateral vira aba sozinho.
+- **Diálogos**: `prompt()`/`confirm()` foram trocados por `U2Dialog.prompt/confirm` (assíncronos). Fora do
+  iframe chamam os nativos; dentro, abrem um diálogo da própria página — num iframe de outra origem os nativos
+  aparecem como "uma página incorporada diz…" e podem ser bloqueados pelo navegador. Os módulos desligados
+  (`rdo.html`, `progress_civil.html`) ainda usam os nativos e não carregam o `embed.js`.
+- **Teste sem Nextcloud**: `?embed=1` força o modo e `?embed=0` desliga (a escolha fica em `sessionStorage`
+  até fechar a aba).
+- **Quem pode embutir**: `EMBED_ALLOWED_ORIGINS` (ex.: `https://cloud.exemplo.com`) faz toda resposta levar
+  `Content-Security-Policy: frame-ancestors 'self' <origens>` (`src/core/embed_security.py`, middleware ASGI
+  puro para não mexer no streaming do SSE). Vazio = sem cabeçalho, qualquer site pode embutir. O nginx do
+  servidor não envia `X-Frame-Options`; se alguém acrescentar, o iframe para de abrir.
+- **No Nextcloud**: Administração → External sites → nome, URL `https://u2dashboard.engenhariarf.com/`, sem
+  marcar "redirect". A URL aceita `{uid}`, `{email}`, `{displayname}`, `{groups}`, `{language}`, `{locale}` e
+  `{jwt}` — a app ainda não lê nenhum (não há login); é o caminho para uma futura página "Minhas tarefas".
+  O template mobile continua sendo escolhido pelo user-agent, também dentro do iframe.
+
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
 **"Vencimento" / "Data de Conclusão" custom fields are the only source of due date/close date**: the user added two `date`-type custom fields — "Vencimento" and "Data de Conclusão" — to every list in the space, all sharing the same field id (`_FIELD_VENCIMENTO_ID` / `_FIELD_DATA_CONCLUSAO_ID` in `cache_repository.py`, discovered via `GET /list/{id}/field`). `CacheRepository.upsert_task()` reads these via `_custom_field_value()` and uses them as `due_date`/`date_closed` in the cache — **with no fallback** to ClickUp's native `due_date`/`date_closed`. A task without the custom field filled in simply has no due date/close date in the cache, even if it has an old native due date configured (native ClickUp due dates are no longer used anywhere in this app). Every overdue/upcoming/gantt/evolution computation in the app reads `due_date`/`date_closed` from this same cache column, so this single upsert-time change is what makes the whole dashboard and every PDF/XLSX report follow the new fields — no other call site needed to change. If these fields are ever deleted and recreated in ClickUp, the two id constants must be updated (they're per-field-instance, not per-name). Since this only takes effect on the next cache upsert, a task edited before this change was deployed keeps showing its old native due date until the next full refresh (`cache_worker` interval, `POST /dashboard/refresh`, or app restart) re-upserts it.
@@ -659,6 +684,7 @@ Tables:
 | `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular | `20` |
 | `SCHEDULE_INTERVAL_SECONDS` | Intervalo do recálculo periódico | `300` |
 | `SCHEDULE_UTC_OFFSET_HOURS` | Fuso da obra (define "hoje" para o motor); Angola = 1 | `1` |
+| `EMBED_ALLOWED_ORIGINS` | Origens que podem abrir a app num iframe (Nextcloud), separadas por vírgula; vazio = sem restrição | `""` |
 
 ## mapper.py Constants (require manual setup)
 
@@ -717,6 +743,7 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada)
+- `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
 - `test_schedule_cache.py` — cache, progresso ponderado por duração e telas com 3 níveis
 - `test_schedule_reports.py` — relatórios (PDF/XLSX), listagens, diário/semanal e Gantt de província sobre a lista de 3 níveis
 

@@ -660,7 +660,7 @@
       showToast('A soma dos pesos deve ser 100%. Soma atual: ' + Math.round(sum * 10) / 10 + '%', 'error');
       return;
     }
-    const password = prompt('Digite a senha para alterar os pesos das disciplinas:');
+    const password = await U2Dialog.prompt('Digite a senha para alterar os pesos das disciplinas:', { password: true });
     if (password === null) return;
     try {
       const res = await fetch('/disciplines/folder/' + folderId, {

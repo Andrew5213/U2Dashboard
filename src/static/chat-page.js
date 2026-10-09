@@ -264,8 +264,8 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
-  function clearHistory() {
-    if (!confirm('Limpar todo o histórico de conversa?')) return;
+  async function clearHistory() {
+    if (!await U2Dialog.confirm('Limpar todo o histórico de conversa?', { okLabel: 'Limpar' })) return;
     localStorage.removeItem(STORAGE_KEY);
     const msgs = document.getElementById('chat-messages');
     msgs.innerHTML = '';

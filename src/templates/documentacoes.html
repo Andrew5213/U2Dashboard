@@ -11,6 +11,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css?v=34" />
   <link rel="stylesheet" href="/static/theme-dark.css?v=34" />
+  <link rel="stylesheet" href="/static/embed.css?v=1" />
+  <script src="/static/embed.js?v=1"></script>
 </head>
 <body class="theme-dark bg-gray-100 font-sans flex h-screen overflow-hidden">
 
@@ -295,7 +297,7 @@
     });
 
     async function deleteDocument(id) {
-      const password = prompt('Digite a senha para excluir este documento:');
+      const password = await U2Dialog.prompt('Digite a senha para excluir este documento:', { password: true });
       if (password === null) return;
       try {
         const res = await fetch(`/documents/${id}`, {

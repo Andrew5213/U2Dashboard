@@ -97,6 +97,15 @@ class Settings(BaseSettings):
     # Fuso da obra em horas a partir de UTC (Angola = +1) — define o que é "hoje"
     schedule_utc_offset_hours: int = 1
 
+    # ── Embutir a app em outro site (Nextcloud › External sites) ─────────────
+    # Origens autorizadas a abrir a app num iframe, separadas por vírgula
+    # (ex.: https://cloud.exemplo.com). Vazio = nenhum cabeçalho é enviado.
+    embed_allowed_origins: str = ""
+
+    @property
+    def embed_origins(self) -> list[str]:
+        return [item.strip().rstrip("/") for item in self.embed_allowed_origins.split(",") if item.strip()]
+
     @property
     def schedule_lists(self) -> list[str]:
         return [item.strip() for item in self.schedule_list_ids.split(",") if item.strip()]

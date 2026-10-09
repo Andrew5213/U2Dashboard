@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from src.core.embed_security import FrameAncestorsMiddleware
 from fastapi.templating import Jinja2Templates
 from src.core.database import init_db
 from src.core.logging import setup_logging
@@ -54,6 +55,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+if settings.embed_origins:
+    app.add_middleware(FrameAncestorsMiddleware, origins=settings.embed_origins)
 
 os.makedirs(settings.civil_uploads_dir, exist_ok=True)
 os.makedirs(settings.documents_dir, exist_ok=True)
