@@ -22,7 +22,7 @@ async def chat(
 ) -> ChatResponse:
     _check_enabled()
     svc = ChatService(db)
-    return await svc.ask(request.message)
+    return await svc.ask(request.message, lang=request.lang)
 
 
 @router.get("/status")

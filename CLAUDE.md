@@ -108,6 +108,7 @@ src/
 │   └── authorization_emails.py  # HTML dos e-mails de pedido e de decisão
 ├── api/
 │   ├── health.py            # GET /health
+│   ├── auth.py              # GET /auth/me — quem está a ver, pelo JWT do Nextcloud (identificação, não login)
 │   ├── sync.py              # POST /sync/trigger, GET /sync/status|logs, GET+POST /sync/mappings/agreements
 │   ├── webhooks.py          # POST /webhooks/clickup — verifies HMAC, syncs to Airbox, updates cache + SSE
 │   ├── dashboard.py         # GET /dashboard/overview|folders|folder/{id}|list/{id}|task/{id}|assignees|upcoming|evolution
@@ -221,10 +222,34 @@ fazem nada** — o layout com barra lateral é o mesmo de antes (tag `backup/lay
   `Content-Security-Policy: frame-ancestors 'self' <origens>` (`src/core/embed_security.py`, middleware ASGI
   puro para não mexer no streaming do SSE). Vazio = sem cabeçalho, qualquer site pode embutir. O nginx do
   servidor não envia `X-Frame-Options`; se alguém acrescentar, o iframe para de abrir.
-- **No Nextcloud**: Administração → External sites → nome, URL `https://u2dashboard.engenhariarf.com/`, sem
-  marcar "redirect". A URL aceita `{uid}`, `{email}`, `{displayname}`, `{groups}`, `{language}`, `{locale}` e
-  `{jwt}` — a app ainda não lê nenhum (não há login); é o caminho para uma futura página "Minhas tarefas".
-  O template mobile continua sendo escolhido pelo user-agent, também dentro do iframe.
+- **No Nextcloud**: Administração → External sites → nome, URL
+  `https://u2dashboard.engenhariarf.com/?jwt={jwt}`, sem marcar "redirect". O template mobile continua
+  sendo escolhido pelo user-agent, também dentro do iframe.
+
+**Quem está a ver (JWT do Nextcloud)** — `src/core/nextcloud_auth.py` + `GET /auth/me`. O External sites
+troca o `{jwt}` da URL por um token **ES256** assinado pela instância, válido por 1 hora, com
+`iss`, `iat`, `exp` e `userdata: {uid, email, displayName}`. A app só confere a assinatura com a chave
+**pública** (`NEXTCLOUD_JWT_PUBLIC_KEY_PEM`) — não há segredo partilhado. **É identificação, não login**:
+não há sessão no servidor nem permissão nenhuma; token ausente ou inválido = anónimo, e a app funciona
+igual. Sem a chave configurada a verificação fica desligada.
+- **Fluxo**: `embed.js` tira o `jwt` da barra de endereço logo na carga (`history.replaceState` — não fica
+  no histórico nem em link copiado), guarda-o em `sessionStorage` (só nesta aba, para a identificação
+  acompanhar a troca de página dentro do iframe) e chama `GET /auth/me` com o cabeçalho
+  `X-Nextcloud-JWT`. O servidor valida a cada chamada; a resposta vira `window.U2User`, o evento
+  `u2-user` e o nome na barra do topo (modo embutido, desktop). Cada identificação gera uma linha de log
+  `Nextcloud: <uid> (<nome>) abriu <página>`; o token nunca é logado.
+- **`algorithms=["ES256"]` é fixo** em `verify_token`. Aceitar o algoritmo que o próprio token declara
+  abriria o ataque clássico do HS256 "assinado" com a chave pública. `exp` e `iat` são obrigatórios
+  (30 s de tolerância de relógio); `NEXTCLOUD_JWT_ISSUER`, se preenchido, recusa token de outra instância.
+- **Obter a chave** (uma por instância — dev e produção têm pares diferentes):
+  `occ config:app:get external jwt_token_pubkey_es256`. Só existe depois de alguém abrir o site externo
+  uma vez, porque o par é gerado na emissão do primeiro token. `normalize_public_key` aceita o PEM com
+  quebras reais, com `
+` por extenso (o que cabe numa linha de `.env`) ou só o base64.
+- **Para proteger uma rota no futuro**: a dependência `nextcloud_user` (FastAPI) devolve o utilizador ou
+  `None` e nunca bloqueia; exigir login é decidir o que fazer com o `None` — hoje ninguém faz.
+- O `jwt` chega primeiro na query string do `GET /`, então **aparece no access log do nginx** — vale 1 hora
+  e só identifica, mas é o motivo para não reaproveitar esse token como credencial de nada.
 
 **Números da visão geral — o que cada um mede**: "Concluídas" conta tarefas-folha (773 de 2349 =
 32,9%); "Progresso Geral" é a **média ponderada das províncias** (cada província vale igual), por isso
@@ -240,10 +265,40 @@ devolve também `in_progress` (aberta e já iniciada — `_is_started`: status d
 próximos 7 dias, 8–30, mais adiante, sem data), com filtro por província; as janelas distantes e as
 concluídas começam recolhidas.
 
+**Cronogramas** (`#/gantts`, link próprio no menu lateral, aba no modo embutido e item no menu mobile):
+uma linha por província com período, progresso, desvio e três ações — ver o Gantt na tela
+(`#/gantt/folder/<id>`), PDF e XLSX (`downloadGantt`). Província sem datas aparece no fim, sem ações,
+com o aviso de definir o início da lista. A tela de Gantt da província tem os mesmos dois downloads no
+cabeçalho. O período vem de `get_gantt_overview`, cujo início é o primeiro `start_date` real da
+província (a data de criação só vale de aproximação quando nenhuma tarefa tem início).
+
 **Busca** (`GET /dashboard/search?q=`, campo na barra do topo do dashboard desktop, atalho `/`):
 todas as palavras têm de aparecer no nome, sem diferenciar caixa nem acento. O filtro é em Python
 (`_search_key`) porque o `LIKE` do SQLite só ignora caixa em ASCII. O mobile ainda não tem busca nem
 a tela por equipe.
+
+**Versão em inglês** — `src/static/i18n.js` (motor) + `i18n-en.js` (dicionário) + `GET /i18n/terms.js`
+(nomes do ClickUp). A interface continua escrita em português nos templates e no HTML montado em
+JavaScript; em inglês, o `i18n.js` traduz **o que chega ao DOM** (nós de texto, `placeholder`, `title`,
+`aria-label`, o `<title>`) e acompanha o que é renderizado depois com um `MutationObserver`. Mesma
+filosofia do `theme-dark.css` e do `embed.js`: uma camada por cima, sem reescrever 6 templates.
+- **Ordem da procura** para cada texto: frases fixas (`i18n-en.js`) → padrões com número/data/nome no meio
+  (regex, no mesmo arquivo) → termos do ClickUp (`window.U2_TERMS`, o `_EN` de `translation.py`, o mesmo
+  dos relatórios em inglês). Texto com ` · `, ` / ` ou ` — ` é traduzido pedaço a pedaço. Sem
+  correspondência fica em português — **frase nova na interface precisa de entrada no `i18n-en.js`**;
+  `U2I18n.missing()` no console lista o que foi visto sem tradução.
+- **Nome novo no ClickUp** (disciplina, atividade, lista) entra em `translation.py::_EN` (chave normalizada
+  por `_norm`) e passa a valer para a tela e para os PDFs/XLSX. `i18n.js::termKey` repete o `_norm`.
+- **Idioma**: `?lang=en|pt` (também serve o `{language}` do External sites do Nextcloud), senão a última
+  escolha em `localStorage`, senão português. O seletor PT | EN é montado pelo próprio `i18n.js` na barra do
+  topo (desktop e mobile) e recarrega a página. Em inglês os relatórios já saem em inglês por padrão
+  (`setReportLang('en')`), e `POST /chat` recebe `lang` — o assistente responde no idioma da interface.
+- **O que não passa pelo DOM** usa `U2I18n.t()` direto: rótulos de gráfico em `charts.js` (`T(...)`, traduzidos
+  antes de o ECharts medir o texto) e as mensagens de `U2Dialog` (o `prompt()` nativo não é DOM).
+- **Não traduz** o que é do utilizador: `#chat-messages`, `#mob-chat-messages` e qualquer `[data-no-i18n]`.
+  Nomes próprios (províncias, equipes, pessoas) ficam como estão.
+- `html.i18n-pending body { visibility: hidden }` segura a primeira pintura até a tradução rodar, para não
+  piscar em português. Datas continuam `dd/mm/aaaa` nos dois idiomas.
 
 **Static assets**: `src/static/echarts.min.js` is a locally bundled copy of Apache ECharts — it is not fetched from a CDN. When upgrading ECharts, replace this file manually.
 
@@ -259,7 +314,8 @@ Five report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use 
 
 - **`GET /reports/pdf`** — executive report for the full space (cover + summary + project health + overdue + upcoming + team performance). Uses `ReportService`.
 - **`GET /reports/pdf/provincia?folder_id=<id>`** — detailed report for a single folder/province (cover + summary + per-list detail with task-level breakdown). Uses `ProvinceReportService`. Incorporates EVM weighted progress when discipline weights are configured.
-- **`GET /reports/pdf/gantt?folder_id=<id>`** — Gantt da província em A4 paisagem: tabela (tarefa, início, término, %) à esquerda e barras numa linha do tempo à direita, com a linha de "hoje". Usa `GanttReportService` (`gantt_report_service.py`). Entram todas as listas da pasta que têm tarefas com datas — nas de cronograma, os 3 níveis com as datas do motor; nas comuns, o que houver (início nativo e "Vencimento"), e a tarefa-mãe sem data própria cobre o intervalo das filhas. Lista sem nenhuma data fica fora do gráfico e é citada no rodapé. A grade é semanal enquanto couber (≥ 4,5 mm por semana) e mensal em prazos longos. Na UI é o botão "GANTT" ao lado de cada província no menu de relatórios (desktop e mobile).
+- **`GET /reports/pdf/gantt?folder_id=<id>`** — Gantt da província em A4 paisagem: tabela (tarefa, início, término, %) à esquerda e barras numa linha do tempo à direita, com a linha de "hoje". Usa `GanttReportService` (`gantt_report_service.py`). Entram todas as listas da pasta que têm tarefas com datas — nas de cronograma, os 3 níveis com as datas do motor; nas comuns, o que houver (início nativo e "Vencimento"), e a tarefa-mãe sem data própria cobre o intervalo das filhas. Lista sem nenhuma data fica fora do gráfico e é citada no rodapé. A grade é sempre semanal: cada semana tem a sua linha e o rótulo `dd/mm` da segunda-feira (só em cronogramas muito longos o rótulo salta semanas, em passo regular). "Hoje" é um marcador sobre a linha vermelha, com a data na legenda — um rótulo ali tapava o da semana ao lado. Na UI é o botão "GANTT" ao lado de cada província no menu de relatórios (desktop e mobile).
+- **`GET /reports/xlsx/gantt?folder_id=<id>`** — o mesmo Gantt em planilha (`render_gantt_xlsx`, mesmo `_build_data` do PDF): as barras são **células pintadas**, uma coluna por dia (uma por semana acima de 190 dias), com meses, semanas (`dd/mm` da segunda-feira) e dias no cabeçalho congelado, datas e % como valores de verdade, linhas agrupadas por nível (estrutura de tópicos do Excel) e a coluna de hoje com borda vermelha.
 - **`GET /reports/pdf/daily`** — daily updates report (tasks completed/updated yesterday and today). Uses `PeriodicReportService`.
 - **`GET /reports/pdf/weekly`** — weekly updates report (last 7 days). Uses `PeriodicReportService`.
 - **`GET /reports/folders`** — lists folders available for province reports (reads from cache).
@@ -613,6 +669,20 @@ recusa calcular ("lista sem data de início") e as tarefas ficam sem datas até 
 da lista no ClickUp. A API não aceita `null` para limpar o `start_date` de uma lista; aceita `0`, que
 `ms_to_date` trata como ausente (não como 01/01/1970).
 
+**Estúdios têm outro formato de planilha** (`schedule_xlsx_studio.py`, escolhido sozinho por
+`load_schedule` quando o ficheiro não tem a aba "Parâmetros" e tem STUDIO/CTP/NEWSROOM): dois ficheiros
+por província (Obra Civil e Área Técnica), uma aba por sala, tabela estilo MS Project com até 4 níveis,
+semana de segunda a sexta (`folga=sab, dom` na lista) e feriados em `STUDIO!L4:L10`. No ClickUp **cada sala
+é uma lista** da pasta da província — **STUDIO, CTP e NEWSROOM** (`--room` no importador; nenhuma dependência
+atravessa salas) — com o mesmo padrão dos sites: **disciplina (o ficheiro) → grupo → tarefa**. O grupo é o
+resumo mais fundo acima das tarefas, as fases que só agrupam resumos ("Civil Works", "Technical Center") são
+achatadas, a linha de projeto e os marcos de
+duração zero ("Fim da Obra Civil", "End of Work") não viram tarefas, e cada "Marco externo — Obra Civil
+concluída: <tarefa>" da Área Técnica vira dependência da tarefa da Obra Civil com esse nome, na mesma
+sala. O leitor recusa a planilha se a coluna Antecessores não bater com as linhas que a fórmula de Início
+usa. Todas as planilhas de estúdio vieram com a mesma data de início (19/10/2026, modelo) e foram
+importadas sem data (`--no-start-date`), como os sites sem data.
+
 **Marco externo sem origem vira tarefa.** Um marco da coluna J que nenhum ficheiro fornece mas está
 declarado na aba Parâmetros (ex.: Saurimo, `EXT-01` "Torre entregue no site") é criado por
 `schedule_xlsx.py` como tarefa própria, logo antes de quem depende dela, sem duração nem equipe —
@@ -724,6 +794,8 @@ Tables:
 | `SCHEDULE_INTERVAL_SECONDS` | Intervalo do recálculo periódico | `300` |
 | `SCHEDULE_UTC_OFFSET_HOURS` | Fuso da obra (define "hoje" para o motor); Angola = 1 | `1` |
 | `EMBED_ALLOWED_ORIGINS` | Origens que podem abrir a app num iframe (Nextcloud), separadas por vírgula; vazio = sem restrição | `""` |
+| `NEXTCLOUD_JWT_PUBLIC_KEY_PEM` | Chave pública (PEM) que confere o JWT do External sites; vazio = identificação desligada | `""` |
+| `NEXTCLOUD_JWT_ISSUER` | Opcional: URL base do Nextcloud; token com outro `iss` é recusado | `""` |
 
 ## mapper.py Constants (require manual setup)
 
@@ -782,9 +854,12 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada)
+- `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
+- `test_nextcloud_auth.py` — JWT do Nextcloud: assinatura ES256, expiração, emissor, confusão de algoritmo, formatos da chave e `GET /auth/me`
 - `test_schedule_cache.py` — cache, progresso ponderado por duração e telas com 3 níveis
 - `test_schedule_reports.py` — relatórios (PDF/XLSX), listagens, diário/semanal e Gantt de província sobre a lista de 3 níveis
+- `test_schedule_xlsx_studio.py` — leitor das planilhas de estúdio: uma lista por sala, disciplina → grupo → tarefa, fases achatadas, marcos externos virando dependências, conferência fórmula × Antecessores
 
 Unit tests:
 - `test_civil_progress.py` — pure EVM calculation functions from `progress_service.py` (pct, contribution, site/global progress)

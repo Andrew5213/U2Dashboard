@@ -6,6 +6,7 @@ Entram todas as listas da pasta que têm tarefas com datas. Nas listas de cronog
 vale o que houver (início nativo e "Vencimento"), e a tarefa-mãe sem data própria
 cobre o intervalo das filhas. Lista sem nenhuma data fica de fora e é citada no fim."""
 import asyncio
+import math
 from datetime import date, datetime, timedelta
 
 from fpdf import FPDF
@@ -33,6 +34,8 @@ _NAME_W, _DATE_W, _PCT_W = 78.0, 17.0, 11.0
 _TIMELINE_X = _LEFT + _NAME_W + 2 * _DATE_W + _PCT_W
 _TIMELINE_W = _RIGHT - _TIMELINE_X
 _ROW_H, _LIST_H, _HEADER_H = 4.6, 5.6, 9.0
+
+_WEEK_LABEL_W = 8.0             # largura de um rótulo "dd/mm" na linha das semanas
 
 _TRACK = (191, 219, 254)        # barra planejada
 _TRACK_LATE = (254, 202, 202)   # barra em atraso (parte não executada)
@@ -88,6 +91,8 @@ def build_gantt_rows(tasks: list, today: date, lang: str = "pt") -> list[dict]:
                 "start": span[0],
                 "end": span[1],
                 "progress_pct": progress,
+                "status": translate(item.status, lang) if item.status else "",
+                "duration_days": item.duration_days,
                 "is_done": is_done,
                 "is_overdue": span[1] < today and not is_done,
             })
@@ -137,9 +142,14 @@ class _GanttReport(_Report):
         first = self._start + timedelta(days=(7 - self._start.weekday()) % 7)
         return [first + timedelta(weeks=i) for i in range(((self._end - first).days // 7) + 1)]
 
-    def _weekly(self) -> bool:
-        """Semana a semana enquanto couber; em prazos longos só os meses."""
-        return _TIMELINE_W / self._days * 7 >= 4.5
+    def _week_width(self) -> float:
+        return _TIMELINE_W / self._days * 7
+
+    def _label_every(self) -> int:
+        """De quantas em quantas semanas cabe o rótulo "dd/mm". Toda semana tem a sua
+        linha na grade; só em cronogramas muito longos o rótulo salta semanas — e
+        nunca de forma irregular."""
+        return max(1, math.ceil(_WEEK_LABEL_W / self._week_width()))
 
     def _month_starts(self) -> list[date]:
         starts, day = [], self._start.replace(day=1)
@@ -197,7 +207,7 @@ class _GanttReport(_Report):
         self.set_line_width(0.3)
         self.line(x + 1, y, x + 1, y + 3.4)
         self.set_xy(x + 2.5, y)
-        self.cell(20, 3.4, _s(t["gantt_today"]))
+        self.cell(40, 3.4, _s(f"{t['gantt_today']} ({self._today.strftime('%d/%m/%Y')})"))
 
     def _table_head(self) -> None:
         t = self.t
@@ -232,33 +242,32 @@ class _GanttReport(_Report):
                 self.set_xy(x0, y)
                 self.cell(x1 - x0, _HEADER_H / 2, label, align="C")
 
-        # semanas (dia da segunda-feira)
-        if self._weekly():
-            self.set_font("Helvetica", size=5.5)
-            self._set_text(BLUE_TXT)
-            week_w = _TIMELINE_W / self._days * 7
-            for monday in self._mondays():
-                self.set_xy(self._x(monday), y + _HEADER_H / 2)
-                self.cell(min(week_w, _RIGHT - self._x(monday)), _HEADER_H / 2, f"{monday.day:02d}", align="L")
+        # semanas: cada uma começa na segunda-feira e leva a data dela (dd/mm)
+        self.set_font("Helvetica", size=5.5)
+        self._set_text(BLUE_TXT)
+        self.set_draw_color(*GRAY_400)
+        self.set_line_width(0.1)
+        step = self._label_every()
+        for index, monday in enumerate(self._mondays()):
+            x = self._x(monday)
+            self.line(x, y + _HEADER_H / 2, x, y + _HEADER_H)
+            if index % step == 0 and _RIGHT - x >= _WEEK_LABEL_W - 1:
+                self.set_xy(x + 0.3, y + _HEADER_H / 2)
+                self.cell(_WEEK_LABEL_W, _HEADER_H / 2, monday.strftime("%d/%m"), align="L")
 
+        # hoje: só um marcador sobre a linha vermelha — a data vai na legenda, para
+        # nenhum rótulo tapar o de uma semana
         if self._start <= self._today <= self._end:
-            self.set_font("Helvetica", style="B", size=5.5)
-            self._set_text(RED)
             x_today = self._x(self._today) + _TIMELINE_W / self._days / 2
-            label = _s(self.t["gantt_today"])
-            width = self.get_string_width(label) + 1
-            self.set_fill_color(*WHITE)
-            self.rect(min(x_today + 0.4, _RIGHT - width), y + _HEADER_H / 2 + 0.6, width, 3.2, style="F")
-            self.set_xy(min(x_today + 0.4, _RIGHT - width), y + _HEADER_H / 2)
-            self.cell(width, _HEADER_H / 2, label, align="C")
+            self.set_fill_color(*RED)
+            self.rect(x_today - 0.9, y + _HEADER_H - 1.1, 1.8, 1.1, style="F")
         self.set_y(y + _HEADER_H)
 
     def _grid(self, y: float, h: float) -> None:
         """Linhas verticais da grade e a linha de hoje, no trecho de uma linha."""
         self.set_draw_color(*GRAY_200)
         self.set_line_width(0.1)
-        marks = self._mondays() if self._weekly() else self._month_starts()
-        for mark in marks:
+        for mark in self._mondays():
             if self._start < mark <= self._end:
                 self.line(self._x(mark), y, self._x(mark), y + h)
         if self._start <= self._today <= self._end:
@@ -377,6 +386,10 @@ class GanttReportService:
         data = await self._build_data(folder_id, lang)
         return await asyncio.to_thread(self._render_pdf, data)
 
+    async def generate_xlsx(self, folder_id: str, lang: str = "pt") -> bytes:
+        data = await self._build_data(folder_id, lang)
+        return await asyncio.to_thread(render_gantt_xlsx, data)
+
     async def _build_data(self, folder_id: str, lang: str = "pt") -> dict:
         t = get_strings(lang)
         folder = await self._repo.get_folder_by_id(folder_id)
@@ -428,3 +441,200 @@ class GanttReportService:
         else:
             pdf.build_empty(data)
         return bytes(pdf.output())
+
+
+# ── Gantt em planilha (.xlsx) ─────────────────────────────────────────────────
+# As barras são células pintadas: uma coluna por dia (ou por semana, em cronogramas
+# longos). Fica editável e filtrável no Excel, ao contrário do PDF.
+
+_XLSX_DAILY_LIMIT = 190        # acima disto a coluna passa a valer uma semana
+_HEX = {
+    "navy": "1B3A6B", "blue_bg": "EFF6FF", "blue_txt": "1E40AF", "gray_50": "F8FAFC", "gray_200": "E2E8F0",
+    "gray_400": "94A3B8", "gray_600": "475569", "dark": "0F172A", "white": "FFFFFF",
+    "track": "BFDBFE", "progress": "3B82F6", "done": "16A34A", "late_track": "FECACA", "late": "DC2626",
+    "summary": "475569", "summary_done": "94A3B8", "rest": "F1F5F9",
+}
+
+
+def render_gantt_xlsx(data: dict) -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    lang = data.get("lang", "pt")
+    t = get_strings(lang)
+    months = _MONTHS[lang]
+
+    def fill(key: str) -> PatternFill:
+        return PatternFill("solid", fgColor=_HEX[key])
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (data["folder_name"] or "Gantt").translate({ord(c): "-" for c in "[]:*?/\\"})[:31] or "Gantt"
+    ws.sheet_view.showGridLines = False
+    ws.sheet_properties.outlinePr.summaryBelow = False    # o resumo fica acima das tarefas dele
+
+    labels = [t["col_task"], t["col_start"], t["col_end"], t["col_duration"], "%", t["col_status"]]
+    widths = [48, 11.5, 11.5, 9, 7, 15]
+    first_col = len(labels) + 1
+    for index, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+
+    ws.cell(row=1, column=1, value=f"{data['folder_name']} - {t['gantt_title']}").font = Font(bold=True, size=14, color=_HEX["navy"])
+    lists = data["lists"]
+    if not lists:
+        ws.cell(row=3, column=1, value=t["gantt_no_dates"]).alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[3].height = 48
+        buffer = BytesIO()
+        wb.save(buffer)
+        return buffer.getvalue()
+
+    ws.cell(row=2, column=1, value=t["gantt_meta"].format(
+        start=data["first_day"].strftime("%d/%m/%Y"), end=data["last_day"].strftime("%d/%m/%Y"),
+        n=data["total_tasks"], date=data["generated_at"])).font = Font(size=9, color=_HEX["gray_600"])
+
+    start, end, today = data["range_start"], data["range_end"], data["today"]
+    total_days = (end - start).days + 1
+    daily = total_days <= _XLSX_DAILY_LIMIT
+    step = 1 if daily else 7
+    units = [start + timedelta(days=i) for i in range(0, total_days, step)]   # início de cada coluna
+    rest_days = {i for i, flag in enumerate(settings.schedule_weekend_mask[:7]) if flag == "1"}
+
+    def unit_index(day: date) -> int:
+        return (day - start).days // step
+
+    for i in range(len(units)):
+        ws.column_dimensions[get_column_letter(first_col + i)].width = 2.9 if daily else 5.2
+
+    # ── cabeçalho: meses, semanas (dd/mm da segunda-feira) e, por dia, o número do dia
+    month_row, week_row = 4, 5
+    day_row = 6 if daily else None
+    header_last = day_row or week_row
+    white_bold = Font(bold=True, color=_HEX["white"], size=9)
+    center = Alignment(horizontal="center", vertical="center")
+    thin_white = Side(style="thin", color=_HEX["white"])
+    for index, label in enumerate(labels, start=1):
+        ws.merge_cells(start_row=month_row, start_column=index, end_row=header_last, end_column=index)
+        cell = ws.cell(row=month_row, column=index, value=label)
+        cell.font, cell.fill = white_bold, fill("navy")
+        cell.alignment = Alignment(horizontal="left" if index == 1 else "center", vertical="center")
+        for r in range(month_row + 1, header_last + 1):
+            ws.cell(row=r, column=index).fill = fill("navy")
+
+    def span_header(row: int, first: int, last: int, text: str, fill_key: str, font: Font) -> None:
+        if last > first:
+            ws.merge_cells(start_row=row, start_column=first_col + first, end_row=row, end_column=first_col + last)
+        for i in range(first, last + 1):
+            c = ws.cell(row=row, column=first_col + i)
+            c.fill = fill(fill_key)
+            c.border = Border(left=thin_white if i == first else None)
+        cell = ws.cell(row=row, column=first_col + first, value=text)
+        cell.font, cell.alignment = font, center
+
+    i = 0
+    while i < len(units):
+        j = i
+        while j + 1 < len(units) and (units[j + 1].year, units[j + 1].month) == (units[i].year, units[i].month):
+            j += 1
+        wide = (j - i + 1) * (2.9 if daily else 5.2) >= 9
+        text = f"{months[units[i].month - 1]}/{units[i].year}" if wide else months[units[i].month - 1]
+        span_header(month_row, i, j, text, "navy", white_bold)
+        i = j + 1
+    week_font = Font(size=8, color=_HEX["blue_txt"], bold=True)
+    if daily:
+        for i in range(0, len(units), 7):
+            span_header(week_row, i, min(i + 6, len(units) - 1), units[i].strftime("%d/%m"), "blue_bg", week_font)
+        for i, day in enumerate(units):
+            cell = ws.cell(row=day_row, column=first_col + i, value=day.day)
+            cell.font = Font(size=7, color=_HEX["gray_600"])
+            cell.alignment = center
+            cell.fill = fill("rest" if day.weekday() in rest_days else "gray_50")
+    else:
+        for i, day in enumerate(units):
+            span_header(week_row, i, i, day.strftime("%d/%m"), "blue_bg", week_font)
+
+    # ── linhas ────────────────────────────────────────────────────────────────
+    date_format = "DD/MM/YYYY"
+    today_side = Side(style="medium", color=_HEX["late"])
+    today_unit = unit_index(today) if start <= today <= end else None
+    row = header_last + 1
+    ws.freeze_panes = ws.cell(row=row, column=first_col)
+
+    for lst in lists:
+        for col in range(1, first_col + len(units)):
+            ws.cell(row=row, column=col).fill = fill("blue_bg")
+        ws.cell(row=row, column=1, value=lst["name"].upper()).font = Font(bold=True, color=_HEX["blue_txt"], size=10)
+        row += 1
+        for item in lst["rows"]:
+            level, is_summary = item["level"], item["is_summary"]
+            muted = item["is_done"]
+            color = _HEX["gray_400"] if muted else _HEX["late"] if item["is_overdue"] else _HEX["dark"]
+            font = Font(bold=is_summary, size=9, color=color)
+            name = ws.cell(row=row, column=1, value=item["name"])
+            name.font, name.alignment = font, Alignment(indent=level * 2, vertical="center")
+            for col, value in ((2, item["start"]), (3, item["end"])):
+                cell = ws.cell(row=row, column=col, value=value)
+                cell.number_format, cell.font, cell.alignment = date_format, font, center
+            duration = ws.cell(row=row, column=4, value=item.get("duration_days"))
+            duration.font, duration.alignment, duration.number_format = font, center, "0.##"
+            pct = item["progress_pct"]
+            percent = ws.cell(row=row, column=5, value=None if pct is None else pct / 100)
+            percent.number_format, percent.font, percent.alignment = "0%", font, center
+            status = ws.cell(row=row, column=6, value=item.get("status") or "")
+            status.font, status.alignment = font, center
+            ws.row_dimensions[row].outlineLevel = min(level, 7)
+
+            first, last = unit_index(item["start"]), unit_index(item["end"])
+            if is_summary:
+                keys = ["summary_done" if muted else "summary"] * (last - first + 1)
+            else:
+                share = 1.0 if item["is_done"] else min(max((pct or 0.0) / 100, 0.0), 1.0)
+                filled = round((last - first + 1) * share)
+                if 0 < share and filled == 0:
+                    filled = 1                      # começou: pelo menos uma célula
+                done_key = "done" if item["is_done"] else "late" if item["is_overdue"] else "progress"
+                rest_key = "late_track" if item["is_overdue"] else "track"
+                keys = [done_key] * filled + [rest_key] * (last - first + 1 - filled)
+            for offset, key in enumerate(keys):
+                ws.cell(row=row, column=first_col + first + offset).fill = fill(key)
+            if daily:
+                for i, day in enumerate(units):       # dia de folga fora das barras, só para leitura
+                    if day.weekday() in rest_days and not (first <= i <= last):
+                        ws.cell(row=row, column=first_col + i).fill = fill("rest")
+            row += 1
+
+    last_row = row - 1
+    if today_unit is not None:
+        for r in range(month_row, last_row + 1):
+            cell = ws.cell(row=r, column=first_col + today_unit)
+            cell.border = Border(left=today_side, right=today_side)
+
+    # ── legenda e notas ───────────────────────────────────────────────────────
+    row += 1
+    legend = [
+        (t["gantt_legend_planned"], "track"), (t["gantt_legend_progress"], "progress"),
+        (t["gantt_legend_done"], "done"), (t["gantt_legend_overdue"], "late"),
+        (t["gantt_legend_summary"], "summary"),
+    ]
+    for label, key in legend:
+        ws.cell(row=row, column=2).fill = fill(key)
+        ws.cell(row=row, column=1, value=label).font = Font(size=9, color=_HEX["gray_600"])
+        row += 1
+    ws.cell(row=row, column=1, value=f"{t['gantt_today']}: {today.strftime('%d/%m/%Y')}").font = Font(size=9, color=_HEX["late"], bold=True)
+    row += 1
+    if data["undated_lists"]:
+        ws.cell(row=row, column=1, value=t["gantt_undated_lists"].format(names=", ".join(data["undated_lists"]))).font = Font(size=9, color=_HEX["gray_600"])
+        row += 1
+    ws.cell(row=row, column=1, value=t["disc_footnote"].format(date=data["generated_at"])).font = Font(size=8, color=_HEX["gray_400"])
+
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.print_title_rows = f"{month_row}:{header_last}"
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()

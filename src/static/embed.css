@@ -196,3 +196,49 @@ html.embed aside.embed-panel .embed-first > div:last-child { justify-content: fl
 
 /* com a busca na barra, é ela que empurra para a direita; o botão vem colado */
 html.embed #global-search + .embed-reports-btn { margin-left: 0; }
+
+/* quem está a ver, segundo o token do Nextcloud */
+html.embed .embed-user {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 180px;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--u2-gray);
+}
+html.embed #global-search + .embed-user { margin-left: 0; }
+html.embed .embed-user + .embed-reports-btn { margin-left: 0; }
+
+/* ── Idioma (i18n.js): seletor PT | EN e espera pela tradução ─────────────── */
+html.i18n-pending body { visibility: hidden; }   /* evita o lampejo em português */
+
+.u2-lang {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px;
+  gap: 2px;
+  background: var(--u2-panel-2, #1c1c20);
+  border: 1px solid var(--u2-line, #2a2a2e);
+  border-radius: 8px;
+}
+#global-search + .u2-lang { margin-left: 10px; }
+.u2-lang-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--u2-gray, #8b8b93);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.u2-lang-btn:hover { color: var(--u2-white, #f4f4f2); }
+.u2-lang-active { color: #fff; background: var(--u2-red, #e8262a); cursor: default; }
+html.embed .u2-lang ~ .embed-user,
+html.embed .u2-lang ~ .embed-reports-btn { margin-left: 0; }
+.mob-header .u2-lang { margin-left: auto; margin-right: 8px; }

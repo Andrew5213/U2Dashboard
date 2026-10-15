@@ -1,14 +1,16 @@
+import json
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from src.core.embed_security import FrameAncestorsMiddleware
+from src.services.translation import english_terms
 from fastapi.templating import Jinja2Templates
 from src.core.database import init_db
 from src.core.logging import setup_logging
 from src.core.config import settings
-from src.api import health, webhooks, sync
+from src.api import auth, health, webhooks, sync
 from src.api import dashboard, dashboard_stream, reports, disciplines, chat
 from src.api import civil, progress_civil, documents, authorizations, schedule
 from src.workers.polling_worker import start_polling, stop_polling
@@ -68,6 +70,17 @@ app.mount("/uploads", StaticFiles(directory=settings.civil_uploads_dir), name="u
 templates = Jinja2Templates(directory="src/templates")
 
 app.include_router(health.router)
+app.include_router(auth.router)
+
+
+@app.get("/i18n/terms.js", include_in_schema=False)
+async def i18n_terms():
+    """Nomes do ClickUp em inglês, servidos como script para a página os ter já na
+    primeira pintura (um fetch chegaria depois de os gráficos estarem desenhados)."""
+    body = "window.U2_TERMS = " + json.dumps(english_terms(), ensure_ascii=False) + ";"
+    return Response(content=body, media_type="application/javascript",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
 app.include_router(webhooks.router)
 app.include_router(sync.router)
 app.include_router(dashboard.router)

@@ -100,12 +100,23 @@ def _detect_forced_tool(message: str) -> str | None:
     return None
 
 
+_ENGLISH_NOTE = (
+    "\n\nIMPORTANT: the user is using the English interface. Write your whole answer in English, "
+    "translating province-independent terms (statuses, disciplines, activities) to English, "
+    "but keep proper names (provinces, people, teams) as they are."
+)
+
+
+def _system_prompt(lang: str) -> str:
+    return _SYSTEM_PROMPT + _ENGLISH_NOTE if lang == "en" else _SYSTEM_PROMPT
+
+
 class ChatService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
         self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    async def ask(self, message: str) -> ChatResponse:
+    async def ask(self, message: str, lang: str = "pt") -> ChatResponse:
         start = time.monotonic()
         messages: list[dict] = [{"role": "user", "content": message}]
         tools_used: list[str] = []
@@ -124,7 +135,7 @@ class ChatService:
                 response = await self._client.messages.create(
                     model=settings.chat_model,
                     max_tokens=settings.chat_max_tokens,
-                    system=_SYSTEM_PROMPT,
+                    system=_system_prompt(lang),
                     tools=TOOL_DEFINITIONS,
                     tool_choice=tool_choice,
                     messages=messages,

@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # (ex.: https://cloud.exemplo.com). Vazio = nenhum cabeçalho é enviado.
     embed_allowed_origins: str = ""
 
+    # Identificação pelo Nextcloud: chave pública (PEM) que confere o JWT do
+    # External sites — `occ config:app:get external jwt_token_pubkey_es256`.
+    # Vazio = verificação desligada. Numa linha de .env, escreva as quebras como \n.
+    nextcloud_jwt_public_key_pem: str = ""
+    # Opcional: URL base da instância; token com outro `iss` é recusado.
+    nextcloud_jwt_issuer: str = ""
+
     @property
     def embed_origins(self) -> list[str]:
         return [item.strip().rstrip("/") for item in self.embed_allowed_origins.split(",") if item.strip()]

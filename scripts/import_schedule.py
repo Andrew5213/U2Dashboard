@@ -228,7 +228,7 @@ async def ensure_holidays(clickup: ClickUpClient, list_id: str, schedule: XlsxSc
 
 
 async def main(args: argparse.Namespace) -> int:
-    schedule = load_schedule(args.files)
+    schedule = load_schedule(args.files, room=args.room)
     if args.zero:
         # mesma estrutura, sem andamento: modelo para uma província que ainda não começou
         schedule = dataclasses.replace(
@@ -302,6 +302,8 @@ if __name__ == "__main__":
     parser.add_argument("--list-name", default="Site FM", help="nome da lista nova (com --folder-id)")
     parser.add_argument("--replace", metavar="NOME_DA_LISTA",
                         help="apaga as tarefas que já existem na lista; exige o nome exato dela como confirmação")
+    parser.add_argument("--room", choices=["STUDIO", "CTP", "NEWSROOM"],
+                        help="planilhas de estúdio: a sala a importar (cada sala é uma lista)")
     parser.add_argument("--zero", action="store_true", help="importa a estrutura com todo o progresso em 0%%")
     parser.add_argument("--no-start-date", action="store_true",
                         help="não define a data de início da lista; as tarefas ficam sem datas até ela ser preenchida")

@@ -231,6 +231,28 @@ async def export_xlsx_report(
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+@router.get("/xlsx/gantt", summary="Exportar o Gantt (cronograma) de uma província/área em .xlsx")
+async def export_gantt_xlsx(
+    folder_id: str = Query(..., description="ID da pasta (província) no ClickUp"),
+    lang: str = Query(default="pt", description="Idioma do relatório: 'pt' (português) ou 'en' (inglês)"),
+    db: AsyncSession = Depends(get_db),
+):
+    lang = lang if lang in ("pt", "en") else "pt"
+    logger.info(f"Gerando XLSX de Gantt para folder {folder_id} (lang={lang})")
+    try:
+        xlsx_bytes = await GanttReportService(db).generate_xlsx(folder_id, lang=lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Erro ao gerar XLSX de Gantt {folder_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar relatório: {exc}")
+
+    datestamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename = get_strings(lang)["filename_gantt"].format(folder_id=folder_id, ts=datestamp).replace(".pdf", ".xlsx")
+    return Response(content=xlsx_bytes, media_type=_XLSX_MEDIA_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.get("/xlsx/provincia", summary="Exportar relatório detalhado de uma província/área em .xlsx")
 async def export_provincia_xlsx(
     folder_id: str = Query(..., description="ID da pasta (província) no ClickUp"),

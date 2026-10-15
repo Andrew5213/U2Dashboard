@@ -1333,6 +1333,7 @@
             <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block bg-green-300"></span>Concluída</span>
             <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block bg-blue-300"></span>Em andamento</span>
           </div>
+          ${opts.actions ? `<div class="flex items-center gap-2">${opts.actions}</div>` : ''}
           <a href="${esc(opts.backHref)}"
             class="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 border-l border-gray-200 pl-4">
             <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -1386,6 +1387,7 @@
       chartId:      'chart-gantt',
       tasks:        tasks,
       noDateCount:  noDate,
+      actions:      ganttButtons(folderId),
       onClickTask:  function (t) { window.__taskName = t.name; location.hash = '#/task/' + t.task_id; },
     });
   }
@@ -1459,6 +1461,110 @@
     });
   }
 
+  /* ── VIEW: Cronogramas (Gantt de cada província, num lugar só) ────── */
+  // Baixa um Gantt (PDF ou XLSX) no idioma dos relatórios; o botão mostra que está a gerar.
+  window.downloadGantt = function (kind, folderId, button) {
+    const lang = typeof _reportLang !== 'undefined' ? _reportLang : 'pt';
+    const link = document.createElement('a');
+    link.href = '/reports/' + kind + '/gantt?folder_id=' + encodeURIComponent(folderId) + '&lang=' + lang;
+    link.download = '';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    if (!button) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Gerando...';
+    setTimeout(function () { button.disabled = false; button.textContent = original; }, 4000);
+  };
+
+  function ganttButtons(folderId) {
+    const cls = 'text-xs px-2.5 py-1 rounded-lg font-medium transition-colors';
+    return `<button type="button" onclick="event.stopPropagation(); downloadGantt('pdf', '${esc(folderId)}', this)"
+        class="${cls} bg-red-50 text-red-700 hover:bg-red-100">PDF</button>
+      <button type="button" onclick="event.stopPropagation(); downloadGantt('xlsx', '${esc(folderId)}', this)"
+        class="${cls} bg-emerald-50 text-emerald-700 hover:bg-emerald-100">XLSX</button>`;
+  }
+
+  async function renderGantts() {
+    loading();
+    setBreadcrumb([{ label: 'Visão Geral', href: '#/' }, { label: 'Cronogramas' }]);
+
+    let folders, spans;
+    try {
+      [folders, spans] = await Promise.all([api('/dashboard/folders'), api('/dashboard/gantt/overview')]);
+    } catch (e) {
+      setView(`<div class="text-red-500 text-center py-12">Erro ao carregar dados: ${esc(e.message)}</div>`);
+      return;
+    }
+    const span = {};
+    spans.forEach(function (s) { span[s.folder_id] = s; });
+    // com datas primeiro (as que terminam antes no topo); sem datas no fim
+    const rows = folders.map(function (f) { return Object.assign({}, f, { span: span[f.folder_id] || {} }); })
+      .sort(function (a, b) {
+        const da = a.span.due_date || '9999', db = b.span.due_date || '9999';
+        return da < db ? -1 : da > db ? 1 : a.name.localeCompare(b.name);
+      });
+    const dated = rows.filter(function (r) { return r.span.due_date; }).length;
+
+    const body = rows.map(function (r) {
+      const has = !!r.span.due_date;
+      const period = has ? fmtDate(r.span.start_date) + ' → ' + fmtDate(r.span.due_date)
+                         : '<span class="text-gray-400">Sem datas</span>';
+      const delay = hasDelay(r)
+        ? `<span class="${r.delay_days > 0 ? 'text-red-500 font-medium' : r.delay_days < 0 ? 'text-emerald-600' : 'text-gray-400'}">${fmtDelay(r.delay_days)}</span>`
+        : '<span class="text-gray-400">—</span>';
+      const actions = has
+        ? `<a href="#/gantt/folder/${esc(r.folder_id)}" onclick="window.__folderName=${jsStr(r.name)}"
+              class="text-xs px-2.5 py-1 rounded-lg font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors">Ver na tela</a>
+           ${ganttButtons(r.folder_id)}`
+        : '<span class="text-xs text-gray-400">Defina a data de início da lista no ClickUp</span>';
+      return `<tr class="${has ? 'hover:bg-slate-50' : ''}">
+        <td class="py-3 px-4 font-medium text-gray-800">${esc(r.name)}</td>
+        <td class="py-3 px-4 text-sm text-gray-500 whitespace-nowrap">${period}</td>
+        <td class="py-3 px-4"><div class="flex items-center gap-2 min-w-[110px]">
+          <div class="flex-1">${progressBar(r.completion_rate)}</div>
+          <span class="text-xs text-gray-500 tabular-nums w-9 text-right">${fmtPct(r.completion_rate)}</span></div></td>
+        <td class="py-3 px-4 text-sm whitespace-nowrap">${delay}</td>
+        <td class="py-3 px-4"><div class="flex items-center justify-end gap-2">${actions}</div></td>
+      </tr>`;
+    }).join('');
+
+    setView(`
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h1 class="text-lg font-semibold text-gray-800">Cronogramas</h1>
+          <p class="text-xs text-gray-400 mt-0.5">Gantt de cada província: na tela, em PDF ou em planilha</p>
+        </div>
+        <a href="#/gantt/overview"
+           class="text-xs bg-red-50 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors font-medium shrink-0">
+          Cronograma Geral
+        </a>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+        ${kpiCard(ICONS.folder, 'Províncias', rows.length)}
+        ${kpiCard(ICONS.calendar, 'Com cronograma', dated, null, 'text-emerald-600')}
+        ${kpiCard(ICONS.clock, 'Sem datas', rows.length - dated, null, 'text-gray-500')}
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-xs text-gray-400 uppercase tracking-wide border-b border-slate-100">
+                <th class="py-2 px-4 text-left font-medium">Província</th>
+                <th class="py-2 px-4 text-left font-medium">Período</th>
+                <th class="py-2 px-4 text-left font-medium">Progresso</th>
+                <th class="py-2 px-4 text-left font-medium">Desvio</th>
+                <th class="py-2 px-4 text-right font-medium">Gantt</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">${body}</tbody>
+          </table>
+        </div>
+      </div>
+    `);
+  }
+
   /* ── Roteador ────────────────────────────────────────────────────── */
   function router() {
     const hash  = location.hash.replace(/^#\/?/, '');
@@ -1468,6 +1574,8 @@
 
     if (route === 'folder' && param) {
       renderFolder(param);
+    } else if (route === 'gantts') {
+      renderGantts();
     } else if (route === 'list' && param) {
       renderList(param);
     } else if (route === 'gantt') {

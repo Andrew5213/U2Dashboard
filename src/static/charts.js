@@ -4,6 +4,11 @@
    carregado antes deste arquivo nos templates. */
 
 const Charts = (function () {
+  // Rótulos de gráfico: traduzidos aqui, antes de o ECharts medir e desenhar.
+  const T = function (text) { return window.U2I18n ? window.U2I18n.t(text) : text; };
+  const LOCALE = window.U2I18n && window.U2I18n.lang === 'en' ? 'en-GB' : 'pt-BR';
+  const L_DONE = T('Concluídas');
+  const L_OPEN = T('Em aberto');
   const _instances = {};
   const _observers = {};
   var _ganttTooltip = null;
@@ -66,7 +71,7 @@ const Charts = (function () {
         var pending = total - done;
         var title = params[0] ? '<b>' + params[0].axisValue + '</b><br/>' : '';
         return title + params.map(function (p) {
-          var count = p.seriesName === 'Concluídas' ? done : pending;
+          var count = p.seriesName === L_DONE ? done : pending;
           return p.marker + ' ' + p.seriesName + ': <b>' + p.value + '%</b> (' + count + ' tasks)';
         }).join('<br/>');
       };
@@ -84,7 +89,7 @@ const Charts = (function () {
         axisPointer: { type: 'shadow' },
         formatter: tooltipFmt || undefined,
       },
-      legend: { data: ['Concluídas', 'Em aberto'], bottom: 0, textStyle: { fontSize: 11 } },
+      legend: { data: [L_DONE, L_OPEN], bottom: 0, textStyle: { fontSize: 11 } },
       grid: { left: '2%', right: '4%', top: 10, bottom: 40, containLabel: true },
       xAxis: {
         type: 'value',
@@ -98,7 +103,7 @@ const Charts = (function () {
       },
       series: [
         {
-          name: 'Concluídas',
+          name: L_DONE,
           type: 'bar',
           stack: 'total',
           data: completed,
@@ -115,7 +120,7 @@ const Charts = (function () {
           },
         },
         {
-          name: 'Em aberto',
+          name: L_OPEN,
           type: 'bar',
           stack: 'total',
           data: open,
@@ -166,7 +171,7 @@ const Charts = (function () {
     const data = Object.entries(distribution).map(function ([name, value]) {
       var color = STATUS_COLORS[name.toLowerCase()];
       if (!color) { color = FALLBACK_PALETTE[_fi % FALLBACK_PALETTE.length]; _fi++; }
-      return { name: name, value: value, itemStyle: { color: color } };
+      return { name: T(name), value: value, itemStyle: { color: color } };
     });
 
     // Todos os status entram na rosca. "Planejando" já veio oculto por padrão, mas
@@ -213,7 +218,7 @@ const Charts = (function () {
       if (!t.is_overdue) return;
       const names = t.assignees && t.assignees.length
         ? t.assignees.map(function (a) { return a.username || 'sem nome'; })
-        : ['Sem responsável'];
+        : [T('Sem responsável')];
       names.forEach(function (n) { counts[n] = (counts[n] || 0) + 1; });
     });
 
@@ -223,7 +228,7 @@ const Charts = (function () {
         graphic: [{
           type: 'text',
           left: 'center', top: 'middle',
-          style: { text: '✓ Nenhuma task em atraso', fontSize: 13, fill: '#94a3b8' },
+          style: { text: T('✓ Nenhuma task em atraso'), fontSize: 13, fill: '#94a3b8' },
         }],
       });
       return;
@@ -256,7 +261,7 @@ const Charts = (function () {
     if (!data || !data.length) {
       chart.setOption({
         graphic: [{ type: 'text', left: 'center', top: 'middle',
-          style: { text: 'Nenhum responsável atribuído', fontSize: 13, fill: '#94a3b8' } }],
+          style: { text: T('Nenhum responsável atribuído'), fontSize: 13, fill: '#94a3b8' } }],
       });
       return;
     }
@@ -368,7 +373,7 @@ const Charts = (function () {
       return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
     function _fmtD(d) {
-      return d ? new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+      return d ? new Date(d).toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
     }
 
     if (!tasks || !tasks.length) {
@@ -584,7 +589,7 @@ const Charts = (function () {
     if (!provinces || !provinces.length) {
       chart.setOption({
         graphic: [{ type: 'text', left: 'center', top: 'middle',
-          style: { text: 'Nenhum dado de evolução disponível', fontSize: 13, fill: '#94a3b8' } }],
+          style: { text: T('Nenhum dado de evolução disponível'), fontSize: 13, fill: '#94a3b8' } }],
       });
       return;
     }
@@ -635,7 +640,7 @@ const Charts = (function () {
       data: [],
       markLine: {
         symbol: 'none',
-        label: { show: true, formatter: 'Hoje', position: 'insideStartTop', fontSize: 9, color: '#dc2626' },
+        label: { show: true, formatter: T('Hoje'), position: 'insideStartTop', fontSize: 9, color: '#dc2626' },
         lineStyle: { color: '#dc2626', width: 1.5, type: 'dashed' },
         data: [{ xAxis: todayMs }],
       },
@@ -648,7 +653,7 @@ const Charts = (function () {
         formatter: function (params) {
           var realParams = params.filter(function (p) { return p.seriesType === 'line'; });
           if (!realParams.length) return '';
-          var dateStr = new Date(realParams[0].value[0]).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          var dateStr = new Date(realParams[0].value[0]).toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' });
           var sorted = realParams.slice().sort(function (a, b) { return b.value[1] - a.value[1]; });
           return '<div style="font-size:11px"><b>' + dateStr + '</b><br/>' +
             sorted.map(function (p) {
@@ -678,7 +683,7 @@ const Charts = (function () {
           fontSize: 10,
           color: '#6b7280',
           formatter: function (val) {
-            return new Date(val).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+            return new Date(val).toLocaleDateString(LOCALE, { month: 'short', year: '2-digit' });
           },
         },
         splitLine: { lineStyle: { color: (U2_DARK() ? U2_TRACK : '#f3f4f6') } },

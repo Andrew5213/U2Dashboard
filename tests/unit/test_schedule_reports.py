@@ -180,7 +180,8 @@ class TestListReport:
 
     async def test_english_report_uses_dot_and_calendar_days(self, repo, db):
         rows = {r["name"]: r for r in (await ListReportService(db)._build_data("L1", lang="en"))["rows"]}
-        assert rows["Cura do Concreto"]["duration_fmt"] == "14 cal. d"
+        # o nome também sai em inglês: é o mesmo dicionário da tela
+        assert rows["Concrete Curing"]["duration_fmt"] == "14 cal. d"
         assert rows["Logística"]["duration_fmt"] == "1.5 d"
 
     async def test_list_without_dates_renders_blank_columns(self, db):
@@ -311,7 +312,7 @@ class TestGanttReport:
         pdf.build_title(data)
         pdf.build_lists(data["lists"])
         assert pdf.page_no() == 3
-        assert not pdf._weekly()                    # mais de um ano: a grade passa a ser mensal
+        assert pdf._label_every() > 1               # mais de um ano: o rótulo salta semanas, a grade não
         assert (await GanttReportService(db).generate_pdf("F")).startswith(b"%PDF")
 
     async def test_unknown_folder_is_an_error(self, db):
@@ -384,3 +385,69 @@ class TestTeamView:
         assert cure["is_started"] and cure["parent_name"] == "Base do Gerador"
         assert cure["start_date"].date() == TODAY
         assert not tasks["Concretagem"]["is_started"]           # concluída não está "em andamento"
+
+
+class TestGanttSpreadsheet:
+    """Gantt em .xlsx: as barras são células pintadas, uma coluna por dia."""
+
+    async def _sheet(self, db, folder_id="F", lang="pt"):
+        from src.services.gantt_report_service import GanttReportService
+        return openpyxl.load_workbook(BytesIO(await GanttReportService(db).generate_xlsx(folder_id, lang=lang))).active
+
+    @staticmethod
+    def _color(cell) -> str:
+        return (cell.fill.fgColor.rgb or "")[-6:] if cell.fill and cell.fill.fill_type else ""
+
+    def _row_of(self, sheet, name):
+        return next(r for r in range(1, sheet.max_row + 1) if sheet.cell(row=r, column=1).value == name)
+
+    async def test_task_bar_covers_its_days_with_the_done_part_first(self, repo, db):
+        sheet = await self._sheet(db)
+        row = self._row_of(sheet, "Cura do Concreto")              # hoje → hoje+3, 40%
+        assert sheet.cell(row=row, column=2).value.date() == TODAY
+        assert sheet.cell(row=row, column=5).value == pytest.approx(0.4)
+        bar = [self._color(sheet.cell(row=row, column=c)) for c in range(7, sheet.max_column + 1)]
+        painted = [color for color in bar if color in ("3B82F6", "BFDBFE")]
+        assert len(painted) == 4                                   # 4 dias, início e fim inclusive
+        assert painted == ["3B82F6", "3B82F6", "BFDBFE", "BFDBFE"]  # 40% de 4 dias → 2 células
+
+    async def test_summaries_and_completed_tasks_have_their_own_colors(self, repo, db):
+        sheet = await self._sheet(db)
+        colors = lambda name: {self._color(sheet.cell(row=self._row_of(sheet, name), column=c))
+                               for c in range(7, sheet.max_column + 1)}
+        assert "475569" in colors("Obra Civil")                    # resumo
+        assert "16A34A" in colors("Concretagem")                   # concluída
+        assert sheet.row_dimensions[self._row_of(sheet, "Cura do Concreto")].outlineLevel == 2
+
+    async def test_header_is_frozen_and_weeks_are_labelled_by_their_monday(self, repo, db):
+        sheet = await self._sheet(db)
+        assert sheet.freeze_panes == "G7"
+        monday = TODAY - timedelta(days=TODAY.weekday())
+        weeks = [sheet.cell(row=5, column=c).value for c in range(7, sheet.max_column + 1)]
+        assert monday.strftime("%d/%m") in weeks
+        assert sheet.cell(row=4, column=1).value == "Tarefa"
+
+    async def test_english_and_empty_province(self, repo, db):
+        sheet = await self._sheet(db, lang="en")
+        assert sheet.cell(row=4, column=1).value == "Task" and sheet.cell(row=4, column=2).value == "Start"
+        await repo.upsert_folder({"id": "F2", "name": "BENGUELA"}, "S")
+        await repo.upsert_list({"id": "L9", "name": "Site FM"}, "S", "F2")
+        await repo.upsert_task({**schedule_task("Obra sem data"), "list": {"id": "L9"}}, "L9")
+        empty = await self._sheet(db, "F2")
+        assert "Nenhuma tarefa" in empty.cell(row=3, column=1).value
+
+    async def test_long_schedule_switches_to_one_column_per_week(self, db):
+        repo = CacheRepository(db)
+        await repo.upsert_space({"id": "S", "name": "Space"})
+        await repo.upsert_folder({"id": "F", "name": "LUENA"}, "S")
+        await repo.upsert_list({"id": "L1", "name": "Site FM"}, "S", "F")
+        await repo.upsert_task(schedule_task("Longa", duration=300, start=TODAY, due=TODAY + timedelta(days=400)), "L1")
+        sheet = await self._sheet(db)
+        assert sheet.max_column - 6 < 70            # ~58 semanas, não 400 dias
+        assert sheet.freeze_panes == "G6"           # sem a linha dos dias
+
+
+class TestGanttOverviewStart:
+    async def test_province_starts_on_its_first_real_start_date(self, repo):
+        row = next(r for r in await repo.get_gantt_overview("S") if r["folder_id"] == "F")
+        assert row["start_date"][:10] == (TODAY - timedelta(days=2)).isoformat()   # não a data de criação

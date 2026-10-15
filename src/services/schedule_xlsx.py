@@ -57,8 +57,17 @@ def _split(value, separator: str) -> list[str]:
     return [part.strip() for part in str(value or "").split(separator) if part.strip()]
 
 
-def load_schedule(paths: list[str]) -> XlsxSchedule:
-    """Lê os ficheiros na ordem dada (a ordem define a ordem das disciplinas)."""
+def load_schedule(paths: list[str], room: str | None = None) -> XlsxSchedule:
+    """Lê os ficheiros na ordem dada (a ordem define a ordem das disciplinas).
+
+    As planilhas dos estúdios têm outro formato (uma aba por sala, sem a aba
+    Parâmetros) e vão para o leitor próprio delas."""
+    from src.services.schedule_xlsx_studio import is_studio_workbook, load_studio_schedule
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if is_studio_workbook(openpyxl.load_workbook(paths[0], read_only=True)):
+            return load_studio_schedule(paths, room)
+
     books = []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # extensões de formatação que o openpyxl não lê

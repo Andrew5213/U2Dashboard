@@ -1016,8 +1016,11 @@ class CacheRepository:
             select(
                 ClickUpFolderCache.folder_id,
                 ClickUpFolderCache.name,
-                func.min(
-                    func.coalesce(ClickUpTaskCache.start_date, ClickUpTaskCache.date_created)
+                # Início real quando alguma tarefa o tem (cronograma); a data de criação
+                # só vale de aproximação para as províncias sem nenhum início gravado —
+                # misturar as duas puxava o início para o dia em que as tarefas foram criadas.
+                func.coalesce(
+                    func.min(ClickUpTaskCache.start_date), func.min(ClickUpTaskCache.date_created)
                 ).label("start_date"),
                 func.max(ClickUpTaskCache.due_date).label("due_date"),
                 func.count(ClickUpTaskCache.task_id).label("total_tasks"),

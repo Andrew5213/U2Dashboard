@@ -79,21 +79,86 @@
     });
   }
 
+  // No idioma da interface (i18n.js): o diálogo nativo não passa pelo DOM.
+  function say(text) { return text && window.U2I18n ? window.U2I18n.t(text) : text; }
+
   // Mesmos contratos de prompt()/confirm(), só que assíncronos: prompt devolve o
   // texto ou null; confirm devolve true/false.
   window.U2Dialog = {
     prompt: function (message, options) {
       options = options || {};
+      message = say(message);
       if (!embedded) return Promise.resolve(window.prompt(message));
       return modal(message, { input: true, password: !!options.password });
     },
     confirm: function (message, options) {
       options = options || {};
+      message = say(message);
       if (!embedded) return Promise.resolve(window.confirm(message));
-      return modal(message, { okLabel: options.okLabel });
+      return modal(message, { okLabel: say(options.okLabel) });
     },
   };
   window.U2Embed = { active: embedded };
+
+  // ── Quem está a ver (token do Nextcloud) ───────────────────────────────────
+  // O External sites abre a app com ?jwt=<token assinado>. O token sai logo da
+  // barra de endereço (não fica no histórico nem num link copiado) e segue para o
+  // servidor num cabeçalho; é o servidor que confere a assinatura. Fica guardado
+  // só nesta aba, para a identificação acompanhar a troca de página dentro do
+  // iframe — não é sessão: expira com o próprio token, em 1 hora.
+  var TOKEN_KEY = 'u2-nextcloud-jwt';
+
+  function takeToken() {
+    var token = null;
+    try {
+      var url = new URL(window.location.href);
+      token = url.searchParams.get('jwt');
+      if (token) {
+        url.searchParams.delete('jwt');
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+        sessionStorage.setItem(TOKEN_KEY, token);
+      } else {
+        token = sessionStorage.getItem(TOKEN_KEY);
+      }
+    } catch (_) { /* storage bloqueado: vale só o token desta carga */ }
+    return token;
+  }
+
+  function showUser(user) {
+    var button = document.getElementById('embed-reports-btn');
+    if (!button || document.getElementById('embed-user')) return;
+    var chip = document.createElement('span');
+    chip.id = 'embed-user';
+    chip.className = 'embed-user';
+    chip.textContent = user.display_name || user.uid;
+    chip.title = [user.display_name, user.email, user.uid].filter(Boolean).join(' · ');
+    button.parentNode.insertBefore(chip, button);
+  }
+
+  window.U2User = null;
+  (function identify() {
+    var token = takeToken();
+    if (!token || !window.fetch) return;
+    fetch('/auth/me?page=' + encodeURIComponent(window.location.pathname), {
+      headers: { 'X-Nextcloud-JWT': token },
+    })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data || !data.authenticated) {
+          // expirado ou recusado: não adianta reenviar nas próximas páginas
+          try { sessionStorage.removeItem(TOKEN_KEY); } catch (_) {}
+          return;
+        }
+        window.U2User = data.user;
+        document.dispatchEvent(new CustomEvent('u2-user', { detail: data.user }));
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', function () { showUser(data.user); });
+        } else {
+          showUser(data.user);
+        }
+      })
+      .catch(function () { /* sem rede: a app segue sem identificação */ });
+  })();
 
   if (!embedded) return;
 
@@ -145,12 +210,33 @@
         tab.target = '_blank';
         tab.rel = 'noopener noreferrer';
         tab.insertAdjacentHTML('beforeend', EXTERNAL_ICON);
-      } else if ((href.replace(/\/+$/, '') || '/') === path) {
-        tab.classList.add('embed-tab-active');
-        tab.setAttribute('aria-current', 'page');
+      } else {
+        tab.setAttribute('data-embed-path', (href.split('#')[0].replace(/\/+$/, '') || (href.charAt(0) === '#' ? path : '/')));
+        tab.setAttribute('data-embed-hash', href.indexOf('#') >= 0 ? href.slice(href.indexOf('#')) : '');
       }
       tabs.appendChild(tab);
     }
+
+    // "Visão Geral" e "Cronogramas" são a mesma página com #/… diferente: vence a
+    // aba cujo # é o início do endereço atual; sem nenhuma, a aba sem #.
+    function markActive() {
+      var here = window.location.hash || '';
+      var best = null;
+      Array.prototype.forEach.call(tabs.querySelectorAll('[data-embed-path]'), function (tab) {
+        tab.classList.remove('embed-tab-active');
+        tab.removeAttribute('aria-current');
+        if (tab.getAttribute('data-embed-path') !== path) return;
+        var hash = tab.getAttribute('data-embed-hash');
+        var matches = hash ? here.indexOf(hash.replace(/s$/, '')) === 0 : true;
+        if (matches && (!best || hash.length > best.getAttribute('data-embed-hash').length)) best = tab;
+      });
+      if (best) {
+        best.classList.add('embed-tab-active');
+        best.setAttribute('aria-current', 'page');
+      }
+    }
+    markActive();
+    window.addEventListener('hashchange', markActive);
     if (reportsHeading) reportsHeading.classList.add('embed-first');
 
     var button = document.createElement('button');

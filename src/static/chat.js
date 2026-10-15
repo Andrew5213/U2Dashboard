@@ -198,7 +198,7 @@ const ChatWidget = (() => {
       const res = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg }),
+        body: JSON.stringify({ message: msg, lang: (window.U2I18n && U2I18n.lang) || 'pt' }),
       });
       const json = await res.json();
       _removeThinking();
