@@ -1,5 +1,5 @@
 import copy
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -22,7 +22,7 @@ STATUSES = [
     {"status": "complete", "type": "done", "orderindex": 3},
     {"status": "cancelled", "type": "closed", "orderindex": 4},
 ]
-F_DURATION, F_PERCENT, F_CALENDAR, F_COMPLETION = "f-dur", "f-pct", "f-cal", "f-done"
+F_DURATION, F_PERCENT, F_CALENDAR, F_COMPLETION, F_FIXED = "f-dur", "f-pct", "f-cal", "f-done", "f-fixed"
 CALENDAR_OPTIONS = [
     {"id": "opt-util", "name": "Útil", "orderindex": 0},
     {"id": "opt-corrido", "name": "Corrido", "orderindex": 1},
@@ -32,6 +32,7 @@ FIELDS = [
     {"id": F_PERCENT, "name": "% Concluído", "type": "manual_progress", "type_config": {"start": 0, "end": 100}},
     {"id": F_CALENDAR, "name": "Calendário", "type": "drop_down", "type_config": {"options": CALENDAR_OPTIONS}},
     {"id": F_COMPLETION, "name": "Data de Conclusão", "type": "date", "type_config": {}},
+    {"id": F_FIXED, "name": "Início fixado", "type": "date", "type_config": {}},
 ]
 
 
@@ -42,6 +43,7 @@ def make_task(task_id, parent=None, status="planejando", percent=0, duration=Non
         F_PERCENT: {"current": str(percent), "percent_completed": percent / 100},
         F_CALENDAR: 1 if corrido else None,
         F_COMPLETION: None if completed is None else str(date_to_ms(completed)),
+        F_FIXED: None,
     }
     return {
         "id": task_id, "name": task_id.upper(), "parent": parent,
@@ -63,7 +65,7 @@ class FakeClickUp:
 
     def __init__(self, tasks, start=date(2026, 10, 13), content="", fields=FIELDS, holidays=()):
         self.tasks = {t["id"]: t for t in tasks}
-        self.start, self.content, self.fields = start, content, fields
+        self.start, self.content, self.fields = start, content, list(fields)
         self.holidays = list(holidays)
         self.writes: list[tuple] = []
         self.fail_on: set[str] = set()
@@ -109,6 +111,27 @@ class FakeClickUp:
         field["value"] = None
         self.writes.append(("clear", task_id, field_id))
 
+    async def create_custom_field(self, list_id, definition):
+        field = {"id": "f-new-" + definition["name"], **definition}
+        self.fields.append(field)
+        for task in self.tasks.values():
+            task["custom_fields"] = [cf for cf in task["custom_fields"] if cf["name"] != field["name"]]
+            task["custom_fields"].append({**field, "value": None})
+        self.writes.append(("create_field", definition["name"]))
+        return field
+
+    async def create_comment(self, task_id, text, notify_all=True):
+        self.writes.append(("comment", task_id, text))
+        return {"id": "c1"}
+
+    # o que uma pessoa faz no ClickUp
+    def type_dates(self, task_id, start=None, due=None):
+        """Data escolhida no ClickUp sem hora = meia-noite em Angola (23:00 UTC do dia anterior)."""
+        for key, day in (("start_date", start), ("due_date", due)):
+            if day:
+                midnight = datetime(day.year, day.month, day.day, tzinfo=timezone(timedelta(hours=1)))
+                self.tasks[task_id][key] = str(int(midnight.timestamp() * 1000))
+
     # leitura cómoda para as asserções
     def dates(self, task_id):
         t = self.tasks[task_id]
@@ -116,6 +139,12 @@ class FakeClickUp:
 
     def value(self, task_id, field_id):
         return next(cf for cf in self.tasks[task_id]["custom_fields"] if cf["id"] == field_id)["value"]
+
+    def value_by_name(self, task_id, name):
+        return next(cf for cf in self.tasks[task_id]["custom_fields"] if cf["name"] == name)["value"]
+
+    def touched(self, task_id):
+        return [w for w in self.writes if len(w) > 1 and w[1] == task_id]
 
     def status(self, task_id):
         return self.tasks[task_id]["status"]["status"]
@@ -429,3 +458,230 @@ class TestBaseline:
     async def test_list_without_start_date_gets_no_baseline(self, db):
         summary = await _run(db, FakeClickUp(_project(), start=None))
         assert not summary.ok and await self._rows(db) == {}
+
+
+# ─── Datas digitadas à mão ───────────────────────────────────────────────────
+
+def _chains():
+    """Disciplina n1 → grupo n2 com a → b; c depende de b; x → y é outra cadeia, sem
+    ligação com a primeira. Semana com folga só ao domingo; o projeto começa terça 13/10:
+    a 13–14, b 15, c 16–19 (sex, sáb, seg), x 13–14, y 15."""
+    tasks = [
+        make_task("n1"),
+        make_task("n2", parent="n1"),
+        make_task("a", parent="n2", duration=2),
+        make_task("b", parent="n2", duration=1),
+        make_task("c", parent="n1", duration=3),
+        make_task("x", parent="n1", duration=2),
+        make_task("y", parent="n1", duration=1),
+    ]
+    depends(tasks, "b", "a")
+    depends(tasks, "c", "b")
+    depends(tasks, "y", "x")
+    return tasks
+
+
+async def _planned(db, tasks=None, **kwargs):
+    """Lista já calculada uma vez pelo motor (o estado guarda as datas que ele deixou)."""
+    clickup = FakeClickUp(tasks or _chains(), **kwargs)
+    await _run(db, clickup)
+    assert clickup.dates("c") == (date(2026, 10, 16), date(2026, 10, 19))
+    clickup.writes.clear()
+    return clickup
+
+
+class TestManualDates:
+    async def test_delaying_the_due_date_moves_only_the_tasks_that_depend_on_it(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok, summary.errors
+        assert float(clickup.value("a", F_DURATION)) == 4                  # ter → sex
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 16))
+        assert clickup.dates("b") == (date(2026, 10, 17), date(2026, 10, 17))
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 21))
+        assert clickup.dates("n2") == (date(2026, 10, 13), date(2026, 10, 17))
+        assert clickup.dates("n1") == (date(2026, 10, 13), date(2026, 10, 21))
+        assert clickup.touched("x") == [] and clickup.touched("y") == []
+        assert clickup.value("a", F_FIXED) is None                         # só o vencimento mudou
+
+    async def test_bringing_the_due_date_forward_pulls_the_successors(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", due=date(2026, 10, 13))
+
+        await _run(db, clickup)
+
+        assert float(clickup.value("a", F_DURATION)) == 1
+        assert clickup.dates("b") == (date(2026, 10, 14), date(2026, 10, 14))
+        assert clickup.dates("c") == (date(2026, 10, 15), date(2026, 10, 17))
+
+    async def test_moving_both_dates_keeps_the_duration_and_fixes_the_start(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", start=date(2026, 10, 15), due=date(2026, 10, 16))
+
+        await _run(db, clickup)
+
+        assert float(clickup.value("a", F_DURATION)) == 2
+        assert ms_to_date(clickup.value("a", F_FIXED)) == date(2026, 10, 15)
+        assert clickup.dates("a") == (date(2026, 10, 15), date(2026, 10, 16))
+        assert clickup.dates("b") == (date(2026, 10, 17), date(2026, 10, 17))
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 21))
+        assert clickup.touched("x") == []
+
+    async def test_changing_start_and_due_by_different_amounts_sets_both(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", start=date(2026, 10, 14), due=date(2026, 10, 17))
+
+        await _run(db, clickup)
+
+        assert ms_to_date(clickup.value("a", F_FIXED)) == date(2026, 10, 14)
+        assert float(clickup.value("a", F_DURATION)) == 4                  # qua, qui, sex, sáb
+        assert clickup.dates("a") == (date(2026, 10, 14), date(2026, 10, 17))
+        assert clickup.dates("b") == (date(2026, 10, 19), date(2026, 10, 19))
+
+    async def test_changing_only_the_start_keeps_the_duration(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", start=date(2026, 10, 15))                  # o vencimento fica 14
+
+        await _run(db, clickup)
+
+        assert float(clickup.value("a", F_DURATION)) == 2
+        assert clickup.dates("a") == (date(2026, 10, 15), date(2026, 10, 16))
+
+    async def test_a_second_run_after_an_edit_writes_nothing(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", start=date(2026, 10, 15), due=date(2026, 10, 16))
+        await _run(db, clickup)
+        clickup.writes.clear()
+
+        summary = await _run(db, clickup)
+
+        assert summary.changed == 0 and clickup.writes == []
+        assert clickup.dates("a") == (date(2026, 10, 15), date(2026, 10, 16))
+
+    async def test_typed_dates_are_rewritten_in_the_engine_format(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        await _run(db, clickup)
+
+        assert clickup.tasks["a"]["due_date"] == str(date_to_ms(date(2026, 10, 16)))
+
+    async def test_start_before_the_predecessor_finishes_loses_and_is_explained(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("b", start=date(2026, 10, 13), due=date(2026, 10, 13))
+
+        summary = await _run(db, clickup)
+
+        assert clickup.dates("b") == (date(2026, 10, 15), date(2026, 10, 15))     # a termina 14
+        comments = [w for w in clickup.writes if w[0] == "comment"]
+        assert len(comments) == 1 and comments[0][1] == "b"
+        assert '"A"' in comments[0][2] and "14/10/2026" in comments[0][2] and "15/10/2026" in comments[0][2]
+        assert any("13/10/2026 não foi possível" in w for w in summary.warnings)
+
+    async def test_start_in_the_past_is_explained(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("x", start=date(2026, 10, 13), due=date(2026, 10, 14))   # sem mudança
+        clickup.type_dates("y", start=date(2026, 10, 14), due=date(2026, 10, 14))
+
+        summary = await _run(db, clickup, today=date(2026, 10, 15))
+
+        assert clickup.dates("y")[0] == date(2026, 10, 15)
+        assert any("já passou" in w for w in summary.warnings)
+
+    async def test_tasks_outside_the_chain_keep_their_dates_even_if_something_else_changed(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", due=date(2026, 10, 16))
+        clickup.tasks["x"]["custom_fields"][0]["value"] = "5"              # outra mudança, noutra cadeia
+
+        await _run(db, clickup)
+        assert clickup.dates("x") == (date(2026, 10, 13), date(2026, 10, 14))
+        assert clickup.dates("y") == (date(2026, 10, 15), date(2026, 10, 15))
+
+        await _run(db, clickup)                                            # o recálculo seguinte é completo
+        assert clickup.dates("x") == (date(2026, 10, 13), date(2026, 10, 17))
+        assert clickup.dates("y") == (date(2026, 10, 19), date(2026, 10, 19))
+
+    async def test_clearing_the_fixed_start_returns_the_task_to_its_dependencies(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", start=date(2026, 10, 15), due=date(2026, 10, 16))
+        await _run(db, clickup)
+
+        clickup.tasks["a"]["custom_fields"][-1]["value"] = None            # apaga o "Início fixado"
+        await _run(db, clickup)
+
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
+        assert clickup.dates("c") == (date(2026, 10, 16), date(2026, 10, 19))
+
+    async def test_due_date_of_a_completed_task_becomes_its_completion_date(self, db):
+        tasks = _chains()
+        tasks[2] = make_task("a", parent="n2", duration=2, status="complete", percent=100,
+                             completed=date(2026, 10, 14))
+        depends(tasks, "b", "a")
+        clickup = await _planned(db, tasks)
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        await _run(db, clickup, today=date(2026, 10, 16))
+
+        assert ms_to_date(clickup.value("a", F_COMPLETION)) == date(2026, 10, 16)
+        assert clickup.dates("b") == (date(2026, 10, 17), date(2026, 10, 17))
+
+    async def test_due_before_start_is_refused_and_reported(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", due=date(2026, 10, 12))
+
+        summary = await _run(db, clickup)
+
+        assert float(clickup.value("a", F_DURATION)) == 2
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
+        assert any("vencimento antes do início" in w for w in summary.warnings)
+
+    async def test_editing_a_group_is_undone(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n2", due=date(2026, 10, 20))
+
+        await _run(db, clickup)
+
+        assert clickup.dates("n2") == (date(2026, 10, 13), date(2026, 10, 15))
+
+    async def test_without_known_dates_nothing_counts_as_an_edit(self, db):
+        from sqlalchemy import update
+        from src.models.schedule_models import ScheduleTaskState
+        clickup = await _planned(db)
+        await db.execute(update(ScheduleTaskState).values(start=None, due=None))   # estado antigo
+        await db.commit()
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        await _run(db, clickup)
+
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
+        assert float(clickup.value("a", F_DURATION)) == 2
+
+    async def test_dry_run_shows_the_edit_without_writing(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        summary = await _run(db, clickup, dry_run=True)
+
+        assert clickup.writes == []
+        changed = {c["name"]: c["changes"] for c in summary.changes}
+        assert changed["A"]["duracao"] == [2.0, 4.0]
+        assert changed["C"]["fim"] == ["2026-10-19", "2026-10-21"]
+        assert "X" not in changed
+
+    async def test_missing_fixed_start_field_is_created(self, db):
+        clickup = await _planned(db, fields=[f for f in FIELDS if f["id"] != F_FIXED])
+        clickup.type_dates("a", start=date(2026, 10, 15), due=date(2026, 10, 16))
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok, summary.errors
+        assert ("create_field", "Início fixado") in clickup.writes
+        assert ms_to_date(clickup.value_by_name("a", "Início fixado")) == date(2026, 10, 15)
+
+
+def test_debounce_default_is_five_seconds():
+    from src.core.config import Settings
+    assert Settings.model_fields["schedule_debounce_seconds"].default == 5.0

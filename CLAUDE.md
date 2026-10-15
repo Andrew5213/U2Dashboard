@@ -557,7 +557,8 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 | % concluído | campo `% Concluído` (manual_progress — barra nativa) | utilizador (folhas); motor (resumos) |
 | Status | status nativo | os dois — ver regra abaixo |
 | Antecessores | dependências nativas ("waiting on") | utilizador |
-| Início / fim | `start_date` / `due_date` **nativos**, só o dia | motor |
+| Início / fim | `start_date` / `due_date` **nativos**, só o dia | motor; o utilizador pode mexer numa folha — ver "Datas digitadas à mão" |
+| Início fixado | campo `Início fixado` (date): "não começar antes de" | motor, quando alguém muda o início à mão; o utilizador apaga para soltar |
 | Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
 | Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
 | Data de início do projeto | `start_date` da lista | utilizador |
@@ -587,12 +588,40 @@ status tira o % de 100 (vira 99). Status fora do trio (impedimento, revisão) nu
 resumos têm %, status, datas e duração **calculados** — editar um resumo à mão é desfeito no próximo
 recálculo (exceto um status fora do trio, que é respeitado).
 
+**Datas digitadas à mão** (numa tarefa-folha). `schedule_task_state` guarda também o início e o
+término que o motor deixou em cada tarefa; uma data diferente foi mexida por alguém e vira **entrada**
+do cálculo em vez de ser desfeita (`_detect_edit`):
+- não iniciada: o início vira o campo **Início fixado** ("não começar antes de" — `not_before` no
+  motor) e o vencimento vira a **duração** (dias úteis do início ao vencimento; em "Corrido", dias
+  corridos). Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
+- em andamento: o início já valia como início real; o vencimento vira a duração;
+- concluída: o vencimento vira a `Data de Conclusão`.
+
+Nessa execução **só a tarefa mexida e as que dependem dela** (`dependents_of`, com as dependências de
+resumo expandidas) — mais os grupos e disciplinas que as contêm — têm as datas regravadas. As outras
+folhas entram no motor com as datas de agora (`pinned`), e as sucessoras partem delas; o recálculo
+seguinte sem edição volta a ser completo. A dependência vence o Início fixado: um início antes do fim
+da antecessora (ou num dia que já passou, numa tarefa não iniciada) é ajustado e o motor deixa um
+**comentário na tarefa** explicando. Apagar o Início fixado devolve a tarefa às dependências. O campo é
+criado sozinho na primeira vez que for preciso (as listas importadas antes não o têm) e faz parte do
+`FIELD_DEFS` do importador. Editar um resumo continua a ser desfeito. Estado sem datas (de antes deste
+recurso, ou tarefa nova) não conta como edição — o primeiro cálculo só registra as datas.
+- **Fuso:** as datas são lidas no fuso da obra (`ms_to_site_date`, `SCHEDULE_UTC_OFFSET_HOURS`): uma
+  data escolhida no ClickUp sem hora chega como a meia-noite de quem digitou, e a meia-noite de Angola em
+  UTC já é o dia anterior. A data digitada é regravada pelo motor para a dashboard, que lê em UTC,
+  mostrar o mesmo dia: o ClickUp guarda data sem hora como a meia-noite do fuso de quem grava (o token
+  da app: 03:00 UTC, conferido em 2026-10-15), não o instante enviado.
+- **Limitação:** uma data digitada no intervalo entre a leitura da lista e a gravação do motor (alguns
+  segundos) pode ser sobrescrita sem virar edição.
+
 **Sem laço de webhook**: `ScheduleService.recalculate` grava só as diferenças. As gravações disparam
 webhooks, que agendam outro recálculo, que não encontra nada para gravar. Qualquer campo novo
 gravado pelo motor tem de convergir (comparar o que se lê com o que se gravaria) — senão vira laço.
 
 **Gatilhos** (`schedule_worker.py`): webhook de qualquer tarefa da lista → espera
-`SCHEDULE_DEBOUNCE_SECONDS` (reinicia a cada novo evento) → recalcula; e um job a cada
+`SCHEDULE_DEBOUNCE_SECONDS` (5 s; reinicia a cada novo evento) → recalcula — uma execução por lista de
+cada vez (lock por lista em `run_recalculation`; um aviso que chega durante o cálculo espera e roda
+depois); e um job a cada
 `SCHEDULE_INTERVAL_SECONDS`. O job periódico não é redundância: o ClickUp **não envia webhook quando
 uma dependência é removida** (criar envia `taskUpdated` nas duas tarefas) nem quando a lista de
 feriados muda. `POST /schedule/{list_id}/recalculate?dry_run=true` mostra o que mudaria sem gravar.
@@ -730,7 +759,7 @@ Tables:
 - `authorization_token` — par de tokens por requisição (`task_id`, `action`, `token`, `expires_at`, `used_at`, `used_note`). Consumir um marca os dois como usados.
 
 **Schedule table** (in `schedule_models.py`, imported in `main.py`):
-- `schedule_task_state` — último (%, concluída?) que o motor viu por tarefa; decide quem vence quando % e status discordam
+- `schedule_task_state` — último (%, concluída?, início, término) que o motor deixou por tarefa; decide quem vence quando % e status discordam e reconhece uma data digitada à mão
 - `schedule_baseline` — linha de base: início e término planeados por tarefa (ver "Linha de base")
 
 **Document table** (in `document_models.py`, imported in `main.py`):
@@ -790,7 +819,7 @@ Tables:
 | `SCHEDULE_LIST_IDS` | Listas geridas pelo motor, separadas por vírgula | `""` |
 | `SCHEDULE_HOLIDAYS_LIST_ID` | Lista de feriados (fora do space sincronizado) | `""` |
 | `SCHEDULE_WEEKEND_MASK` | Folga semanal padrão, Seg→Dom, `1` = folga | `0000001` |
-| `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular | `20` |
+| `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular | `5` |
 | `SCHEDULE_INTERVAL_SECONDS` | Intervalo do recálculo periódico | `300` |
 | `SCHEDULE_UTC_OFFSET_HOURS` | Fuso da obra (define "hoje" para o motor); Angola = 1 | `1` |
 | `EMBED_ALLOWED_ORIGINS` | Origens que podem abrir a app num iframe (Nextcloud), separadas por vírgula; vazio = sem restrição | `""` |
@@ -852,8 +881,8 @@ Unit tests:
 - `test_cache_repository.py` — CacheRepository upsert and query methods
 - `test_authorization_service.py` — formatação de custom fields, ordem do resumo, validação do motivo
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
-- `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status
-- `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada)
+- `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
+- `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada) e datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso)
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
 - `test_nextcloud_auth.py` — JWT do Nextcloud: assinatura ES256, expiração, emissor, confusão de algoritmo, formatos da chave e `GET /auth/me`

@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     # Folga semanal padrão, Seg→Dom ("1" = folga). A descrição da lista pode sobrepor.
     schedule_weekend_mask: str = "0000001"
     # Espera após um webhook antes de recalcular (junta edições em sequência)
-    schedule_debounce_seconds: float = 20.0
+    schedule_debounce_seconds: float = 5.0
     # Recálculo periódico — cobre o que o ClickUp não avisa (remoção de dependência, feriados)
     schedule_interval_seconds: int = 300
     # Fuso da obra em horas a partir de UTC (Angola = +1) — define o que é "hoje"

@@ -7,17 +7,23 @@ from src.core.database import Base
 
 
 class ScheduleTaskState(Base):
-    """Último (%, concluída?) que o motor do cronograma viu em cada tarefa.
+    """Último (%, concluída?, início, término) que o motor do cronograma deixou em
+    cada tarefa.
 
-    Serve para saber o que o utilizador acabou de mexer quando % e status
-    discordam: baixar o % de uma tarefa concluída reabre a tarefa, enquanto
-    marcar "complete" numa tarefa a 40% leva o % a 100."""
+    Serve para saber o que o utilizador acabou de mexer: quando % e status
+    discordam, baixar o % de uma tarefa concluída reabre a tarefa, enquanto marcar
+    "complete" numa tarefa a 40% leva o % a 100; e uma data diferente da que o
+    motor gravou foi digitada por alguém — vira entrada do cálculo em vez de ser
+    desfeita. `start`/`due` vazios = ainda não se sabe (estado de antes desse
+    recurso): nada é tratado como edição até a primeira gravação."""
     __tablename__ = "schedule_task_state"
 
     task_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     list_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     percent: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    due: Mapped[date | None] = mapped_column(Date, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

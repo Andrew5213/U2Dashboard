@@ -90,6 +90,11 @@ class ScheduleTask:
     start: date | None = None        # início hoje gravado (vale como início real se em andamento)
     finished_on: date | None = None  # data real de conclusão
     cancelled: bool = False
+    # "não começar antes de": início digitado à mão numa tarefa não iniciada
+    not_before: date | None = None
+    # datas mantidas como estão (fora do alcance de uma edição) — as sucessoras
+    # que forem recalculadas partem delas
+    pinned: tuple[date, date] | None = None
 
 
 @dataclass(frozen=True)
@@ -132,43 +137,11 @@ def compute_schedule(
       - em andamento: o que falta é executado a partir de hoje;
       - não iniciada: nunca começa antes de hoje.
     """
-    warnings: list[str] = []
     by_id = {t.id: t for t in tasks}
     order = [t.id for t in tasks]
-
-    children: dict[str, list[str]] = {}
-    for t in tasks:
-        if t.parent_id and t.parent_id in by_id:
-            children.setdefault(t.parent_id, []).append(t.id)
-
-    leaf_cache: dict[str, tuple[str, ...]] = {}
-
-    def leaves_of(task_id: str) -> tuple[str, ...]:
-        if task_id not in leaf_cache:
-            kids = children.get(task_id)
-            if not kids:
-                leaf_cache[task_id] = (task_id,)
-            else:
-                leaf_cache[task_id] = tuple(leaf for kid in kids for leaf in leaves_of(kid))
-        return leaf_cache[task_id]
-
-    leaf_ids = [tid for tid in order if tid not in children]
-
-    # Dependências expandidas até as folhas: depender de um resumo é depender de
-    # todas as tarefas dele; um resumo que depende de X faz todas as suas esperarem X.
-    preds: dict[str, set[str]] = {tid: set() for tid in leaf_ids}
-    for t in tasks:
-        for pred_id in t.predecessors:
-            if pred_id not in by_id:
-                warnings.append(f"{_ref(t.id)}: antecessor {_ref(pred_id)} não está nesta lista — ignorado")
-                continue
-            sources = set(leaves_of(pred_id))
-            targets = set(leaves_of(t.id))
-            if sources & targets:
-                warnings.append(f"{_ref(t.id)}: dependência de {_ref(pred_id)} dentro do próprio grupo — ignorada")
-                continue
-            for target in targets:
-                preds[target] |= sources
+    graph = _LeafGraph(tasks)
+    children, leaves_of, leaf_ids, preds = graph.children, graph.leaves_of, graph.leaf_ids, graph.preds
+    warnings: list[str] = list(graph.warnings)
 
     ordered, cyclic = _topological_order(leaf_ids, preds)
     if cyclic:
@@ -193,9 +166,19 @@ def compute_schedule(
             dates[tid] = (None, None)
             continue
 
+        if t.pinned:
+            start_day, finish_day = t.pinned
+            n = float(calendar.index_of(start_day))
+            o = max(float(calendar.end_position(finish_day)), n)
+            pos_start[tid], pos_finish[tid] = n, o
+            dates[tid] = (start_day, finish_day)
+            continue
+
         if not reschedule or p <= 0:
             floor = max(0.0, pred_finish)
             n = max(floor, float(today_pos)) if reschedule else floor
+            if t.not_before:
+                n = max(n, float(calendar.index_of(t.not_before)))
             o = round(n + m, 6)
             start_day = calendar.date_at(math.floor(n + _EPS))
             finish_day = calendar.date_at(_finish_index(n, o))
@@ -217,9 +200,9 @@ def compute_schedule(
     results: dict[str, ScheduleResult] = {}
     for tid in leaf_ids:
         t = by_id[tid]
-        start_day, finish_day = dates[tid]
+        leaf_start, leaf_finish = dates[tid]
         results[tid] = ScheduleResult(
-            id=tid, is_summary=False, start=start_day, finish=finish_day,
+            id=tid, is_summary=False, start=leaf_start, finish=leaf_finish,
             percent=min(max(t.percent, 0.0), 100.0), duration=float(t.duration),
             duration_util=weights[tid], pos_start=pos_start[tid], pos_finish=pos_finish[tid],
         )
@@ -250,6 +233,69 @@ def compute_schedule(
         )
 
     return ScheduleOutput(results=results, warnings=tuple(warnings))
+
+
+class _LeafGraph:
+    """Hierarquia e dependências expandidas até as folhas: depender de um resumo é
+    depender de todas as tarefas dele; um resumo que depende de X faz todas as suas
+    esperarem X."""
+
+    def __init__(self, tasks: list[ScheduleTask]) -> None:
+        by_id = {t.id: t for t in tasks}
+        self.children: dict[str, list[str]] = {}
+        for t in tasks:
+            if t.parent_id and t.parent_id in by_id:
+                self.children.setdefault(t.parent_id, []).append(t.id)
+        self._leaf_cache: dict[str, tuple[str, ...]] = {}
+        self.leaf_ids = [t.id for t in tasks if t.id not in self.children]
+        self.warnings: list[str] = []
+        self.preds: dict[str, set[str]] = {tid: set() for tid in self.leaf_ids}
+        for t in tasks:
+            for pred_id in t.predecessors:
+                if pred_id not in by_id:
+                    self.warnings.append(f"{_ref(t.id)}: antecessor {_ref(pred_id)} não está nesta lista — ignorado")
+                    continue
+                sources = set(self.leaves_of(pred_id))
+                targets = set(self.leaves_of(t.id))
+                if sources & targets:
+                    self.warnings.append(
+                        f"{_ref(t.id)}: dependência de {_ref(pred_id)} dentro do próprio grupo — ignorada")
+                    continue
+                for target in targets:
+                    self.preds[target] |= sources
+
+    def leaves_of(self, task_id: str) -> tuple[str, ...]:
+        if task_id not in self._leaf_cache:
+            kids = self.children.get(task_id)
+            if not kids:
+                self._leaf_cache[task_id] = (task_id,)
+            else:
+                self._leaf_cache[task_id] = tuple(leaf for kid in kids for leaf in self.leaves_of(kid))
+        return self._leaf_cache[task_id]
+
+
+def dependents_of(tasks: list[ScheduleTask], roots: set[str]) -> set[str]:
+    """As tarefas-folha em `roots` mais todas as que esperam por elas, direta ou
+    indiretamente (com as dependências de/para resumos já expandidas)."""
+    graph = _LeafGraph(tasks)
+    successors: dict[str, set[str]] = {}
+    for leaf, sources in graph.preds.items():
+        for source in sources:
+            successors.setdefault(source, set()).add(leaf)
+    reached = {root for root in roots if root in graph.preds}
+    queue = list(reached)
+    while queue:
+        for nxt in successors.get(queue.pop(), ()):
+            if nxt not in reached:
+                reached.add(nxt)
+                queue.append(nxt)
+    return reached
+
+
+def workdays_between(calendar: WorkCalendar, start: date, finish: date) -> int:
+    """Dias úteis de `start` a `finish`, os dois inclusive — a duração de uma tarefa
+    que ocupa esse intervalo."""
+    return calendar.end_position(finish) - calendar.index_of(start)
 
 
 def _ref(task_id: str) -> str:

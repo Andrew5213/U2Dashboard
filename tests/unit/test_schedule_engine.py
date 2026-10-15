@@ -10,10 +10,12 @@ from src.services.schedule_engine import (
     StatusNames,
     WorkCalendar,
     compute_schedule,
+    dependents_of,
     display_percent,
     reconcile_leaf,
     summary_status,
     useful_duration,
+    workdays_between,
 )
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "lubango_schedule.json"
@@ -305,3 +307,75 @@ class TestReconcile:
         assert display_percent(41.03) == 41
         assert display_percent(99.7) == 99
         assert display_percent(100) == 100
+
+
+# ─── Datas digitadas à mão: restrição de início, datas fixadas, dependentes ──
+
+class TestManualDates:
+    """Semana de segunda a sexta, projeto a começar na segunda 19/10/2026."""
+
+    CAL = WorkCalendar(start=date(2026, 10, 19), weekend_mask="0000011")
+    TODAY = date(2026, 10, 15)
+
+    def _chain(self, **overrides):
+        """g = grupo com a → b; c depende de b; e depende do grupo; d solta."""
+        tasks = {
+            "g": ScheduleTask(id="g"),
+            "a": ScheduleTask(id="a", parent_id="g", duration=3),
+            "b": ScheduleTask(id="b", parent_id="g", duration=2, predecessors=("a",)),
+            "c": ScheduleTask(id="c", duration=1, predecessors=("b",)),
+            "e": ScheduleTask(id="e", duration=1, predecessors=("g",)),
+            "d": ScheduleTask(id="d", duration=2),
+        }
+        for task_id, changes in overrides.items():
+            tasks[task_id] = ScheduleTask(**{**tasks[task_id].__dict__, **changes})
+        return list(tasks.values())
+
+    def _dates(self, tasks, task_id):
+        result = compute_schedule(tasks, self.CAL, self.TODAY).results[task_id]
+        return result.start, result.finish
+
+    def test_without_constraints_the_chain_follows_the_dependencies(self):
+        tasks = self._chain()
+        assert self._dates(tasks, "a") == (date(2026, 10, 19), date(2026, 10, 21))
+        assert self._dates(tasks, "b") == (date(2026, 10, 22), date(2026, 10, 23))
+        assert self._dates(tasks, "c") == (date(2026, 10, 26), date(2026, 10, 26))
+
+    def test_not_before_pushes_the_task_and_its_successors(self):
+        tasks = self._chain(b={"not_before": date(2026, 10, 27)})
+        assert self._dates(tasks, "b") == (date(2026, 10, 27), date(2026, 10, 28))
+        assert self._dates(tasks, "c") == (date(2026, 10, 29), date(2026, 10, 29))
+
+    def test_not_before_earlier_than_the_predecessor_is_overruled(self):
+        tasks = self._chain(b={"not_before": date(2026, 10, 20)})
+        assert self._dates(tasks, "b") == (date(2026, 10, 22), date(2026, 10, 23))
+
+    def test_not_before_on_a_rest_day_starts_on_the_next_workday(self):
+        tasks = self._chain(d={"not_before": date(2026, 10, 24)})       # sábado
+        assert self._dates(tasks, "d") == (date(2026, 10, 26), date(2026, 10, 27))
+
+    def test_not_before_is_ignored_once_the_task_started(self):
+        tasks = self._chain(d={"not_before": date(2026, 11, 2), "percent": 50, "start": date(2026, 10, 14)})
+        assert self._dates(tasks, "d")[0] == date(2026, 10, 14)
+
+    def test_pinned_task_keeps_its_dates_and_the_successors_start_from_them(self):
+        tasks = self._chain(a={"pinned": (date(2026, 10, 19), date(2026, 10, 23))})
+        assert self._dates(tasks, "a") == (date(2026, 10, 19), date(2026, 10, 23))
+        assert self._dates(tasks, "b") == (date(2026, 10, 26), date(2026, 10, 27))
+        assert self._dates(tasks, "c") == (date(2026, 10, 28), date(2026, 10, 28))
+
+    def test_pinned_task_in_the_past_is_not_moved_to_today(self):
+        tasks = self._chain(d={"pinned": (date(2026, 10, 1), date(2026, 10, 2))})
+        assert self._dates(tasks, "d") == (date(2026, 10, 1), date(2026, 10, 2))
+
+    def test_dependents_include_successors_through_groups(self):
+        tasks = self._chain()
+        assert dependents_of(tasks, {"a"}) == {"a", "b", "c", "e"}
+        assert dependents_of(tasks, {"c"}) == {"c"}
+        assert dependents_of(tasks, {"d"}) == {"d"}
+        assert dependents_of(tasks, {"g"}) == set()          # só folhas entram
+
+    def test_workdays_between_counts_both_ends_and_skips_rest_days(self):
+        assert workdays_between(self.CAL, date(2026, 10, 19), date(2026, 10, 23)) == 5
+        assert workdays_between(self.CAL, date(2026, 10, 23), date(2026, 10, 26)) == 2   # sex → seg
+        assert workdays_between(self.CAL, date(2026, 10, 24), date(2026, 10, 25)) == 0   # fim de semana

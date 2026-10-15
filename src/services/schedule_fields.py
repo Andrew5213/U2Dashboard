@@ -6,7 +6,7 @@ cada lista tem ids próprios — por isso tudo aqui casa por NOME, nunca por id.
 from __future__ import annotations
 
 import unicodedata
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from src.services.schedule_engine import CAL_CORRIDO, CAL_UTIL
 
@@ -14,6 +14,9 @@ FIELD_DURATION = "Duração (dias)"
 FIELD_PERCENT = "% Concluído"
 FIELD_CALENDAR = "Calendário"
 FIELD_COMPLETION = "Data de Conclusão"   # já existe em todas as listas do space
+# "não começar antes de" — preenchido pelo motor quando alguém muda à mão o início
+# de uma tarefa não iniciada; apagar devolve a tarefa ao cálculo pelas dependências
+FIELD_FIXED_START = "Início fixado"
 
 OPTION_UTIL = "Útil"
 OPTION_CORRIDO = "Corrido"
@@ -29,6 +32,7 @@ FIELD_DEFS: list[dict] = [
             {"name": OPTION_CORRIDO, "color": "#f9d900"},
         ]},
     },
+    {"name": FIELD_FIXED_START, "type": "date", "type_config": {}},
 ]
 
 _WEEKDAYS = {"seg": 0, "ter": 1, "qua": 2, "qui": 3, "sex": 4, "sab": 5, "dom": 6}
@@ -100,6 +104,22 @@ def ms_to_date(ms: str | int | None) -> date | None:
             # lista; o que ela aceita é 0, que significa "sem data" e não 01/01/1970
             return None
         return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).date()
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def ms_to_site_date(ms: str | int | None, utc_offset_hours: float) -> date | None:
+    """Como `ms_to_date`, mas no fuso da obra. Uma data escolhida no ClickUp sem hora
+    chega como a meia-noite do fuso de quem a digitou — em UTC, a meia-noite de
+    Angola (UTC+1) já é o dia anterior. As datas que o motor grava (09:00 UTC) caem
+    no mesmo dia nas duas leituras."""
+    if ms in (None, ""):
+        return None
+    try:
+        if int(ms) <= 0:
+            return None
+        moment = datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc) + timedelta(hours=utc_offset_hours)
+        return moment.date()
     except (ValueError, OverflowError, OSError):
         return None
 
