@@ -581,6 +581,25 @@ class TestManualDates:
         assert '"A"' in comments[0][2] and "14/10/2026" in comments[0][2] and "15/10/2026" in comments[0][2]
         assert any("13/10/2026 não foi possível" in w for w in summary.warnings)
 
+    async def test_start_on_a_rest_day_just_moves_to_the_next_workday_without_a_comment(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("x", start=date(2026, 10, 18), due=date(2026, 10, 19))   # domingo → segunda
+
+        summary = await _run(db, clickup)
+
+        assert clickup.dates("x") == (date(2026, 10, 19), date(2026, 10, 20))
+        assert not [w for w in clickup.writes if w[0] == "comment"]
+        assert not any("não foi possível" in w for w in summary.warnings)
+
+    async def test_rest_day_start_blocked_by_the_predecessor_names_the_predecessor(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("c", start=date(2026, 10, 11), due=date(2026, 10, 14))   # domingo, antes de b
+
+        await _run(db, clickup)
+
+        comments = [w for w in clickup.writes if w[0] == "comment"]
+        assert len(comments) == 1 and '"B"' in comments[0][2]
+
     async def test_start_in_the_past_is_explained(self, db):
         clickup = await _planned(db)
         clickup.type_dates("x", start=date(2026, 10, 13), due=date(2026, 10, 14))   # sem mudança

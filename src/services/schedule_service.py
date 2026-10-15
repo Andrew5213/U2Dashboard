@@ -600,22 +600,28 @@ def _duration_between(c: _Current, calendar: WorkCalendar) -> tuple[float | None
 def _start_conflicts(
     edits: dict[str, _Edit], current: dict[str, _Current], results: dict, calendar: WorkCalendar, today: date,
 ) -> list[tuple[str, str]]:
-    """Início digitado que o cálculo não pôde respeitar — vira comentário na tarefa."""
+    """Início digitado que o cálculo não pôde respeitar — vira comentário na tarefa.
+    Um início num dia de folga que só passou para o dia útil seguinte não é conflito."""
     notices: list[tuple[str, str]] = []
     for task_id, edit in edits.items():
         wanted, result = edit.fixed_start, results.get(task_id)
-        if not wanted or not result or not result.start or result.start <= wanted:
+        if not wanted or not result or not result.start:
             continue
-        if calendar.index_of(wanted) < calendar.index_of(today):
+        first_workday = calendar.date_at(calendar.index_of(wanted))   # o próprio dia, ou o próximo útil
+        if result.start <= first_workday:
+            continue
+        finishes = [
+            (results[p].finish, current[p].name) for p in current[task_id].predecessors
+            if p in results and results[p].finish
+        ]
+        last = max(finishes, default=None)
+        # o que de fato segurou o início: hoje (data no passado) ou a antecessora
+        if calendar.index_of(wanted) < calendar.index_of(today) and calendar.date_at(calendar.index_of(today)) >= result.start:
             reason = f"{wanted:%d/%m/%Y} já passou e a tarefa não foi iniciada"
+        elif last and calendar.date_at(calendar.end_position(last[0])) >= result.start:
+            reason = f'ela depende de "{last[1]}", que termina em {last[0]:%d/%m/%Y}'
         else:
-            finishes = [
-                (results[p].finish, current[p].name) for p in current[task_id].predecessors
-                if p in results and results[p].finish
-            ]
-            last = max(finishes, default=None)
-            reason = (f'ela depende de "{last[1]}", que termina em {last[0]:%d/%m/%Y}' if last
-                      else f"o primeiro dia útil possível é {result.start:%d/%m/%Y}")
+            reason = f"o primeiro dia útil possível é {result.start:%d/%m/%Y}"
         notices.append((task_id, (
             f"Cronograma: o início em {wanted:%d/%m/%Y} não foi possível — {reason}. "
             f"Início ajustado para {result.start:%d/%m/%Y}."
