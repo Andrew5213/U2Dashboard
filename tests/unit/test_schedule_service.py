@@ -64,7 +64,10 @@ class FakeClickUp:
     """ClickUp em memória: guarda as tarefas e aplica as gravações do serviço."""
 
     def __init__(self, tasks, start=date(2026, 10, 13), content="", fields=FIELDS, holidays=()):
+        for i, t in enumerate(tasks):                  # ordem de criação, como no ClickUp
+            t.setdefault("date_created", str(1_000 + i))
         self.tasks = {t["id"]: t for t in tasks}
+        self.store_instead: dict[str, dict] = {}      # gravação que o ClickUp guarda diferente
         self.start, self.content, self.fields = start, content, list(fields)
         self.holidays = list(holidays)
         self.writes: list[tuple] = []
@@ -99,7 +102,7 @@ class FakeClickUp:
         task = self.tasks[task_id]
         for key in ("start_date", "due_date"):
             if key in payload:
-                task[key] = str(payload[key])
+                task[key] = str(self.store_instead.get(task_id, {}).get(key, payload[key]))
         if "status" in payload:
             status = next(s for s in STATUSES if s["status"] == payload["status"])
             task["status"] = {"status": status["status"], "type": status["type"]}
@@ -705,6 +708,99 @@ class TestManualDates:
         assert summary.ok, summary.errors
         assert ("create_field", "Início fixado") in clickup.writes
         assert ms_to_date(clickup.value_by_name("a", "Início fixado")) == date(2026, 10, 15)
+
+
+class TestEditsFoundInTheRealClickUp:
+    """Casos que apareceram no teste de comportamento numa lista real (2026-10-19)."""
+
+    def _half_day(self):
+        """a termina a meio do dia (0,5): b começa a meio do dia 13 e c depende de b."""
+        tasks = [make_task("n1"), make_task("a", parent="n1", duration=0.5),
+                 make_task("b", parent="n1", duration=2), make_task("c", parent="n1", duration=1),
+                 make_task("x", parent="n1", duration=1)]
+        depends(tasks, "b", "a")
+        depends(tasks, "c", "b")
+        return tasks
+
+    async def test_typed_due_is_kept_when_the_task_starts_in_the_middle_of_a_day(self, db):
+        clickup = FakeClickUp(self._half_day())
+        await _run(db, clickup)
+        assert clickup.dates("b") == (date(2026, 10, 13), date(2026, 10, 15))      # 13,5 → 15,5
+        clickup.type_dates("b", due=date(2026, 10, 17))
+
+        await _run(db, clickup)
+
+        assert clickup.dates("b") == (date(2026, 10, 13), date(2026, 10, 17))      # o dia digitado
+        assert float(clickup.value("b", F_DURATION)) == 4.5                        # de 13,5 ao fim de 17
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 19))      # 18 é domingo
+
+    async def test_pinned_predecessor_keeps_its_half_day(self, db):
+        clickup = FakeClickUp(self._half_day())
+        await _run(db, clickup)
+        clickup.type_dates("c", due=date(2026, 10, 17))                            # mexe só no fim da cadeia
+
+        await _run(db, clickup)
+
+        assert clickup.dates("b") == (date(2026, 10, 13), date(2026, 10, 15))      # b não salta para o dia 14
+        assert clickup.dates("c") == (date(2026, 10, 15), date(2026, 10, 17))
+
+    async def test_typed_due_of_a_task_in_progress_is_kept(self, db):
+        tasks = _chains()
+        tasks[2] = make_task("a", parent="n2", duration=4, status="fazendo", percent=50)
+        tasks[2]["start_date"] = str(date_to_ms(date(2026, 10, 13)))
+        depends(tasks, "b", "a")
+        clickup = FakeClickUp(tasks)
+        await _run(db, clickup, today=date(2026, 10, 15))
+        clickup.type_dates("a", due=date(2026, 10, 20))
+
+        await _run(db, clickup, today=date(2026, 10, 15))
+
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 20))
+        assert float(clickup.value("a", F_DURATION)) == 10      # 50% feito: faltam 5 dias (15, 16, 17, 19, 20)
+        assert clickup.dates("b")[0] == date(2026, 10, 21)
+
+    async def test_due_before_today_on_a_task_in_progress_is_refused(self, db):
+        tasks = [make_task("a", duration=4, status="fazendo", percent=50)]
+        tasks[0]["start_date"] = str(date_to_ms(date(2026, 10, 13)))
+        clickup = FakeClickUp(tasks)
+        await _run(db, clickup, today=date(2026, 10, 15))
+        clickup.type_dates("a", due=date(2026, 10, 14))
+
+        summary = await _run(db, clickup, today=date(2026, 10, 15))
+
+        assert float(clickup.value("a", F_DURATION)) == 4
+        assert any("antes de hoje" in w for w in summary.warnings)
+
+    async def test_first_row_is_the_first_created_whatever_the_orderindex(self, db):
+        clickup = await _planned(db, self._with_second_discipline())
+        clickup.tasks["n1"]["orderindex"] = "9999"                 # o ClickUp reordena ao editar
+        clickup.tasks["t1"]["orderindex"] = "1"
+        clickup.type_dates("n1", start=date(2026, 10, 20))
+
+        await _run(db, clickup)
+
+        assert clickup.start == date(2026, 10, 20)
+        assert clickup.dates("a")[0] == date(2026, 10, 20)
+
+    def _with_second_discipline(self):
+        return _chains() + [make_task("t1"), make_task("z", parent="t1", duration=1)]
+
+    async def test_a_date_the_clickup_stores_differently_is_not_taken_as_typed(self, db):
+        clickup = await _planned(db)
+        clickup.store_instead["c"] = {"start_date": date_to_ms(date(2026, 10, 18))}   # guarda outro início
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        first = await _run(db, clickup)
+        assert any("o ClickUp ficou com" in w for w in first.warnings)
+
+        clickup.store_instead.clear()
+        clickup.writes.clear()
+        second = await _run(db, clickup)
+
+        assert clickup.value("c", F_FIXED) is None                                 # nada de "Início fixado"
+        assert not [w for w in clickup.writes if w[0] == "comment"]
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 21))      # o motor só corrige a data
+        assert second.ok
 
 
 class TestAcrossDisciplines:

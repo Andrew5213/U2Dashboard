@@ -13,6 +13,7 @@ têm as datas regravadas; o resto da lista fica como está.
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import time
 from dataclasses import dataclass, field, replace
@@ -37,7 +38,6 @@ from src.services.schedule_engine import (
     display_percent,
     reconcile_leaf,
     summary_status,
-    workdays_between,
 )
 from src.services.schedule_fields import (
     FIELD_CALENDAR,
@@ -207,7 +207,7 @@ class ScheduleService:
 
         engine_tasks: list[ScheduleTask] = []
         leaf_target: dict[str, tuple[float, str, date | None]] = {}
-        edits: dict[str, _Edit] = {}
+        touched: dict[str, tuple[bool, bool, bool]] = {}     # folha → (início mudou, fim mudou, só deslocada)
         for c in current.values():
             if c.id in parents:
                 engine_tasks.append(ScheduleTask(id=c.id, parent_id=c.parent_id, predecessors=c.predecessors))
@@ -218,30 +218,42 @@ class ScheduleService:
                 prev.percent if prev else None, prev.is_done if prev else None, names,
             )
             cancelled = c.status_type == "closed"
-            edit = None if cancelled else _detect_edit(c, prev, percent, calendar)
-            if edit:
-                edits[c.id] = edit
-                if edit.problem:
-                    summary.warnings.append(f'"{c.name}": {edit.problem}')
+            flags = None if cancelled else _typed_dates(c, prev)
+            if flags:
+                touched[c.id] = flags
             completed_on = None
             if percent >= 100 and not cancelled:
                 # sem data real informada, a conclusão vale a partir de hoje
-                completed_on = (edit.completed_on if edit else None) or c.completed_on or today
+                completed_on = c.completed_on or today
             leaf_target[c.id] = (percent, status, completed_on)
-            duration = edit.duration if edit and edit.duration is not None else c.duration
             engine_tasks.append(ScheduleTask(
-                id=c.id, parent_id=c.parent_id, duration=duration or 0.0, calendar=c.calendar,
+                id=c.id, parent_id=c.parent_id, duration=c.duration or 0.0, calendar=c.calendar,
                 percent=percent, predecessors=c.predecessors, start=c.start,
-                finished_on=completed_on, cancelled=cancelled,
-                not_before=(edit.fixed_start if edit else None) or c.fixed_start,
+                finished_on=completed_on, cancelled=cancelled, not_before=c.fixed_start,
             ))
 
-        # Edição à mão: só a tarefa mexida e as que dependem dela são recalculadas;
-        # as demais ficam com as datas de agora.
+        # Datas digitadas à mão. O cálculo prévio (sem as edições) diz onde cada tarefa
+        # estava — com a fração de dia, que a data mostrada no ClickUp não tem.
+        edits: dict[str, _Edit] = {}
+        before = compute_schedule(engine_tasks, calendar, today, reschedule=True).results if touched else {}
+        for task_id, (start_changed, due_changed, moved) in touched.items():
+            percent = leaf_target[task_id][0]
+            edit = _interpret_edit(current[task_id], start_changed, due_changed, moved, percent,
+                                   before.get(task_id), calendar, today)
+            edits[task_id] = edit
+            if edit.problem:
+                summary.warnings.append(f'"{current[task_id].name}": {edit.problem}')
+            if edit.completed_on:
+                leaf_target[task_id] = (percent, leaf_target[task_id][1], edit.completed_on)
+        engine_tasks = [_apply_edit(t, edits.get(t.id), leaf_target) for t in engine_tasks]
+
+        # Só a tarefa mexida e as que dependem dela são recalculadas; as demais ficam
+        # com as datas de agora — fixadas só as que o cálculo moveria (com a fração de
+        # dia preservada nas outras, que saem do motor iguais ao que já está gravado).
         date_scope: set[str] | None = None
         if edits and not (from_top and start != list_start):     # projeto inteiro mudou de início
             affected = dependents_of(engine_tasks, set(edits))
-            engine_tasks = [_pin_outside(t, affected, parents, current) for t in engine_tasks]
+            engine_tasks = [_pin_outside(t, affected, parents, current, before) for t in engine_tasks]
             date_scope = affected | _ancestors(affected, current)
             logger.info(
                 f"Cronograma [{list_id}]: {len(edits)} data(s) mudada(s) à mão — "
@@ -332,7 +344,8 @@ class ScheduleService:
             except Exception as exc:  # noqa: BLE001 — o aviso não pode desfazer o cálculo
                 summary.errors.append(f"{current[task_id].name}: comentário não publicado — {_describe(exc)}")
 
-        await self._save_state(list_id, current, leaf_target, names, failed, written, previous, top_id)
+        final = await self._dates_after_writes(list_id, current, written, summary)
+        await self._save_state(list_id, current, leaf_target, names, failed, final, previous, top_id)
         logger.info(
             f"Cronograma [{list_id}]: {summary.tasks} tarefas, {summary.changed} alteradas, "
             f"{summary.writes} gravações, {len(summary.errors)} erro(s)"
@@ -373,6 +386,33 @@ class ScheduleService:
                     raise
                 await asyncio.sleep(2 * attempt)
         raise RuntimeError("unreachable")
+
+    async def _dates_after_writes(
+        self, list_id: str, current: dict[str, _Current], written: dict[str, dict], summary: ScheduleRunSummary,
+    ) -> dict[str, tuple[date | None, date | None]]:
+        """Datas que ficaram em cada tarefa. As gravadas são relidas do ClickUp: se ele
+        guardou outra coisa, é isso que vale como "o que o motor deixou" — senão a próxima
+        execução tomaria a diferença por uma data digitada à mão."""
+        final = {task_id: (c.start, c.due) for task_id, c in current.items()}
+        if not written:
+            return final
+        try:
+            after = _parse_tasks(await self._call(lambda: self._clickup.get_tasks(list_id, include_closed=True)))
+        except Exception as exc:  # noqa: BLE001 — sem a releitura, fica o que foi enviado
+            logger.warning(f"Cronograma [{list_id}]: releitura após gravar falhou — {exc}")
+            after = {}
+        for task_id, put in written.items():
+            c = current[task_id]
+            sent = _dates_now(c, put)
+            got = (after[task_id].start, after[task_id].due) if task_id in after else sent
+            if got in (sent, (c.start, c.due)):        # gravado, ou a leitura ainda não o mostra
+                final[task_id] = sent
+            else:
+                final[task_id] = got
+                summary.warnings.append(
+                    f'"{c.name}": o ClickUp ficou com {_iso(got[0])}–{_iso(got[1])} '
+                    f"em vez de {_iso(sent[0])}–{_iso(sent[1])}")
+        return final
 
     async def _create_fixed_start_field(self, list_id: str, summary: ScheduleRunSummary) -> dict | None:
         """As listas importadas antes deste recurso não têm o campo "Início fixado"."""
@@ -441,21 +481,21 @@ class ScheduleService:
         leaf_target: dict[str, tuple[float, str, date | None]],
         names: StatusNames,
         failed: set[str],
-        written: dict[str, dict],
+        final: dict[str, tuple[date | None, date | None]],
         previous: dict[str, ScheduleTaskState],
         top_id: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if top_id and top_id not in leaf_target and top_id not in failed:
             # a primeira linha também: é por ela que se reconhece o início do projeto mudado à mão
-            start, due = _dates_now(current[top_id], written.get(top_id))
+            start, due = final[top_id]
             values = {"list_id": list_id, "percent": current[top_id].percent, "is_done": False,
                       "start": start, "due": due, "updated_at": now}
             stmt = sqlite_insert(ScheduleTaskState).values(task_id=top_id, **values)
             await self._db.execute(stmt.on_conflict_do_update(index_elements=["task_id"], set_=values))
         for task_id, (percent, status, _) in leaf_target.items():
             c = current[task_id]
-            start, due = _dates_now(c, written.get(task_id))
+            start, due = final[task_id]
             if task_id in failed:
                 # % e status ficam como estavam; as datas, se o PUT passou, já mudaram
                 prev = previous.get(task_id)
@@ -564,16 +604,18 @@ def _depths(current: dict[str, _Current]) -> dict[str, int]:
 
 
 def _top_task_id(raw_tasks: list[dict], current: dict[str, _Current]) -> str | None:
-    """A primeira linha da lista: a tarefa de topo de menor posição (orderindex)."""
+    """A primeira linha da lista: a disciplina criada primeiro — a primeira da planilha
+    na importação. Não dá para usar o `orderindex`: o ClickUp muda esse número quando
+    uma tarefa é editada, e a "primeira" passava a ser outra a cada gravação."""
     tops = [t for t in raw_tasks if current.get(str(t["id"])) and not current[str(t["id"])].parent_id]
 
-    def position(task: dict) -> float:
+    def created(task: dict) -> tuple[int, str]:
         try:
-            return float(task.get("orderindex") or 0)
+            return int(task.get("date_created") or 0), str(task["id"])
         except (TypeError, ValueError):
-            return 0.0
+            return 0, str(task["id"])
 
-    return str(min(tops, key=position)["id"]) if tops else None
+    return str(min(tops, key=created)["id"]) if tops else None
 
 
 def _project_start(
@@ -604,54 +646,103 @@ def _ancestors(task_ids: set[str], current: dict[str, _Current]) -> set[str]:
     return found
 
 
-def _pin_outside(task: ScheduleTask, affected: set[str], parents: set, current: dict[str, _Current]) -> ScheduleTask:
-    """Tarefa-folha fora do alcance da edição fica com as datas que já tem."""
+def _pin_outside(
+    task: ScheduleTask, affected: set[str], parents: set, current: dict[str, _Current], before: dict,
+) -> ScheduleTask:
+    """Tarefa-folha fora do alcance da edição fica com as datas que já tem. Só precisa
+    de ser fixada se o cálculo a moveria; as que ele deixaria iguais seguem calculadas,
+    para as sucessoras partirem da posição exata (com a fração de dia)."""
     c = current[task.id]
     if task.id in parents or task.id in affected or task.cancelled or not (c.start and c.due):
+        return task
+    result = before.get(task.id)
+    if result and (result.start, result.finish) == (c.start, c.due):
         return task
     return replace(task, pinned=(c.start, c.due))
 
 
-def _detect_edit(c: _Current, prev: ScheduleTaskState | None, percent: float, calendar: WorkCalendar) -> _Edit | None:
+def _typed_dates(c: _Current, prev: ScheduleTaskState | None) -> tuple[bool, bool, bool] | None:
     """Data de uma tarefa-folha diferente da que o motor deixou nela = mexida à mão.
+    Devolve (início mudou, vencimento mudou, as duas andaram juntas — só deslocada).
 
     Sem estado anterior com datas (tarefa nova, ou estado de antes deste recurso)
-    nada conta como edição. Data apagada também não: o motor volta a preenchê-la.
-      - não iniciada: o início vira "não começar antes de"; o vencimento vira a
-        duração (dias úteis do início ao vencimento) — mover as duas datas juntas,
-        com a mesma distância entre elas, é só mudar de lugar e mantém a duração;
-      - em andamento: o início já vale como início real; o vencimento vira duração;
-      - concluída: o vencimento vira a data real de conclusão.
-    """
+    nada conta como edição. Data apagada também não: o motor volta a preenchê-la."""
     if not prev or (prev.start is None and prev.due is None):
         return None
     start_changed = c.start is not None and c.start != prev.start
     due_changed = c.due is not None and c.due != prev.due
     if not (start_changed or due_changed):
         return None
-    if percent >= 100:
-        return _Edit(start_changed, due_changed, completed_on=c.due if due_changed else None)
-
-    fixed_start = c.start if start_changed and percent <= 0 else None
     moved = False
     if start_changed and due_changed and c.start and c.due and prev.start and prev.due:
         moved = (c.due - c.start) == (prev.due - prev.start)
+    return start_changed, due_changed, moved
+
+
+def _interpret_edit(
+    c: _Current, start_changed: bool, due_changed: bool, moved: bool, percent: float,
+    before, calendar: WorkCalendar, today: date,
+) -> _Edit:
+    """O que a data digitada vira no cálculo:
+      - não iniciada: o início vira "não começar antes de"; o vencimento vira a duração
+        que faz a tarefa terminar nesse dia (contando de onde ela começa — inclusive a
+        meio de um dia, quando a antecessora termina a meio); mover as duas datas com a
+        mesma distância entre elas é só mudar de lugar e mantém a duração;
+      - em andamento: o início já vale como início real; o vencimento vira a duração cujo
+        restante (duração × (1 − %)), contado de hoje, termina nesse dia;
+      - concluída: o vencimento vira a data real de conclusão."""
+    if percent >= 100:
+        return _Edit(start_changed, due_changed, completed_on=c.due if due_changed else None)
+    fixed_start = c.start if start_changed and percent <= 0 else None
     duration, problem = None, None
-    if due_changed and not moved:
-        duration, problem = _duration_between(c, calendar)
+    if due_changed and not moved and c.due:
+        if c.start and c.due < c.start:
+            problem = "vencimento antes do início — a duração não foi alterada"
+        elif percent > 0:
+            duration, problem = _duration_in_progress(c.due, percent, calendar, today)
+        else:
+            duration, problem = _duration_not_started(c, c.due, start_changed, before, calendar)
     return _Edit(start_changed, due_changed, fixed_start=fixed_start, duration=duration, problem=problem)
 
 
-def _duration_between(c: _Current, calendar: WorkCalendar) -> tuple[float | None, str | None]:
-    start, due = c.start, c.due
-    if not start or not due or due < start:
-        return None, "vencimento antes do início — a duração não foi alterada"
+def _floor2(value: float) -> float:
+    """Arredonda para baixo, a 2 casas: arredondar para cima podia empurrar o fim para o dia seguinte."""
+    return math.floor(value * 100 + 1e-9) / 100
+
+
+def _duration_not_started(c: _Current, due: date, start_changed: bool, before, calendar: WorkCalendar):
+    if not c.start:
+        return None, None
     if c.calendar == CAL_CORRIDO:
-        return float((due - start).days + 1), None
-    days = workdays_between(calendar, start, due)
+        return float((due - c.start).days + 1), None
+    begin = float(calendar.index_of(c.start))
+    if not start_changed and before and before.start == c.start:
+        begin = before.pos_start                      # começa a meio do dia: conta a fração
+    days = _floor2(calendar.end_position(due) - begin)
     if days <= 0:
         return None, "início e vencimento em dias de folga — a duração não foi alterada"
-    return float(days), None
+    return days, None
+
+
+def _duration_in_progress(due: date, percent: float, calendar: WorkCalendar, today: date):
+    remaining = calendar.end_position(due) - calendar.index_of(today)
+    if remaining <= 0:
+        return None, ("vencimento antes de hoje numa tarefa em andamento — a duração não foi alterada; "
+                      "atualize o % (ou conclua a tarefa)")
+    return _floor2(remaining / (1 - percent / 100)), None
+
+
+def _apply_edit(task: ScheduleTask, edit: _Edit | None, leaf_target: dict) -> ScheduleTask:
+    if not edit:
+        return task
+    changes: dict = {}
+    if edit.duration is not None:
+        changes["duration"] = edit.duration
+    if edit.fixed_start:
+        changes["not_before"] = edit.fixed_start
+    if edit.completed_on:
+        changes["finished_on"] = leaf_target[task.id][2]
+    return replace(task, **changes) if changes else task
 
 
 def _start_conflicts(

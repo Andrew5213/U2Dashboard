@@ -590,12 +590,23 @@ recálculo (exceto um status fora do trio, que é respeitado).
 
 **Datas digitadas à mão** (numa tarefa-folha). `schedule_task_state` guarda também o início e o
 término que o motor deixou em cada tarefa; uma data diferente foi mexida por alguém e vira **entrada**
-do cálculo em vez de ser desfeita (`_detect_edit`):
+do cálculo em vez de ser desfeita (`_typed_dates` detecta, `_interpret_edit` traduz):
 - não iniciada: o início vira o campo **Início fixado** ("não começar antes de" — `not_before` no
-  motor) e o vencimento vira a **duração** (dias úteis do início ao vencimento; em "Corrido", dias
-  corridos). Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
-- em andamento: o início já valia como início real; o vencimento vira a duração;
+  motor) e o vencimento vira a **duração** que faz a tarefa terminar nesse dia, contada de onde ela
+  começa — inclusive a meio de um dia, quando a antecessora termina a meio (durações de 0,25/0,5 e
+  curas "Corrido" deixam frações): por isso a duração pode sair fracionada (ex.: 4,5). Em "Corrido",
+  dias corridos. Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
+- em andamento: o início já valia como início real; o vencimento vira a duração cujo restante
+  (`duração × (1 − %)`), contado de hoje, termina nesse dia (50% e 5 dias até o vencimento → 10);
+  vencimento antes de hoje é recusado com aviso;
 - concluída: o vencimento vira a `Data de Conclusão`.
+- `_interpret_edit` usa um cálculo prévio, sem as edições, para saber a posição exata (com a fração)
+  de cada tarefa; as folhas fora do alcance da edição só são fixadas (`pinned`) se esse cálculo as
+  moveria — fixar todas perdia a fração de dia e empurrava a sucessora meio dia (achado no teste real).
+- **O estado vem do ClickUp:** depois de gravar, a lista é relida (`_dates_after_writes`) e o que o
+  ClickUp guardou vale como "o que o motor deixou"; se ele ficou com outra data, sai um aviso. Antes o
+  estado guardava o que tinha sido *enviado*, e uma diferença virava "edição fantasma" (Início fixado e
+  comentário numa tarefa que ninguém mexeu — visto no teste real de 2026-10-19).
 
 Nessa execução **só a tarefa mexida e as que dependem dela** (`dependents_of`, com as dependências de
 resumo expandidas) — mais os grupos e disciplinas que as contêm — têm as datas regravadas. As outras
@@ -694,13 +705,17 @@ com fundação e montagem de torre) — importar sempre a da própria província
 - `--zero` importa com todo o progresso em 0%; `--start-date` / `--no-start-date` sobrepõem a data da planilha.
 
 **Início pela primeira linha** (`_project_start`): pôr a data de início na primeira linha da lista (a
-tarefa de topo de menor `orderindex` — a disciplina do topo) dá a partida no projeto: o motor grava essa
+disciplina **criada primeiro** — a primeira da planilha na importação, `_top_task_id` por `date_created`)
+dá a partida no projeto. **Não usar o `orderindex`:** o ClickUp muda esse número quando uma tarefa é
+editada, e a "primeira linha" passava a ser outra a cada gravação. Pôr a data: o motor grava essa
 data como início da lista e calcula todas as tarefas a partir dela, pela duração e pelas dependências.
 Mudá-la depois move o projeto **inteiro** (todas as cadeias, sem a restrição de "só as dependentes"). A
 data é reconhecida como digitada pela mesma regra das folhas (diferente da que o motor deixou nela — o
 estado da primeira linha também é guardado); sem isso vale o início da lista, que continua a funcionar
 pelas configurações da lista (essa mudança não gera webhook: entra no recálculo periódico). As outras
 disciplinas e grupos continuam calculados. Início no passado: as tarefas não iniciadas começam hoje (aviso).
+Tarefas concluídas e em andamento não andam com o início do projeto (têm datas reais); se a primeira
+linha já tem tarefas feitas, o início que ela mostra volta a ser o real — o do projeto fica na lista.
 Dependências entre subtarefas de tarefas e disciplinas diferentes da mesma lista valem sempre (ex.: o
 rack da Área Técnica espera a concretagem da Obra Civil); dependência para outra lista é ignorada com aviso.
 
