@@ -74,9 +74,33 @@ class TestSpreadsheetParity:
     def test_summary_percent_is_weighted_by_useful_duration(self, lubango):
         out = compute_schedule(_tasks(lubango), _calendar(lubango), date(2026, 10, 8), reschedule=False)
         assert out.results["Obra Civil:1"].percent == pytest.approx(16 / 39 * 100)   # 41,03% na planilha
-        assert out.results["Obra Civil:1"].duration == pytest.approx(16)
         assert out.results["Logística:1"].percent == pytest.approx(100)
-        assert out.results["Área Técnica:1"].duration == pytest.approx(31.7)
+
+    def test_summary_duration_is_the_sum_of_its_tasks(self, lubango):
+        out = compute_schedule(_tasks(lubango), _calendar(lubango), date(2026, 10, 8), reschedule=False)
+        rows = {row["key"]: row for row in lubango["tasks"]}
+
+        def under(key, row):
+            parent = row["parent_key"]
+            while parent:
+                if parent == key:
+                    return True
+                parent = rows[parent]["parent_key"]
+            return False
+
+        for key, row in rows.items():
+            if row["is_summary"]:
+                leaves = [r["duration"] for r in rows.values() if not r["is_summary"] and under(key, r)]
+                assert out.results[key].duration == pytest.approx(sum(leaves)), row["name"]
+
+    def test_summary_duration_counts_parallel_tasks_in_full(self):
+        cal = WorkCalendar(start=date(2026, 10, 19), weekend_mask="0000011")
+        tasks = [ScheduleTask(id="g"), ScheduleTask(id="a", parent_id="g", duration=3),
+                 ScheduleTask(id="b", parent_id="g", duration=2),
+                 ScheduleTask(id="c", parent_id="g", duration=4, cancelled=True)]
+        result = compute_schedule(tasks, cal, date(2026, 10, 15)).results["g"]
+        assert result.duration == 5                    # a e b em paralelo somam 5; a cancelada não conta
+        assert (result.start, result.finish) == (date(2026, 10, 19), date(2026, 10, 21))
 
     def test_project_ends_on_the_spreadsheet_date(self, lubango):
         out = compute_schedule(_tasks(lubango), _calendar(lubango), date(2026, 10, 8), reschedule=False)

@@ -104,7 +104,7 @@ class ScheduleResult:
     start: date | None
     finish: date | None
     percent: float          # 0..100; nos resumos, média ponderada pela duração útil
-    duration: float         # folha: como digitado; resumo: amplitude em dias úteis
+    duration: float         # folha: como digitado; resumo: soma das durações das suas tarefas
     duration_util: float    # peso da tarefa (dias úteis)
     pos_start: float
     pos_finish: float
@@ -228,7 +228,8 @@ def compute_schedule(
             id=tid, is_summary=True,
             start=min(dates[leaf][0] for leaf in active),
             finish=max(dates[leaf][1] for leaf in active),
-            percent=percent, duration=round(last - first, 4), duration_util=total,
+            percent=percent, duration=round(sum(float(by_id[leaf].duration) for leaf in active), 4),
+            duration_util=total,
             pos_start=first, pos_finish=last,
         )
 

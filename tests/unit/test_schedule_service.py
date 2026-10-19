@@ -79,6 +79,11 @@ class FakeClickUp:
     async def get_list_fields(self, list_id):
         return self.fields
 
+    async def update_list(self, list_id, payload):
+        if "start_date" in payload:
+            self.start = ms_to_date(payload["start_date"])
+        self.writes.append(("list", list_id, payload))
+
     async def get_tasks(self, list_id, include_closed=True):
         if list_id == "HOLIDAYS":
             return [{"id": f"h{i}", "due_date": str(date_to_ms(d))} for i, d in enumerate(self.holidays)]
@@ -197,7 +202,8 @@ class TestRecalculate:
         assert clickup.dates("c") == (date(2026, 10, 16), date(2026, 10, 29))   # 14 corridos = 12 úteis
         assert clickup.dates("n2") == (date(2026, 10, 13), date(2026, 10, 15))
         assert clickup.dates("n1") == (date(2026, 10, 13), date(2026, 10, 29))
-        assert float(clickup.value("n1", F_DURATION)) == 15
+        assert float(clickup.value("n1", F_DURATION)) == 17          # 2 + 1 + 14: soma das tarefas
+        assert float(clickup.value("n2", F_DURATION)) == 3
         assert summary.project_finish == date(2026, 10, 29)
         assert summary.percent == 0
 
@@ -699,6 +705,127 @@ class TestManualDates:
         assert summary.ok, summary.errors
         assert ("create_field", "Início fixado") in clickup.writes
         assert ms_to_date(clickup.value_by_name("a", "Início fixado")) == date(2026, 10, 15)
+
+
+class TestAcrossDisciplines:
+    """Subtarefa de uma disciplina que espera por subtarefa de outra disciplina."""
+
+    def _two_disciplines(self):
+        tasks = _chains() + [
+            make_task("t1"),                                  # 2ª disciplina (ex.: Área Técnica)
+            make_task("t2", parent="t1"),
+            make_task("z", parent="t2", duration=2),
+            make_task("w", parent="t2", duration=1),
+        ]
+        depends(tasks, "z", "a")                              # z (Área Técnica) espera a (Obra Civil)
+        depends(tasks, "w", "z")
+        return tasks
+
+    async def test_successor_in_another_discipline_follows_its_predecessor(self, db):
+        clickup = FakeClickUp(self._two_disciplines())
+        await _run(db, clickup)
+        assert clickup.dates("z") == (date(2026, 10, 15), date(2026, 10, 16))     # depois de a (13–14)
+        assert clickup.dates("w") == (date(2026, 10, 17), date(2026, 10, 17))
+        assert float(clickup.value("t1", F_DURATION)) == 3                        # 2 + 1
+
+        clickup.writes.clear()
+        clickup.type_dates("a", due=date(2026, 10, 16))                           # a atrasa 2 dias
+        await _run(db, clickup)
+
+        assert clickup.dates("z") == (date(2026, 10, 17), date(2026, 10, 19))     # sáb, (dom), seg
+        assert clickup.dates("w") == (date(2026, 10, 20), date(2026, 10, 20))
+        assert clickup.dates("t1") == (date(2026, 10, 17), date(2026, 10, 20))    # a disciplina acompanha
+        assert clickup.touched("x") == [] and clickup.touched("y") == []
+
+    async def test_dependency_on_a_whole_task_waits_for_all_its_subtasks(self, db):
+        tasks = self._two_disciplines()
+        for t in tasks:                                       # troca: z espera o grupo n2 inteiro (a e b)
+            t["dependencies"] = [d for d in t["dependencies"] if not (d["task_id"] == "z" and d["depends_on"] == "a")]
+        depends(tasks, "z", "n2")
+        clickup = FakeClickUp(tasks)
+
+        await _run(db, clickup)
+
+        assert clickup.dates("z")[0] == date(2026, 10, 16)                        # depois de b (15)
+
+
+class TestProjectStart:
+    """A data de início posta na primeira linha (a disciplina do topo) dá a partida no projeto."""
+
+    async def test_first_row_start_dates_a_list_that_had_no_start(self, db):
+        clickup = FakeClickUp(_chains(), start=None)
+        clickup.type_dates("n1", start=date(2026, 10, 13))
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok, summary.errors
+        assert clickup.start == date(2026, 10, 13)                          # gravado na lista
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
+        assert clickup.dates("c") == (date(2026, 10, 16), date(2026, 10, 19))
+        assert clickup.dates("y") == (date(2026, 10, 15), date(2026, 10, 15))
+        assert clickup.dates("n1") == (date(2026, 10, 13), date(2026, 10, 19))
+        assert clickup.tasks["n1"]["start_date"] == str(date_to_ms(date(2026, 10, 13)))   # normalizada
+
+    async def test_changing_the_first_row_moves_the_whole_project(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n1", start=date(2026, 10, 20))
+
+        await _run(db, clickup)
+
+        assert clickup.start == date(2026, 10, 20)
+        assert clickup.dates("a") == (date(2026, 10, 20), date(2026, 10, 21))
+        assert clickup.dates("b") == (date(2026, 10, 22), date(2026, 10, 22))
+        assert clickup.dates("c") == (date(2026, 10, 23), date(2026, 10, 26))   # sex, sáb, seg
+        assert clickup.dates("x") == (date(2026, 10, 20), date(2026, 10, 21))   # todas as cadeias andam
+        assert clickup.dates("y") == (date(2026, 10, 22), date(2026, 10, 22))
+
+        clickup.writes.clear()
+        summary = await _run(db, clickup)
+        assert summary.changed == 0 and clickup.writes == []
+
+    async def test_first_row_can_also_bring_the_project_forward(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n1", start=date(2026, 10, 9))
+
+        await _run(db, clickup)
+
+        assert clickup.start == date(2026, 10, 9)
+        assert clickup.dates("a") == (date(2026, 10, 9), date(2026, 10, 10))
+
+    async def test_list_start_still_works_and_the_first_row_follows_it(self, db):
+        clickup = await _planned(db)
+        clickup.start = date(2026, 10, 20)                                  # mudado nas configurações da lista
+
+        await _run(db, clickup)
+
+        assert clickup.dates("n1")[0] == date(2026, 10, 20)
+        assert clickup.dates("a") == (date(2026, 10, 20), date(2026, 10, 21))
+
+    async def test_without_any_start_nothing_is_written(self, db):
+        clickup = FakeClickUp(_chains(), start=None)
+
+        summary = await _run(db, clickup)
+
+        assert not summary.ok and "primeira linha" in summary.errors[0]
+        assert clickup.writes == []
+
+    async def test_start_in_the_past_is_reported(self, db):
+        clickup = FakeClickUp(_chains(), start=None)
+        clickup.type_dates("n1", start=date(2026, 10, 1))
+
+        summary = await _run(db, clickup)
+
+        assert any("já passou" in w for w in summary.warnings)
+        assert clickup.dates("a")[0] == TODAY                               # não iniciada: começa hoje
+
+    async def test_dry_run_does_not_touch_the_list(self, db):
+        clickup = FakeClickUp(_chains(), start=None)
+        clickup.type_dates("n1", start=date(2026, 10, 13))
+
+        summary = await _run(db, clickup, dry_run=True)
+
+        assert clickup.start is None and clickup.writes == []
+        assert any(c["name"] == "(início do projeto)" for c in summary.changes)
 
 
 def test_debounce_default_is_five_seconds():

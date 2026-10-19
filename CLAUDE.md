@@ -553,7 +553,7 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 
 | Dado | Onde vive no ClickUp | Quem escreve |
 |---|---|---|
-| Duração, tipo (Útil/Corrido) | campos `Duração (dias)` (number) e `Calendário` (drop_down) | utilizador (folhas); motor (duração dos resumos) |
+| Duração, tipo (Útil/Corrido) | campos `Duração (dias)` (number) e `Calendário` (drop_down) | utilizador (folhas); motor nos resumos: **soma** das durações das tarefas dele (canceladas fora) |
 | % concluído | campo `% Concluído` (manual_progress — barra nativa) | utilizador (folhas); motor (resumos) |
 | Status | status nativo | os dois — ver regra abaixo |
 | Antecessores | dependências nativas ("waiting on") | utilizador |
@@ -561,7 +561,7 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 | Início fixado | campo `Início fixado` (date): "não começar antes de" | motor, quando alguém muda o início à mão; o utilizador apaga para soltar |
 | Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
 | Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
-| Data de início do projeto | `start_date` da lista | utilizador |
+| Data de início do projeto | data de início da **primeira linha** (disciplina do topo), ou `start_date` da lista | utilizador; o motor copia a da primeira linha para a lista |
 | Folga semanal | linha `folga=dom` na descrição da lista (padrão `SCHEDULE_WEEKEND_MASK`) | utilizador |
 | Feriados | lista `SCHEDULE_HOLIDAYS_LIST_ID`: uma tarefa por feriado, data = vencimento | utilizador |
 
@@ -693,9 +693,24 @@ com fundação e montagem de torre) — importar sempre a da própria província
   preenche cada um com a primeira opção (foi assim que "Disciplinas" virou "CIVIL" em tudo);
 - `--zero` importa com todo o progresso em 0%; `--start-date` / `--no-start-date` sobrepõem a data da planilha.
 
+**Início pela primeira linha** (`_project_start`): pôr a data de início na primeira linha da lista (a
+tarefa de topo de menor `orderindex` — a disciplina do topo) dá a partida no projeto: o motor grava essa
+data como início da lista e calcula todas as tarefas a partir dela, pela duração e pelas dependências.
+Mudá-la depois move o projeto **inteiro** (todas as cadeias, sem a restrição de "só as dependentes"). A
+data é reconhecida como digitada pela mesma regra das folhas (diferente da que o motor deixou nela — o
+estado da primeira linha também é guardado); sem isso vale o início da lista, que continua a funcionar
+pelas configurações da lista (essa mudança não gera webhook: entra no recálculo periódico). As outras
+disciplinas e grupos continuam calculados. Início no passado: as tarefas não iniciadas começam hoje (aviso).
+Dependências entre subtarefas de tarefas e disciplinas diferentes da mesma lista valem sempre (ex.: o
+rack da Área Técnica espera a concretagem da Obra Civil); dependência para outra lista é ignorada com aviso.
+
+**Duração dos resumos** = soma das durações das tarefas dele, como digitadas (tarefas em paralelo somam
+por inteiro; canceladas não entram). Antes era a amplitude em dias úteis; o peso no progresso continua
+a ser a duração útil de cada folha.
+
 **Sem data de início, sem datas.** Planilha sem data de início → a lista fica sem `start_date`, o motor
 recusa calcular ("lista sem data de início") e as tarefas ficam sem datas até alguém preencher o início
-da lista no ClickUp. A API não aceita `null` para limpar o `start_date` de uma lista; aceita `0`, que
+da primeira linha (ou da lista) no ClickUp. A API não aceita `null` para limpar o `start_date` de uma lista; aceita `0`, que
 `ms_to_date` trata como ausente (não como 01/01/1970).
 
 **Estúdios têm outro formato de planilha** (`schedule_xlsx_studio.py`, escolhido sozinho por
@@ -882,7 +897,7 @@ Unit tests:
 - `test_authorization_service.py` — formatação de custom fields, ordem do resumo, validação do motivo
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
-- `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada) e datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso)
+- `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada), datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso), início pela primeira linha e dependências entre disciplinas
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
 - `test_nextcloud_auth.py` — JWT do Nextcloud: assinatura ES256, expiração, emissor, confusão de algoritmo, formatos da chave e `GET /auth/me`

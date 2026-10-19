@@ -163,10 +163,32 @@ class ScheduleService:
             summary.errors.append(f'lista sem o campo "{FIELD_COMPLETION}" (tipo data)')
             return
 
-        start = _site(lst.get("start_date"))
+        raw_tasks = await self._call(lambda: self._clickup.get_tasks(list_id, include_closed=True))
+        current = _parse_tasks(raw_tasks)
+        summary.tasks = len(current)
+        previous = await self._load_state(list_id)
+
+        # Início do projeto: a data de início da lista, ou a que alguém pôs na primeira
+        # linha (a disciplina do topo) — mudá-la move o projeto inteiro.
+        top_id = _top_task_id(raw_tasks, current)
+        list_start = _site(lst.get("start_date"))
+        start, from_top = _project_start(list_start, current.get(top_id) if top_id else None,
+                                         previous.get(top_id) if top_id else None)
         if not start:
-            summary.errors.append("lista sem data de início — defina a data de início da lista no ClickUp")
+            summary.errors.append(
+                "lista sem data de início — preencha a data de início da primeira linha (ou da lista) no ClickUp")
             return
+        if from_top and start != list_start:
+            summary.changes.append({"task_id": list_id, "name": "(início do projeto)",
+                                    "changes": {"inicio_projeto": [_iso(list_start), _iso(start)]}})
+            if not dry_run:
+                await self._call(lambda: self._clickup.update_list(
+                    list_id, {"start_date": date_to_ms(start), "start_date_time": False}))
+                summary.writes += 1
+                logger.info(f"Cronograma [{list_id}]: início do projeto {_iso(list_start)} → {_iso(start)} (primeira linha)")
+        if start < today:
+            summary.warnings.append(
+                f"início do projeto em {start:%d/%m/%Y}, que já passou — as tarefas não iniciadas começam hoje")
 
         calendar = WorkCalendar(
             start=start,
@@ -174,10 +196,6 @@ class ScheduleService:
             holidays=await self._holidays(),
         )
         names = status_names(lst.get("statuses"))
-
-        raw_tasks = await self._call(lambda: self._clickup.get_tasks(list_id, include_closed=True))
-        current = _parse_tasks(raw_tasks)
-        summary.tasks = len(current)
         if not current:
             return
 
@@ -186,7 +204,6 @@ class ScheduleService:
         for c in current.values():
             if c.id not in parents and c.duration is None and c.status_type != "closed":
                 summary.warnings.append(f'"{c.name}": sem duração — não pesa no progresso nem ocupa o cronograma')
-        previous = await self._load_state(list_id)
 
         engine_tasks: list[ScheduleTask] = []
         leaf_target: dict[str, tuple[float, str, date | None]] = {}
@@ -222,7 +239,7 @@ class ScheduleService:
         # Edição à mão: só a tarefa mexida e as que dependem dela são recalculadas;
         # as demais ficam com as datas de agora.
         date_scope: set[str] | None = None
-        if edits:
+        if edits and not (from_top and start != list_start):     # projeto inteiro mudou de início
             affected = dependents_of(engine_tasks, set(edits))
             engine_tasks = [_pin_outside(t, affected, parents, current) for t in engine_tasks]
             date_scope = affected | _ancestors(affected, current)
@@ -269,7 +286,8 @@ class ScheduleService:
             result = output.results[c.id]
             dates_allowed = date_scope is None or c.id in date_scope
             if result.is_summary:
-                plan = _plan_summary(c, result, names, f_percent, f_duration, dates_allowed)
+                plan = _plan_summary(c, result, names, f_percent, f_duration, dates_allowed,
+                                     normalize=from_top and c.id == top_id)
             elif c.status_type == "closed":
                 continue
             else:
@@ -314,7 +332,7 @@ class ScheduleService:
             except Exception as exc:  # noqa: BLE001 — o aviso não pode desfazer o cálculo
                 summary.errors.append(f"{current[task_id].name}: comentário não publicado — {_describe(exc)}")
 
-        await self._save_state(list_id, current, leaf_target, names, failed, written, previous)
+        await self._save_state(list_id, current, leaf_target, names, failed, written, previous, top_id)
         logger.info(
             f"Cronograma [{list_id}]: {summary.tasks} tarefas, {summary.changed} alteradas, "
             f"{summary.writes} gravações, {len(summary.errors)} erro(s)"
@@ -425,8 +443,16 @@ class ScheduleService:
         failed: set[str],
         written: dict[str, dict],
         previous: dict[str, ScheduleTaskState],
+        top_id: str | None = None,
     ) -> None:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if top_id and top_id not in leaf_target and top_id not in failed:
+            # a primeira linha também: é por ela que se reconhece o início do projeto mudado à mão
+            start, due = _dates_now(current[top_id], written.get(top_id))
+            values = {"list_id": list_id, "percent": current[top_id].percent, "is_done": False,
+                      "start": start, "due": due, "updated_at": now}
+            stmt = sqlite_insert(ScheduleTaskState).values(task_id=top_id, **values)
+            await self._db.execute(stmt.on_conflict_do_update(index_elements=["task_id"], set_=values))
         for task_id, (percent, status, _) in leaf_target.items():
             c = current[task_id]
             start, due = _dates_now(c, written.get(task_id))
@@ -535,6 +561,37 @@ def _depths(current: dict[str, _Current]) -> dict[str, int]:
     for task_id in current:
         walk(task_id)
     return depth
+
+
+def _top_task_id(raw_tasks: list[dict], current: dict[str, _Current]) -> str | None:
+    """A primeira linha da lista: a tarefa de topo de menor posição (orderindex)."""
+    tops = [t for t in raw_tasks if current.get(str(t["id"])) and not current[str(t["id"])].parent_id]
+
+    def position(task: dict) -> float:
+        try:
+            return float(task.get("orderindex") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    return str(min(tops, key=position)["id"]) if tops else None
+
+
+def _project_start(
+    list_start: date | None, top: _Current | None, prev_top: ScheduleTaskState | None,
+) -> tuple[date | None, bool]:
+    """(início do projeto, veio da primeira linha?).
+
+    O início digitado na primeira linha vale quando é novo — diferente do que o motor
+    deixou nela — ou quando a lista ainda não tem data de início. Sem isso, vale o
+    início da lista (as datas da primeira linha são calculadas a partir dele)."""
+    typed = top.start if top else None
+    if typed and prev_top and prev_top.start and typed != prev_top.start:
+        return typed, True
+    if list_start:
+        return list_start, False
+    if typed:
+        return typed, True
+    return None, False
 
 
 def _ancestors(task_ids: set[str], current: dict[str, _Current]) -> set[str]:
@@ -696,10 +753,12 @@ def _plan_leaf(c, result, percent, status, completed_on, names, f_percent, f_com
     return plan
 
 
-def _plan_summary(c, result, names: StatusNames, f_percent, f_duration, dates_allowed: bool = True) -> dict:
+def _plan_summary(
+    c, result, names: StatusNames, f_percent, f_duration, dates_allowed: bool = True, normalize: bool = False,
+) -> dict:
     plan = {"id": c.id, "name": c.name, "task": {}, "fields": [], "clear": [], "log": {}}
     if dates_allowed:
-        _date_changes(c, result.start, result.finish, plan)
+        _date_changes(c, result.start, result.finish, plan, normalize=normalize)
     status = summary_status(result.percent, c.status, c.status_type, names)
     if norm(status) != norm(c.status):
         plan["task"]["status"] = status
