@@ -7,8 +7,10 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.services.schedule_engine import useful_duration
+from src.services.schedule_pauses import pauses_to_json
 from src.services.schedule_fields import (
     FIELD_CALENDAR, FIELD_DURATION, FIELD_PERCENT, find_field, read_calendar, read_number, read_percent,
+    read_task_pauses,
 )
 from src.models.schedule_models import ScheduleBaseline
 from src.models.cache_models import (
@@ -397,6 +399,8 @@ class CacheRepository:
             calendar_type = read_calendar(find_field(custom_fields, FIELD_CALENDAR, "drop_down"))
             due_date = task.get("due_date")
             schedule_due = True
+        current_pause, pause_history, _ = read_task_pauses(custom_fields, settings.schedule_utc_offset_hours)
+        pauses_json = pauses_to_json(current_pause, pause_history)
 
         # type 1 = "task_id espera por depends_on"; o registo vem nas duas tarefas do par
         depends_on = sorted({
@@ -425,6 +429,7 @@ class CacheRepository:
             duration_days=duration_days,
             calendar_type=calendar_type,
             depends_on_json=json.dumps(depends_on),
+            pauses_json=pauses_json,
             url=task.get("url"),
             last_refreshed_at=datetime.utcnow(),
         )
@@ -447,6 +452,7 @@ class CacheRepository:
                 "duration_days": stmt.excluded.duration_days,
                 "calendar_type": stmt.excluded.calendar_type,
                 "depends_on_json": stmt.excluded.depends_on_json,
+                "pauses_json": stmt.excluded.pauses_json,
                 "parent_task_id": stmt.excluded.parent_task_id,
                 "last_refreshed_at": stmt.excluded.last_refreshed_at,
             },

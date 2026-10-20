@@ -12,6 +12,8 @@ const Charts = (function () {
   const _instances = {};
   const _observers = {};
   var _ganttTooltip = null;
+  /* Faixa zebrada vermelho/branco das pausas, a mesma do PDF e do XLSX */
+  var PAUSE_ZEBRA = 'repeating-linear-gradient(45deg,#dc2626 0 3px,#ffffff 3px 6px)';
 
   function _init(id) {
     if (_instances[id]) { _instances[id].dispose(); }
@@ -384,6 +386,12 @@ const Charts = (function () {
     var WEEK_MS = 604800000;
     var MONTHS  = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+    /* "AAAA-MM-DD" → meia-noite local (new Date("AAAA-MM-DD") seria UTC e mudaria o dia) */
+    function _localDay(s) {
+      var p = String(s).slice(0, 10).split('-');
+      return new Date(+p[0], +p[1] - 1, +p[2]).getTime();
+    }
+
     /* Retorna a segunda-feira da semana de uma data */
     function _monStart(d) {
       var dt = new Date(typeof d === 'string' ? d : (d instanceof Date ? d.getTime() : d));
@@ -486,6 +494,23 @@ const Charts = (function () {
       if (!te && ts) te = ts;
 
       var color = t.is_done ? '#86efac' : (t.is_overdue ? '#f87171' : (t.status_color || '#93c5fd'));
+
+      /* Pausas: os dias parados, por semana (0 = segunda … 6 = domingo) — a faixa zebrada
+         cobre só a fatia desses dias na célula, não a semana inteira */
+      var pauseDays = (t.pauses || []).map(function (p) { return [_localDay(p.start), _localDay(p.end)]; });
+      function _pauseRuns(wt) {
+        var days = [];
+        for (var i = 0; i < 7; i++) {
+          var d = wt + i * 86400000;
+          days.push(pauseDays.some(function (r) { return d >= r[0] && d <= r[1]; }));
+        }
+        var runs = [], i0 = -1;
+        for (var j = 0; j <= 7; j++) {
+          if (j < 7 && days[j]) { if (i0 < 0) i0 = j; }
+          else if (i0 >= 0) { runs.push([i0, j - 1]); i0 = -1; }
+        }
+        return runs;
+      }
       var opac  = t.is_done ? '0.7' : '1';
       var nc    = t.is_done ? '#94a3b8' : (t.is_overdue ? '#b91c1c' : '#1e293b');
       var nd    = t.is_done ? 'text-decoration:line-through;' : '';
@@ -508,10 +533,15 @@ const Charts = (function () {
                 : '';
           inner = '<div style="background:' + color + ';' + r + ';opacity:' + opac + ';height:14px;margin:0 1px;"></div>';
         }
+        _pauseRuns(wt).forEach(function (run) {
+          inner += '<div style="position:absolute;top:6px;height:14px;left:' + (run[0] / 7 * 100) + '%;'
+            + 'width:' + ((run[1] - run[0] + 1) / 7 * 100) + '%;background:' + PAUSE_ZEBRA + ';'
+            + 'box-shadow:inset 0 0 0 1px #dc2626;"></div>';
+        });
 
         var tdBg = isNow ? '#fffbeb' : '#fff';
         var tdBd = isNow ? '#fde68a' : (U2_DARK() ? U2_TRACK : '#f3f4f6');
-        cH += '<td style="background:' + tdBg + ';border-right:1px solid ' + tdBd + ';'
+        cH += '<td style="position:relative;background:' + tdBg + ';border-right:1px solid ' + tdBd + ';'
           + 'width:' + WC + 'px;min-width:' + WC + 'px;height:26px;padding:0;">' + inner + '</td>';
       });
 
@@ -556,6 +586,10 @@ const Charts = (function () {
       }
       if (t.is_done)         html += '<br><span style="color:#86efac">✓ Concluída</span>';
       else if (t.is_overdue) html += '<br><span style="color:#f87171">⚠ Em atraso</span>';
+      (t.pauses || []).forEach(function (p) {
+        html += '<br><span style="color:#fca5a5">⏸ ' + T('Pausa') + ' ' + _fmtD(p.start) + ' – '
+          + (p.open ? T('até nova ordem') : _fmtD(p.end)) + (p.reason ? ' · ' + _e(p.reason) : '') + '</span>';
+      });
       tip.innerHTML = html;
       tip.style.display = 'block';
     });

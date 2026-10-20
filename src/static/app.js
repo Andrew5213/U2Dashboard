@@ -1332,6 +1332,7 @@
             <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block bg-red-400"></span>Atraso</span>
             <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block bg-green-300"></span>Concluída</span>
             <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block bg-blue-300"></span>Em andamento</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:repeating-linear-gradient(45deg,#dc2626 0 2px,#fff 2px 4px);box-shadow:inset 0 0 0 1px #dc2626"></span>Pausa</span>
           </div>
           ${opts.actions ? `<div class="flex items-center gap-2">${opts.actions}</div>` : ''}
           <a href="${esc(opts.backHref)}"

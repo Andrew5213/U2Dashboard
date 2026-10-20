@@ -143,6 +143,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "gantt_legend_done": "Concluido",
         "gantt_legend_overdue": "Em atraso",
         "gantt_legend_summary": "Resumo (disciplina / grupo)",
+        "gantt_legend_pause": "Pausa",
         "gantt_undated_lists": "Listas sem datas, fora do grafico: {names}.",
         "gantt_no_dates": (
             "Nenhuma tarefa desta provincia tem datas. Preencha a data de inicio da lista "
@@ -342,6 +343,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "gantt_legend_done": "Completed",
         "gantt_legend_overdue": "Overdue",
         "gantt_legend_summary": "Summary (discipline / group)",
+        "gantt_legend_pause": "Pause",
         "gantt_undated_lists": "Lists without dates, not shown: {names}.",
         "gantt_no_dates": (
             "No task in this province has dates. Fill in the list start date in ClickUp "

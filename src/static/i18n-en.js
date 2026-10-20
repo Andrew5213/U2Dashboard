@@ -82,6 +82,8 @@ U2I18n.register({
   'Próximos 7 dias': 'Next 7 days',
   'em andamento': 'in progress',
   'Em andamento': 'In progress',
+  'Pausa': 'Pause',
+  'até nova ordem': 'until further notice',
   'Em Andamento': 'In Progress',
   'em aberto': 'open',
   'Em aberto': 'Open',

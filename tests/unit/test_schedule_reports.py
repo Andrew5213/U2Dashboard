@@ -471,3 +471,55 @@ class TestGanttOverviewStart:
     async def test_province_starts_on_its_first_real_start_date(self, repo):
         row = next(r for r in await repo.get_gantt_overview("S") if r["folder_id"] == "F")
         assert row["start_date"][:10] == (TODAY - timedelta(days=2)).isoformat()   # não a data de criação
+
+
+class TestGanttPauses:
+    """Pausa no Gantt: a tarefa e as filhas levam o trecho zebrado (PDF, XLSX e dashboard)."""
+
+    async def _paused(self, repo):
+        pause_fields = [
+            {"id": "pa", "name": "Pausa de", "type": "date", "value": str(date_to_ms(TODAY + timedelta(days=1)))},
+            {"id": "pb", "name": "Pausa até", "type": "date", "value": str(date_to_ms(TODAY + timedelta(days=2)))},
+            {"id": "pc", "name": "Motivo da pausa", "type": "short_text", "value": "chuva"},
+            {"id": "pd", "name": "Histórico de pausas", "type": "text",
+             "value": f"{TODAY - timedelta(days=2):%d/%m/%Y} – {TODAY - timedelta(days=2):%d/%m/%Y} · licença"},
+        ]
+        group = schedule_task("Base do Gerador", "Obra Civil", percent=50, duration=4, status="fazendo",
+                              status_type="custom", start=TODAY - timedelta(days=2), due=TODAY + timedelta(days=3))
+        group["custom_fields"] += pause_fields
+        await repo.upsert_task({**group, "date_created": str(1_780_000_000_001)}, "L1")
+
+    async def test_rows_carry_their_own_and_inherited_pauses(self, repo, db):
+        from src.services.gantt_report_service import GanttReportService
+        await self._paused(repo)
+        data = await GanttReportService(db)._build_data("F")
+        site = next(lst for lst in data["lists"] if lst["name"] == "Site FM")
+        rows = {r["name"]: r for r in site["rows"]}
+        spans = lambda name: [(p["start"], p["end"], p["reason"]) for p in rows[name]["pauses"]]
+        expected = [(TODAY - timedelta(days=2), TODAY - timedelta(days=2), "licença"),
+                    (TODAY + timedelta(days=1), TODAY + timedelta(days=2), "chuva")]
+        assert spans("Base do Gerador") == expected
+        assert spans("Cura do Concreto") == expected                  # herdada da tarefa-mãe
+        assert all(p["own"] for p in rows["Base do Gerador"]["pauses"])
+        assert not any(p["own"] for p in rows["Cura do Concreto"]["pauses"])
+        assert spans("Obra Civil") == [] and spans("Logística") == []
+
+    async def test_pdf_and_spreadsheet_draw_the_pause(self, repo, db):
+        from src.services.gantt_report_service import GanttReportService
+        await self._paused(repo)
+        assert (await GanttReportService(db).generate_pdf("F")).startswith(b"%PDF")
+        sheet = openpyxl.load_workbook(BytesIO(await GanttReportService(db).generate_xlsx("F"))).active
+        row = next(r for r in range(1, sheet.max_row + 1) if sheet.cell(row=r, column=1).value == "Cura do Concreto")
+        striped = [c for c in range(7, sheet.max_column + 1) if sheet.cell(row=row, column=c).fill.fill_type == "darkUp"]
+        assert len(striped) == 2                                        # os 2 dias da pausa atual
+        legend = [sheet.cell(row=r, column=1).value for r in range(1, sheet.max_row + 1)]
+        assert "Pausa" in legend
+
+    async def test_dashboard_gantt_lists_the_pauses(self, repo, db):
+        from src.services.dashboard_service import DashboardService
+        await self._paused(repo)
+        tasks = {t.name: t for t in await DashboardService(db).get_gantt_task_with_subtasks("Base do Gerador")}
+        pauses = tasks["Base do Gerador"].pauses
+        assert [(p["start"], p["reason"], p["archived"]) for p in pauses] == [
+            ((TODAY - timedelta(days=2)).isoformat(), "licença", True),
+            ((TODAY + timedelta(days=1)).isoformat(), "chuva", False)]

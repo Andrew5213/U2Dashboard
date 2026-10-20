@@ -129,6 +129,8 @@ class GanttTask(BaseModel):
     url: str | None = None
     list_name: str | None = None
     is_parent: bool = False
+    # pausas (histórico + atual): {start, end, reason, archived, open} — zebrado no Gantt
+    pauses: list[dict] = []
 
 
 class DashboardEnvelope(BaseModel):

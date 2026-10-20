@@ -95,6 +95,9 @@ class ScheduleTask:
     # datas mantidas como estão (fora do alcance de uma edição) — as sucessoras
     # que forem recalculadas partem delas
     pinned: tuple[date, date] | None = None
+    # pausas: (primeiro dia, último dia) em que a tarefa não anda — o trabalho que cairia
+    # ali passa para depois; a duração não muda, o fim se afasta
+    pauses: tuple[tuple[date, date], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -174,12 +177,13 @@ def compute_schedule(
             dates[tid] = (start_day, finish_day)
             continue
 
+        blocks = _blocked_positions(calendar, t.pauses)
         if not reschedule or p <= 0:
             floor = max(0.0, pred_finish)
             n = max(floor, float(today_pos)) if reschedule else floor
             if t.not_before:
                 n = max(n, float(calendar.index_of(t.not_before)))
-            o = round(n + m, 6)
+            n, o = _work_through(n, m, blocks)
             start_day = calendar.date_at(math.floor(n + _EPS))
             finish_day = calendar.date_at(_finish_index(n, o))
         elif p >= 1:
@@ -191,7 +195,9 @@ def compute_schedule(
         else:
             start_day = t.start if t.start and t.start <= today else today
             n = float(calendar.index_of(start_day))
-            o = round(max(n, today_pos + m * (1 - p)), 6)
+            # o que falta é feito a partir de hoje, pulando as pausas que vierem
+            _, rest_end = _work_through(float(today_pos), m * (1 - p), blocks)
+            o = round(max(n, rest_end), 6)
             finish_day = max(calendar.date_at(_finish_index(n, o)), start_day)
 
         pos_start[tid], pos_finish[tid] = n, o
@@ -291,6 +297,34 @@ def dependents_of(tasks: list[ScheduleTask], roots: set[str]) -> set[str]:
                 reached.add(nxt)
                 queue.append(nxt)
     return reached
+
+
+def _blocked_positions(calendar: WorkCalendar, pauses: tuple[tuple[date, date], ...]) -> list[tuple[float, float]]:
+    """Pausas em posições: [início do primeiro dia útil parado, fim do último)."""
+    blocks = []
+    for first, last in sorted(pauses):
+        b0, b1 = float(calendar.index_of(first)), float(calendar.end_position(last))
+        if b1 > b0:
+            blocks.append((b0, b1))
+    return blocks
+
+
+def _work_through(start: float, work: float, blocks: list[tuple[float, float]]) -> tuple[float, float]:
+    """(início, fim) de `work` dias úteis a partir de `start`, sem trabalhar nas pausas:
+    começar dentro de uma pausa é começar quando ela acaba; uma pausa no meio empurra o
+    resto do trabalho para depois dela."""
+    for b0, b1 in blocks:
+        if b0 <= start + _EPS < b1:
+            start = b1
+    position, remaining = start, work
+    for b0, b1 in blocks:
+        if b1 <= position + _EPS:
+            continue
+        if position + remaining <= b0 + _EPS:
+            break
+        remaining -= max(0.0, b0 - position)
+        position = b1
+    return start, round(position + remaining, 6)
 
 
 def workdays_between(calendar: WorkCalendar, start: date, finish: date) -> int:

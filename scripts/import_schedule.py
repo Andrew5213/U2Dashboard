@@ -33,6 +33,7 @@ from src.services.schedule_fields import (  # noqa: E402
     FIELD_COMPLETION,
     FIELD_DEFS,
     FIELD_DURATION,
+    FIELD_FIXED_START,
     FIELD_PERCENT,
     calendar_option_id,
     date_to_ms,
@@ -41,6 +42,7 @@ from src.services.schedule_fields import (  # noqa: E402
     norm,
     parse_weekend_mask,
 )
+from src.services.schedule_pauses import PAUSE_FIELD_DEFS  # noqa: E402
 from src.services.schedule_service import ScheduleService, rate_limit_wait, status_names  # noqa: E402
 from src.services.schedule_xlsx import XlsxSchedule, load_schedule  # noqa: E402
 import src.models.schedule_models  # noqa: E402,F401
@@ -88,7 +90,11 @@ async def ensure_fields(clickup: ClickUpClient, list_id: str) -> list[dict]:
     fields = await call(lambda: clickup.get_list_fields(list_id))
     for definition in FIELD_DEFS:
         if not find_field(fields, definition["name"], definition["type"]):
-            await call(lambda d=definition: clickup.create_custom_field(list_id, d), idempotent=False)
+            try:
+                await call(lambda d=definition: clickup.create_custom_field(list_id, d), idempotent=False)
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError(f'campo "{definition["name"]}" recusado pelo ClickUp: '
+                                   f"HTTP {exc.response.status_code} {exc.response.text[:300]}") from exc
             print(f'  campo criado: {definition["name"]}')
     return await call(lambda: clickup.get_list_fields(list_id))
 
@@ -113,18 +119,7 @@ async def ensure_views(clickup: ClickUpClient, list_id: str, fields: list[dict])
     vista — sem isto a lista parece vazia."""
     existing = await call(lambda: clickup._get(f"/list/{list_id}/view"))
     names = {view["name"] for view in existing.get("views", [])}
-    custom = [
-        find_field(fields, FIELD_DURATION, "number"),
-        find_field(fields, FIELD_PERCENT, "manual_progress"),
-        find_field(fields, FIELD_CALENDAR, "drop_down"),
-    ]
-    completion = find_field(fields, FIELD_COMPLETION, "date")
-    columns = (
-        ["assignee", "startDate", "dueDate"]
-        + [f"cf_{f['id']}" for f in custom if f]
-        + ["dependencies"]
-        + ([f"cf_{completion['id']}"] if completion else [])
-    )
+    columns = schedule_view_columns(fields)
     base = {
         "grouping": {"field": "none", "dir": 1, "collapsed": [], "ignore": False},
         "divide": {"field": None, "dir": None, "collapsed": []},
@@ -143,6 +138,46 @@ async def ensure_views(clickup: ClickUpClient, list_id: str, fields: list[dict])
         await call(lambda: clickup._post(f"/list/{list_id}/view", {**base, "name": "Gantt", "type": "gantt"}), idempotent=False)
         created.append("Gantt")
     return created
+
+
+def schedule_view_columns(fields: list[dict]) -> list[str]:
+    """Colunas da vista "Cronograma", na ordem: datas, duração, %, calendário, dependências,
+    conclusão, início fixado e os campos de pausa."""
+    custom = [
+        find_field(fields, FIELD_DURATION, "number"),
+        find_field(fields, FIELD_PERCENT, "manual_progress"),
+        find_field(fields, FIELD_CALENDAR, "drop_down"),
+    ]
+    tail = [find_field(fields, FIELD_COMPLETION, "date"), find_field(fields, FIELD_FIXED_START, "date")]
+    tail += [find_field(fields, d["name"], d["type"]) for d in PAUSE_FIELD_DEFS]
+    return (
+        ["assignee", "startDate", "dueDate"]
+        + [f"cf_{f['id']}" for f in custom if f]
+        + ["dependencies"]
+        + [f"cf_{f['id']}" for f in tail if f]
+    )
+
+
+async def add_view_columns(clickup: ClickUpClient, list_id: str, fields: list[dict]) -> list[str]:
+    """Acrescenta à vista "Cronograma" já existente as colunas que faltam (os campos novos
+    criados pela API não entram sozinhos em vista nenhuma). Devolve os nomes acrescentados."""
+    views = (await call(lambda: clickup._get(f"/list/{list_id}/view"))).get("views", [])
+    view = next((v for v in views if v.get("name") == "Cronograma"), None)
+    if not view:
+        return []
+    full = (await call(lambda: clickup._get(f"/view/{view['id']}"))).get("view", view)
+    present = [c.get("field") for c in (full.get("columns") or {}).get("fields", [])]
+    missing = [c for c in schedule_view_columns(fields) if c not in present]
+    if not missing:
+        return []
+    cols = list((full.get("columns") or {}).get("fields", []))
+    cols += [{"field": c, "idx": len(cols) + i, "width": 160, "hidden": False} for i, c in enumerate(missing)]
+    payload = {key: full[key] for key in ("name", "type", "grouping", "divide", "sorting", "filters", "settings")
+               if key in full}
+    payload["columns"] = {"fields": cols}
+    await call(lambda: clickup._put(f"/view/{view['id']}", payload))
+    by_id = {f"cf_{f['id']}": f["name"] for f in fields}
+    return [by_id.get(c, c) for c in missing]
 
 
 async def delete_existing(clickup: ClickUpClient, list_id: str) -> int:

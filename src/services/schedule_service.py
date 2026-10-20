@@ -39,6 +39,16 @@ from src.services.schedule_engine import (
     reconcile_leaf,
     summary_status,
 )
+from src.services.schedule_pauses import (
+    FIELD_PAUSE_FROM,
+    FIELD_PAUSE_HISTORY,
+    FIELD_PAUSE_REASON,
+    FIELD_PAUSE_UNTIL,
+    Pause,
+    archive,
+    blocked_ranges,
+    format_history,
+)
 from src.services.schedule_fields import (
     FIELD_CALENDAR,
     FIELD_COMPLETION,
@@ -54,6 +64,7 @@ from src.services.schedule_fields import (
     read_calendar,
     read_number,
     read_percent,
+    read_task_pauses,
 )
 
 _WRITE_PAUSE_SECONDS = 0.15
@@ -105,6 +116,9 @@ class _Current:
     fixed_start: date | None = None
     start_raw: int | None = None      # o instante gravado, para normalizar datas digitadas
     due_raw: int | None = None
+    pause: Pause | None = None                 # a pausa atual ou a próxima
+    history: tuple[Pause, ...] = ()            # pausas já terminadas
+    history_bad: tuple[str, ...] = ()          # linhas do histórico que não deu para ler
 
 
 @dataclass(frozen=True)
@@ -205,9 +219,16 @@ class ScheduleService:
             if c.id not in parents and c.duration is None and c.status_type != "closed":
                 summary.warnings.append(f'"{c.name}": sem duração — não pesa no progresso nem ocupa o cronograma')
 
+        pause_fields = {name: find_field(fields, name, kind) for name, kind in (
+            (FIELD_PAUSE_FROM, "date"), (FIELD_PAUSE_UNTIL, "date"),
+            (FIELD_PAUSE_REASON, "short_text"), (FIELD_PAUSE_HISTORY, "text"))}
+        active, pause_plans = _sort_pauses(current, pause_fields, calendar, today, summary)
+
         engine_tasks: list[ScheduleTask] = []
         leaf_target: dict[str, tuple[float, str, date | None]] = {}
         touched: dict[str, tuple[bool, bool, bool]] = {}     # folha → (início mudou, fim mudou, só deslocada)
+        pause_sig: dict[str, str] = {}
+        pause_roots: set[str] = set()                        # folhas cujas pausas mudaram
         for c in current.values():
             if c.id in parents:
                 engine_tasks.append(ScheduleTask(id=c.id, parent_id=c.parent_id, predecessors=c.predecessors))
@@ -226,16 +247,22 @@ class ScheduleService:
                 # sem data real informada, a conclusão vale a partir de hoje
                 completed_on = c.completed_on or today
             leaf_target[c.id] = (percent, status, completed_on)
+            ranges = _pause_ranges(c.id, current, active, today)
+            pause_sig[c.id] = ";".join(f"{a.isoformat()}..{b.isoformat()}" for a, b in ranges)
+            if prev and (prev.start or prev.due) and (prev.pause or "") != pause_sig[c.id]:
+                pause_roots.add(c.id)
             engine_tasks.append(ScheduleTask(
                 id=c.id, parent_id=c.parent_id, duration=c.duration or 0.0, calendar=c.calendar,
                 percent=percent, predecessors=c.predecessors, start=c.start,
                 finished_on=completed_on, cancelled=cancelled, not_before=c.fixed_start,
+                pauses=ranges,
             ))
 
         # Datas digitadas à mão. O cálculo prévio (sem as edições) diz onde cada tarefa
         # estava — com a fração de dia, que a data mostrada no ClickUp não tem.
         edits: dict[str, _Edit] = {}
-        before = compute_schedule(engine_tasks, calendar, today, reschedule=True).results if touched else {}
+        before = (compute_schedule(engine_tasks, calendar, today, reschedule=True).results
+                  if touched or pause_roots else {})
         for task_id, (start_changed, due_changed, moved) in touched.items():
             percent = leaf_target[task_id][0]
             edit = _interpret_edit(current[task_id], start_changed, due_changed, moved, percent,
@@ -251,13 +278,13 @@ class ScheduleService:
         # com as datas de agora — fixadas só as que o cálculo moveria (com a fração de
         # dia preservada nas outras, que saem do motor iguais ao que já está gravado).
         date_scope: set[str] | None = None
-        if edits and not (from_top and start != list_start):     # projeto inteiro mudou de início
-            affected = dependents_of(engine_tasks, set(edits))
+        if (edits or pause_roots) and not (from_top and start != list_start):   # projeto inteiro mudou de início
+            affected = dependents_of(engine_tasks, set(edits) | pause_roots)
             engine_tasks = [_pin_outside(t, affected, parents, current, before) for t in engine_tasks]
             date_scope = affected | _ancestors(affected, current)
             logger.info(
-                f"Cronograma [{list_id}]: {len(edits)} data(s) mudada(s) à mão — "
-                f"{len(affected)} tarefa(s) a recalcular"
+                f"Cronograma [{list_id}]: {len(edits)} data(s) mudada(s) à mão, "
+                f"{len(pause_roots)} pausa(s) mudada(s) — {len(affected)} tarefa(s) a recalcular"
             )
 
         f_fixed = find_field(fields, FIELD_FIXED_START, "date")
@@ -308,6 +335,11 @@ class ScheduleService:
                 _plan_edit(c, edits.get(c.id), result, plan, f_duration, f_fixed)
                 if not dates_allowed:
                     _drop_dates(plan)
+            extra = pause_plans.get(c.id)
+            if extra:
+                plan["fields"] += extra["fields"]
+                plan["clear"] += extra["clear"]
+                plan["log"].update(extra["log"])
             if plan["task"] or plan["fields"] or plan["clear"]:
                 plans.append(plan)
                 summary.changes.append({"task_id": c.id, "name": c.name, "changes": plan["log"]})
@@ -345,7 +377,7 @@ class ScheduleService:
                 summary.errors.append(f"{current[task_id].name}: comentário não publicado — {_describe(exc)}")
 
         final = await self._dates_after_writes(list_id, current, written, summary)
-        await self._save_state(list_id, current, leaf_target, names, failed, final, previous, top_id)
+        await self._save_state(list_id, current, leaf_target, names, failed, final, previous, top_id, pause_sig)
         logger.info(
             f"Cronograma [{list_id}]: {summary.tasks} tarefas, {summary.changed} alteradas, "
             f"{summary.writes} gravações, {len(summary.errors)} erro(s)"
@@ -484,6 +516,7 @@ class ScheduleService:
         final: dict[str, tuple[date | None, date | None]],
         previous: dict[str, ScheduleTaskState],
         top_id: str | None = None,
+        pause_sig: dict[str, str] | None = None,
     ) -> None:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if top_id and top_id not in leaf_target and top_id not in failed:
@@ -506,7 +539,8 @@ class ScheduleService:
                 is_done = norm(status) == norm(names.done) or (
                     c.status_type == "done" and norm(status) == norm(c.status))
             values = {"list_id": list_id, "percent": percent, "is_done": is_done,
-                      "start": start, "due": due, "updated_at": now}
+                      "start": start, "due": due, "pause": (pause_sig or {}).get(task_id) or None,
+                      "updated_at": now}
             stmt = sqlite_insert(ScheduleTaskState).values(task_id=task_id, **values)
             await self._db.execute(stmt.on_conflict_do_update(index_elements=["task_id"], set_=values))
         await self._db.execute(delete(ScheduleTaskState).where(
@@ -585,8 +619,14 @@ def _parse_tasks(raw_tasks: list[dict]) -> dict[str, _Current]:
             fixed_start=_site((find_field(custom, FIELD_FIXED_START, "date") or {}).get("value")),
             start_raw=_raw(t.get("start_date")),
             due_raw=_raw(t.get("due_date")),
+            **_read_pause(custom),
         )
     return current
+
+
+def _read_pause(custom: list[dict]) -> dict:
+    pause, history, bad = read_task_pauses(custom, settings.schedule_utc_offset_hours)
+    return {"pause": pause, "history": tuple(history), "history_bad": tuple(bad)}
 
 
 def _depths(current: dict[str, _Current]) -> dict[str, int]:
@@ -601,6 +641,54 @@ def _depths(current: dict[str, _Current]) -> dict[str, int]:
     for task_id in current:
         walk(task_id)
     return depth
+
+
+def _sort_pauses(
+    current: dict[str, _Current], fields: dict, calendar: WorkCalendar, today: date, summary: ScheduleRunSummary,
+) -> tuple[dict[str, Pause], dict[str, dict]]:
+    """(pausas que valem no cálculo, gravações de arquivamento). A pausa cujo "Pausa até"
+    já passou vai para o "Histórico de pausas" (juntando-se a uma contígua) e os três
+    campos da pausa ficam limpos para a próxima. Lista sem os campos de pausa: nada."""
+    active: dict[str, Pause] = {}
+    plans: dict[str, dict] = {}
+    if not all(fields.values()):
+        return active, plans
+    f_from, f_until, f_reason, f_history = (fields[n]["id"] for n in (
+        FIELD_PAUSE_FROM, FIELD_PAUSE_UNTIL, FIELD_PAUSE_REASON, FIELD_PAUSE_HISTORY))
+    for c in current.values():
+        if c.history_bad:
+            summary.warnings.append(
+                f'"{c.name}": linha(s) do histórico de pausas que não deu para ler — {"; ".join(c.history_bad)}')
+        pause = c.pause
+        if not pause:
+            continue
+        if pause.end and pause.end < pause.start:
+            summary.warnings.append(f'"{c.name}": "Pausa até" antes de "Pausa de" — a pausa foi ignorada')
+            continue
+        if pause.end and pause.end < today:
+            history = archive(list(c.history), pause, calendar)
+            clear = [f_from, f_until] + ([f_reason] if pause.reason else [])
+            plans[c.id] = {
+                "fields": [(f_history, format_history(history, list(c.history_bad)))],
+                "clear": clear,
+                "log": {"pausa_arquivada": [None, f"{pause.start:%d/%m/%Y} – {pause.end:%d/%m/%Y}"]},
+            }
+            continue
+        active[c.id] = pause
+    return active, plans
+
+
+def _pause_ranges(task_id: str, current: dict[str, _Current], active: dict[str, Pause], today: date):
+    """Pausas que valem para uma tarefa-folha: a dela e as das tarefas-mãe acima dela."""
+    pauses: list[Pause] = []
+    seen: set[str] = set()
+    node: str | None = task_id
+    while node and node not in seen:
+        seen.add(node)
+        if node in active:
+            pauses.append(active[node])
+        node = current[node].parent_id if node in current else None
+    return blocked_ranges(pauses, today)
 
 
 def _top_task_id(raw_tasks: list[dict], current: dict[str, _Current]) -> str | None:

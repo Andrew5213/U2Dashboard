@@ -7,6 +7,7 @@ from src.models.dashboard_schemas import (
     TaskDetail, TaskSummary, UpcomingTask,
 )
 from src.repositories.cache_repository import CacheRepository
+from src.services.schedule_pauses import display_pauses
 from src.services.weights_config import build_province_evolution
 
 
@@ -191,6 +192,8 @@ class DashboardService:
             url=task.url,
             list_name=list_name,
             is_parent=is_parent,
+            pauses=[{**p, "start": p["start"].isoformat(), "end": p["end"].isoformat()}
+                    for p in display_pauses(task.pauses_json, now.date())],
         )
 
     async def get_gantt_tasks(self, list_id: str) -> list[GanttTask]:

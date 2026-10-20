@@ -34,6 +34,13 @@ FIELD_DEFS: list[dict] = [
     },
     {"name": FIELD_FIXED_START, "type": "date", "type_config": {}},
 ]
+# os quatro campos de pausa ("Pausa de", "Pausa até", "Motivo da pausa", "Histórico de pausas")
+from src.services.schedule_pauses import (  # noqa: E402
+    FIELD_PAUSE_FROM, FIELD_PAUSE_HISTORY, FIELD_PAUSE_REASON, FIELD_PAUSE_UNTIL, PAUSE_FIELD_DEFS, Pause,
+    parse_history,
+)
+
+FIELD_DEFS += PAUSE_FIELD_DEFS
 
 _WEEKDAYS = {"seg": 0, "ter": 1, "qua": 2, "qui": 3, "sex": 4, "sab": 5, "dom": 6}
 
@@ -142,3 +149,12 @@ def parse_weekend_mask(text: str | None, default: str) -> str:
         if days and len(days) < 7:
             return "".join("1" if index in days else "0" for index in range(7))
     return default
+
+
+def read_task_pauses(custom: list[dict] | None, utc_offset_hours: float) -> tuple[Pause | None, list[Pause], list[str]]:
+    """(pausa atual ou próxima, pausas do histórico, linhas do histórico que não deu para ler)."""
+    start = ms_to_site_date((find_field(custom, FIELD_PAUSE_FROM, "date") or {}).get("value"), utc_offset_hours)
+    end = ms_to_site_date((find_field(custom, FIELD_PAUSE_UNTIL, "date") or {}).get("value"), utc_offset_hours)
+    reason = str((find_field(custom, FIELD_PAUSE_REASON) or {}).get("value") or "").strip()
+    history, bad = parse_history((find_field(custom, FIELD_PAUSE_HISTORY) or {}).get("value"))
+    return (Pause(start, end, reason) if start else None), history, bad

@@ -24,6 +24,9 @@ class ScheduleTaskState(Base):
     is_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     start: Mapped[date | None] = mapped_column(Date, nullable=True)
     due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # pausas que valiam no último cálculo ("2026-11-02..2026-11-04;…"): mudou = a tarefa e as
+    # que dependem dela são recalculadas, como numa data digitada
+    pause: Mapped[str | None] = mapped_column(String(500), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

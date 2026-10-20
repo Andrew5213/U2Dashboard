@@ -62,6 +62,8 @@ class ClickUpTaskCache(Base):
     calendar_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Ids das tarefas de que esta depende (dependências "waiting on" do ClickUp), em JSON
     depends_on_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Pausas da tarefa (histórico + a atual), em JSON — para os Gantts desenharem o zebrado
+    pauses_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_refreshed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

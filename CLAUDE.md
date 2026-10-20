@@ -597,6 +597,7 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 | Antecessores | dependências nativas ("waiting on") | utilizador |
 | Início / fim | `start_date` / `due_date` **nativos**, só o dia | motor; o utilizador pode mexer numa folha — ver "Datas digitadas à mão" |
 | Início fixado | campo `Início fixado` (date): "não começar antes de" | motor, quando alguém muda o início à mão; o utilizador apaga para soltar |
+| Pausa | campos `Pausa de` / `Pausa até` (date) / `Motivo da pausa` (short_text) + `Histórico de pausas` (text) | utilizador (a pausa atual); motor (arquiva no histórico) — ver "Pausas" |
 | Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
 | Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
 | Data de início do projeto | data de início da **primeira linha** (disciplina do topo), ou `start_date` da lista | utilizador; o motor copia a da primeira linha para a lista |
@@ -760,6 +761,29 @@ rack da Área Técnica espera a concretagem da Obra Civil); dependência para ou
 **Duração dos resumos** = soma das durações das tarefas dele, como digitadas (tarefas em paralelo somam
 por inteiro; canceladas não entram). Antes era a amplitude em dias úteis; o peso no progresso continua
 a ser a duração útil de cada folha.
+
+**Pausas** (`schedule_pauses.py`): parar uma subtarefa — ou uma tarefa/disciplina inteira, que vale
+para todas as tarefas abaixo dela — é preencher **Pausa de** (e o motivo); retomar é preencher **Pausa
+até**. Em branco, "Pausa até" = parada até nova ordem (vai até hoje e anda com ele). Os dias de pausa
+não contam como trabalho (`pauses` no `ScheduleTask`, `_work_through` no motor): a duração fica, o fim
+se afasta, começar dentro da pausa é começar quando ela acaba, e o que falta de uma tarefa em andamento
+é feito depois dela. Só a tarefa pausada e as que dependem dela andam (a assinatura das pausas vai para
+`schedule_task_state.pause`; mudou = raiz do recálculo, como uma data digitada).
+- **Histórico:** no dia seguinte ao "Pausa até", o motor acrescenta a pausa no campo de texto
+  **Histórico de pausas** (`dd/mm/aaaa – dd/mm/aaaa · motivo`, uma por linha) e limpa os três campos — ficam
+  livres para a próxima. Pausa que encosta numa arquivada (sobrepõe, começa no dia seguinte ou só há folga
+  entre elas) vira uma só, com os motivos juntos. O histórico pode ser editado à mão; linha que não se lê
+  fica como está e gera aviso. Apagar as datas de uma pausa que ainda não terminou = cancelar (não arquiva).
+  As pausas do histórico não entram no cálculo (as datas reais já as contêm): servem para o Gantt.
+- **Gantt:** toda pausa (histórico + atual) é uma faixa **zebrada vermelho/branco** — PDF (`_zebra`, listras
+  a 45° recortadas com `rect_clip`), XLSX (preenchimento nativo `darkUp`, com comentário do motivo) e
+  dashboard (`PAUSE_ZEBRA` em `charts.js`, só na fatia dos dias parados dentro da coluna da semana; motivo no
+  tooltip). A pausa da própria tarefa aparece onde estiver, inclusive antes da barra (explica o atraso); a
+  herdada da tarefa-mãe só no trecho da barra de cada filha. O cache guarda as pausas em
+  `clickup_task_cache.pauses_json`. O Gantt nativo do ClickUp não tem zebra — lá só a barra fica mais comprida.
+- **Campos por lista:** fazem parte do `FIELD_DEFS` do importador; nas listas já importadas são criados pela
+  implantação (`ensure_fields` + `add_view_columns`, que também põe as colunas na vista "Cronograma" sem
+  mexer em filtros/agrupamento). Lista sem os quatro campos ignora pausas.
 
 **Sem data de início, sem datas.** Planilha sem data de início → a lista fica sem `start_date`, o motor
 recusa calcular ("lista sem data de início") e as tarefas ficam sem datas até alguém preencher o início
@@ -951,6 +975,7 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada), datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso), início pela primeira linha e dependências entre disciplinas
+- `test_schedule_pauses.py` — pausas: histórico (leitura/escrita), arquivamento com junção de pausas contíguas e o efeito no motor
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
 - `test_nextcloud_auth.py` — JWT do Nextcloud: assinatura ES256, expiração, emissor, confusão de algoritmo, formatos da chave e `GET /auth/me`

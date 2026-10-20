@@ -22,6 +22,7 @@ from src.services.report_service import (
     _Report, _descendants, _fmt_progress, _is_schedule, _s,
 )
 from src.services.report_strings import get_strings
+from src.services.schedule_pauses import display_pauses
 from src.services.translation import translate
 
 # A moldura da página — faixa de título, cabeçalho de tabela, linha de lista —
@@ -58,6 +59,9 @@ _WEEK_LABEL_W = 8.0             # largura de um rótulo "dd/mm" na linha das sem
 
 _TRACK = (191, 219, 254)        # barra planejada
 _TRACK_LATE = (254, 202, 202)   # barra em atraso (parte não executada)
+# Pausa: faixa zebrada vermelho/branco por cima da barra. O vermelho é o do dado de
+# atraso (RED), não o do timbrado — é codificação do gráfico, como as outras cores daqui.
+_PAUSE_STRIPE = 0.9             # distância entre as listras, em mm
 
 
 def _span(spans: list[tuple[date, date] | None]) -> tuple[date, date] | None:
@@ -90,6 +94,19 @@ def build_gantt_rows(tasks: list, today: date, lang: str = "pt") -> list[dict]:
         spans[tk.task_id] = own or _span(kid_spans)
         return spans[tk.task_id]
 
+    def pauses_of(tk) -> list[dict]:
+        """As pausas da tarefa e as das tarefas-mãe acima dela (valem para ela também)."""
+        found: dict[tuple, dict] = {}
+        seen, node = set(), tk
+        while node is not None and node.task_id not in seen:
+            seen.add(node.task_id)
+            for p in display_pauses(getattr(node, "pauses_json", None), today):
+                # a própria pausa aparece onde estiver (antes da barra explica o atraso);
+                # a herdada da tarefa-mãe só no trecho da barra desta tarefa
+                found.setdefault((p["start"], p["end"]), {**p, "own": node is tk})
+            node = by_id.get(node.parent_task_id)
+        return sorted(found.values(), key=lambda p: p["start"])
+
     rows: list[dict] = []
     for root in tasks:
         if root.parent_task_id in by_id:
@@ -114,6 +131,7 @@ def build_gantt_rows(tasks: list, today: date, lang: str = "pt") -> list[dict]:
                 "duration_days": item.duration_days,
                 "is_done": is_done,
                 "is_overdue": span[1] < today and not is_done,
+                "pauses": pauses_of(item),
             })
     return rows
 
@@ -225,6 +243,11 @@ class _GanttReport(_Report):
             width = self.get_string_width(_s(label)) + 6
             self.cell(width, 3.4, _s(label))
             x += 8 + width
+        self._zebra(x, y + 0.6, 7, 2.2)
+        self.set_xy(x + 8, y)
+        width = self.get_string_width(_s(t["gantt_legend_pause"])) + 6
+        self.cell(width, 3.4, _s(t["gantt_legend_pause"]))
+        x += 8 + width
         self.set_draw_color(*RED)
         self.set_line_width(0.3)
         self.line(x + 1, y, x + 1, y + 3.4)
@@ -298,6 +321,32 @@ class _GanttReport(_Report):
             self.set_line_width(0.3)
             self.line(x_today, y, x_today, y + h)
 
+    def _zebra(self, x: float, y: float, w: float, h: float) -> None:
+        """Faixa zebrada vermelho/branco (pausa): fundo branco e listras a 45°, recortadas."""
+        if w <= 0:
+            return
+        self.set_fill_color(*WHITE)
+        self.rect(x, y, w, h, style="F")
+        self.set_draw_color(*RED)
+        self.set_line_width(0.35)
+        with self.rect_clip(x, y, w, h):
+            k = x - h
+            while k < x + w:
+                self.line(k, y + h, k + h, y)
+                k += _PAUSE_STRIPE
+        self.set_draw_color(*RED)
+        self.set_line_width(0.15)
+        self.rect(x, y, w, h, style="D")
+
+    def _pause_marks(self, row: dict, bar_y: float, bar_h: float) -> None:
+        for pause in row.get("pauses") or []:
+            first = max(pause["start"], self._start if pause.get("own") else max(row["start"], self._start))
+            last = min(pause["end"], self._end if pause.get("own") else min(row["end"], self._end))
+            if last < first:
+                continue
+            x0, x1 = self._x(first), self._x(last + timedelta(days=1))
+            self._zebra(x0, bar_y, x1 - x0, bar_h)
+
     def _ensure_room(self, needed: float) -> None:
         if self.get_y() + needed > _BOTTOM:
             self.add_page()
@@ -356,6 +405,7 @@ class _GanttReport(_Report):
             self.rect(x0, y + 1.4, x1 - x0, 1.2, style="F")
             self.rect(x0, y + 1.4, 0.5, 2.2, style="F")
             self.rect(x1 - 0.5, y + 1.4, 0.5, 2.2, style="F")
+            self._pause_marks(row, y + 1.1, 1.8)
         else:
             bar_y, bar_h = y + 1.0, _ROW_H - 2.0
             done_share = 1.0 if row["is_done"] else min(max((pct or 0.0) / 100, 0.0), 1.0)
@@ -364,6 +414,7 @@ class _GanttReport(_Report):
             if done_share > 0:
                 self.set_fill_color(*(GREEN if row["is_done"] else RED if row["is_overdue"] else BAR_DONE))
                 self.rect(x0, bar_y, (x1 - x0) * done_share, bar_h, style="F")
+            self._pause_marks(row, bar_y, bar_h)
         self.set_y(y + _ROW_H)
 
     def build_lists(self, lists: list[dict]) -> None:
@@ -477,6 +528,7 @@ _HEX = {
     "gray_400": "94A3B8", "gray_600": "475569", "dark": "0F172A", "white": "FFFFFF",
     "track": "BFDBFE", "progress": "3B82F6", "done": "16A34A", "late_track": "FECACA", "late": "DC2626",
     "summary": "475569", "summary_done": "94A3B8", "rest": "F1F5F9",
+    "pause": "DC2626",
 }
 
 
@@ -492,6 +544,8 @@ def render_gantt_xlsx(data: dict) -> bytes:
     months = _MONTHS[lang]
 
     def fill(key: str) -> PatternFill:
+        if key == "pause":     # listras vermelhas em diagonal sobre branco (zebrado)
+            return PatternFill("darkUp", fgColor=_HEX["pause"], bgColor=_HEX["white"])
         return PatternFill("solid", fgColor=_HEX[key])
 
     wb = Workbook()
@@ -623,6 +677,18 @@ def render_gantt_xlsx(data: dict) -> bytes:
                 keys = [done_key] * filled + [rest_key] * (last - first + 1 - filled)
             for offset, key in enumerate(keys):
                 ws.cell(row=row, column=first_col + first + offset).fill = fill(key)
+            for pause in item.get("pauses") or []:
+                p_first = max(pause["start"], start if pause.get("own") else max(item["start"], start))
+                p_last = min(pause["end"], end if pause.get("own") else min(item["end"], end))
+                if p_last < p_first:
+                    continue
+                for i in range(unit_index(p_first), unit_index(p_last) + 1):
+                    cell = ws.cell(row=row, column=first_col + i)
+                    cell.fill = fill("pause")
+                if pause.get("reason") and ws.cell(row=row, column=first_col + unit_index(p_first)).comment is None:
+                    from openpyxl.comments import Comment
+                    text = f"{t['gantt_legend_pause']}: {pause['start']:%d/%m/%Y} – {pause['end']:%d/%m/%Y} · {pause['reason']}"
+                    ws.cell(row=row, column=first_col + unit_index(p_first)).comment = Comment(text, "U2")
             if daily:
                 for i, day in enumerate(units):       # dia de folga fora das barras, só para leitura
                     if day.weekday() in rest_days and not (first <= i <= last):
@@ -640,7 +706,7 @@ def render_gantt_xlsx(data: dict) -> bytes:
     legend = [
         (t["gantt_legend_planned"], "track"), (t["gantt_legend_progress"], "progress"),
         (t["gantt_legend_done"], "done"), (t["gantt_legend_overdue"], "late"),
-        (t["gantt_legend_summary"], "summary"),
+        (t["gantt_legend_summary"], "summary"), (t["gantt_legend_pause"], "pause"),
     ]
     for label, key in legend:
         ws.cell(row=row, column=2).fill = fill(key)

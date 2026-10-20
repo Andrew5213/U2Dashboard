@@ -23,6 +23,7 @@ STATUSES = [
     {"status": "cancelled", "type": "closed", "orderindex": 4},
 ]
 F_DURATION, F_PERCENT, F_CALENDAR, F_COMPLETION, F_FIXED = "f-dur", "f-pct", "f-cal", "f-done", "f-fixed"
+F_PFROM, F_PUNTIL, F_PREASON, F_PHIST = "f-pfrom", "f-puntil", "f-preason", "f-phist"
 CALENDAR_OPTIONS = [
     {"id": "opt-util", "name": "Útil", "orderindex": 0},
     {"id": "opt-corrido", "name": "Corrido", "orderindex": 1},
@@ -33,6 +34,10 @@ FIELDS = [
     {"id": F_CALENDAR, "name": "Calendário", "type": "drop_down", "type_config": {"options": CALENDAR_OPTIONS}},
     {"id": F_COMPLETION, "name": "Data de Conclusão", "type": "date", "type_config": {}},
     {"id": F_FIXED, "name": "Início fixado", "type": "date", "type_config": {}},
+    {"id": F_PFROM, "name": "Pausa de", "type": "date", "type_config": {}},
+    {"id": F_PUNTIL, "name": "Pausa até", "type": "date", "type_config": {}},
+    {"id": F_PREASON, "name": "Motivo da pausa", "type": "short_text", "type_config": {}},
+    {"id": F_PHIST, "name": "Histórico de pausas", "type": "text", "type_config": {}},
 ]
 
 
@@ -44,6 +49,7 @@ def make_task(task_id, parent=None, status="planejando", percent=0, duration=Non
         F_CALENDAR: 1 if corrido else None,
         F_COMPLETION: None if completed is None else str(date_to_ms(completed)),
         F_FIXED: None,
+        F_PFROM: None, F_PUNTIL: None, F_PREASON: None, F_PHIST: None,
     }
     return {
         "id": task_id, "name": task_id.upper(), "parent": parent,
@@ -147,6 +153,22 @@ class FakeClickUp:
 
     def value(self, task_id, field_id):
         return next(cf for cf in self.tasks[task_id]["custom_fields"] if cf["id"] == field_id)["value"]
+
+    def pause(self, task_id, start=None, until=None, reason=None, history=None):
+        """O que uma pessoa preenche nos campos de pausa (data sem hora, meia-noite em Angola)."""
+        def typed(day):
+            midnight = datetime(day.year, day.month, day.day, tzinfo=timezone(timedelta(hours=1)))
+            return str(int(midnight.timestamp() * 1000))
+        for field_id, value in ((F_PFROM, start), (F_PUNTIL, until)):
+            if value is not None:
+                self._set(task_id, field_id, typed(value) if value else None)
+        if reason is not None:
+            self._set(task_id, F_PREASON, reason or None)
+        if history is not None:
+            self._set(task_id, F_PHIST, history or None)
+
+    def _set(self, task_id, field_id, value):
+        next(cf for cf in self.tasks[task_id]["custom_fields"] if cf["id"] == field_id)["value"] = value
 
     def value_by_name(self, task_id, name):
         return next(cf for cf in self.tasks[task_id]["custom_fields"] if cf["name"] == name)["value"]
@@ -637,7 +659,7 @@ class TestManualDates:
         clickup.type_dates("a", start=date(2026, 10, 15), due=date(2026, 10, 16))
         await _run(db, clickup)
 
-        clickup.tasks["a"]["custom_fields"][-1]["value"] = None            # apaga o "Início fixado"
+        clickup._set("a", F_FIXED, None)                                     # apaga o "Início fixado"
         await _run(db, clickup)
 
         assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
@@ -927,3 +949,110 @@ class TestProjectStart:
 def test_debounce_default_is_five_seconds():
     from src.core.config import Settings
     assert Settings.model_fields["schedule_debounce_seconds"].default == 5.0
+
+
+class TestPauses:
+    """Pausa: os dias parados não contam como trabalho; a tarefa e as que dependem dela andam."""
+
+    async def test_pause_in_the_middle_moves_the_task_and_its_successors_only(self, db):
+        clickup = await _planned(db)                       # a 13–14, b 15, c 16–19, x 13–14, y 15
+        clickup.pause("b", start=date(2026, 10, 15), until=date(2026, 10, 16), reason="chuva")
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok, summary.errors
+        assert clickup.dates("b") == (date(2026, 10, 17), date(2026, 10, 17))     # começa depois da pausa
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 21))
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))     # antes: não muda
+        assert clickup.touched("x") == [] and clickup.touched("y") == []          # outra cadeia: não muda
+        assert float(clickup.value("b", F_DURATION)) == 1                         # a duração fica
+
+    async def test_extending_only_the_end_of_the_pause_pushes_further(self, db):
+        clickup = await _planned(db)
+        clickup.pause("b", start=date(2026, 10, 15), until=date(2026, 10, 16))
+        await _run(db, clickup)
+
+        clickup.pause("b", until=date(2026, 10, 20))
+        await _run(db, clickup)
+
+        assert clickup.dates("b") == (date(2026, 10, 21), date(2026, 10, 21))
+        assert clickup.dates("c") == (date(2026, 10, 22), date(2026, 10, 24))
+
+    async def test_cancelling_a_future_pause_brings_the_dates_back(self, db):
+        clickup = await _planned(db)
+        clickup.pause("b", start=date(2026, 10, 15), until=date(2026, 10, 16))
+        await _run(db, clickup)
+
+        clickup.pause("b", start=False, until=False)                              # apaga as datas
+        await _run(db, clickup)
+
+        assert clickup.dates("b") == (date(2026, 10, 15), date(2026, 10, 15))
+        assert clickup.value("b", F_PHIST) is None                                # não vai para o histórico
+
+    async def test_pause_on_a_group_applies_to_all_its_tasks(self, db):
+        clickup = await _planned(db)
+        clickup.pause("n2", start=date(2026, 10, 13), until=date(2026, 10, 14), reason="licença")
+
+        await _run(db, clickup)
+
+        assert clickup.dates("a") == (date(2026, 10, 15), date(2026, 10, 16))
+        assert clickup.dates("b") == (date(2026, 10, 17), date(2026, 10, 17))
+        assert clickup.dates("n2") == (date(2026, 10, 15), date(2026, 10, 17))
+
+    async def test_open_ended_pause_slides_day_by_day(self, db):
+        clickup = await _planned(db)
+        clickup.pause("x", start=date(2026, 10, 13), reason="aguarda material")   # sem "Pausa até"
+
+        await _run(db, clickup, today=date(2026, 10, 13))
+        assert clickup.dates("x") == (date(2026, 10, 14), date(2026, 10, 15))
+        await _run(db, clickup, today=date(2026, 10, 14))
+        assert clickup.dates("x") == (date(2026, 10, 15), date(2026, 10, 16))
+        assert clickup.dates("y") == (date(2026, 10, 17), date(2026, 10, 17))
+
+    async def test_finished_pause_is_archived_and_the_fields_cleared(self, db):
+        clickup = await _planned(db)
+        clickup.pause("b", start=date(2026, 10, 15), until=date(2026, 10, 16), reason="chuva")
+        await _run(db, clickup)
+
+        summary = await _run(db, clickup, today=date(2026, 10, 19))
+
+        assert summary.ok
+        assert clickup.value("b", F_PHIST) == "15/10/2026 – 16/10/2026 · chuva"
+        assert clickup.value("b", F_PFROM) is None and clickup.value("b", F_PUNTIL) is None
+        assert clickup.value("b", F_PREASON) is None
+
+    async def test_new_pause_right_after_an_archived_one_is_merged(self, db):
+        clickup = await _planned(db)
+        clickup.pause("b", history="15/10/2026 – 16/10/2026 · chuva")
+        clickup.pause("b", start=date(2026, 10, 17), until=date(2026, 10, 19), reason="chuva")
+
+        await _run(db, clickup, today=date(2026, 10, 20))
+
+        assert clickup.value("b", F_PHIST) == "15/10/2026 – 19/10/2026 · chuva"
+
+    async def test_unreadable_history_line_is_kept_and_reported(self, db):
+        clickup = await _planned(db)
+        clickup.pause("b", history="parou uns dias em setembro")
+
+        summary = await _run(db, clickup)
+
+        assert any("histórico de pausas" in w for w in summary.warnings)
+        assert clickup.value("b", F_PHIST) == "parou uns dias em setembro"
+
+    async def test_list_without_pause_fields_ignores_pauses(self, db):
+        clickup = await _planned(db, fields=[f for f in FIELDS if f["id"] not in (F_PFROM, F_PUNTIL, F_PREASON, F_PHIST)])
+        clickup.pause("b", start=date(2026, 10, 15), until=date(2026, 10, 16))
+
+        await _run(db, clickup)
+
+        assert clickup.dates("b") == (date(2026, 10, 15), date(2026, 10, 15))
+
+    async def test_second_run_with_a_pause_writes_nothing(self, db):
+        clickup = await _planned(db)
+        clickup.pause("b", start=date(2026, 10, 15), until=date(2026, 10, 16))
+        await _run(db, clickup)
+        clickup.writes.clear()
+
+        summary = await _run(db, clickup)
+
+        assert summary.changed == 0 and clickup.writes == []
