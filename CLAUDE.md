@@ -55,9 +55,7 @@ src/
 │   ├── chat.html          # AI assistant page (served at GET /assistente — desktop)
 │   ├── chat_mobile.html   # Mobile variant
 │   ├── rdo.html           # RDO form (served at GET /rdo)
-│   ├── progress_civil.html # Civil progress view (served at GET /progresso-civil)
-│   ├── documentacoes.html # Document library UI (served at GET /documentacoes — desktop)
-│   └── documentacoes_mobile.html # Mobile variant — selected by UA detection in main.py
+│   └── progress_civil.html # Civil progress view (served at GET /progresso-civil)
 ├── core/
 │   ├── config.py        # Settings via pydantic-settings (reads .env)
 │   ├── database.py      # Async SQLAlchemy engine, Base, get_db, init_db
@@ -70,14 +68,12 @@ src/
 │   ├── chat_schemas.py      # Pydantic DTOs: ChatRequest, ChatResponse, ChartPayload
 │   ├── civil_models.py      # ORM: CivilProject, CivilSite + 9 child tables (report, resource, activity, material, occurrence, quality_check, photo, next_day_plan, signature)
 │   ├── progress_models.py   # ORM: CivilProgressProfile, CivilProgressCategory, CivilProgressActivityDef, CivilSiteActivityQty, CivilProgressMeasurement
-│   ├── document_models.py   # ORM: Document (PDF metadata for the Documentações module)
 │   ├── authorization_models.py # ORM: AuthorizationToken (links de decisão de uso único)
 │   └── schedule_models.py   # ORM: ScheduleTaskState (último %/status visto pelo motor) + ScheduleBaseline (plano)
 ├── repositories/
 │   ├── sync_repository.py   # DB access for sync tables
 │   ├── cache_repository.py  # DB access for cache tables (upsert_space/folder/list/task/user, weighted progress, discipline weights)
 │   ├── civil_repository.py  # DB access for all civil + progress tables (shared by civil.py, progress_civil.py, civil_service.py)
-│   ├── document_repository.py # DB access for the document table (create, list, get, delete)
 │   └── authorization_repository.py # Token pairs for service authorizations (create/consume)
 ├── services/
 │   ├── airbox_client.py     # httpx async client for Airbox API
@@ -98,7 +94,6 @@ src/
 │   ├── civil_service.py     # CivilService: orchestrates RDO creation (nested children, sequential numbering, auto-fill measurements)
 │   ├── progress_service.py  # ProgressService + pure EVM functions (pct, activity_contribution, global_progress)
 │   ├── rdo_pdf_service.py   # generate_rdo_pdf(report, site_name) → bytes — fpdf2-based RDO PDF
-│   ├── document_service.py  # DocumentService: saves/deletes PDF files on disk + document table rows
 │   ├── smtp_sender.py       # send_smtp() — envio SMTP compartilhado (relatórios + autorizações)
 │   ├── authorization_service.py # Autorização de serviço: e-mail ao gestor → decisão → ClickUp
 │   ├── schedule_engine.py   # Motor do cronograma (puro): calendário, datas, reprogramação, % × status
@@ -121,7 +116,6 @@ src/
 │   ├── chat.py              # POST /chat, GET /chat/status
 │   ├── civil.py             # /civil/* — Projects, Sites, DailyReports (RDO), photo upload
 │   ├── progress_civil.py    # /civil/progress/* — Profiles, Categories, ActivityDefs, Quantities, Measurements, progress summaries
-│   ├── documents.py         # /documents/* — folders (dropdown), list, upload, download, delete PDFs
 │   ├── authorizations.py    # POST /webhooks/autorizacoes + GET/POST /autorizacoes/decidir/{token}
 │   └── schedule.py          # GET /schedule/lists, POST /schedule/{list_id}/recalculate, POST /schedule/{list_id}/baseline
 └── workers/
@@ -170,9 +164,9 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 
 **Completion-rate unit of measure**: `get_overview_kpis`, `get_folders_with_metrics`, `get_lists_with_metrics`, `get_gantt_overview`, `get_folder_kpis`, `get_assignee_task_stats`, and `get_assignee_stats_by_folder` (`cache_repository.py`) count progress in terms of "leaf tasks" — via the `_leaf_tasks_clause()` helper (task_id not present as anyone's `parent_task_id`) — not top-level tasks. This means a top-level task (Discipline) with subtasks is excluded from the count and its subtasks (Activities) are counted instead; a top-level task with no subtasks still counts as itself. This affects the overview KPIs, province/module cards, the status donut, the general Gantt, the AI assistant's per-province progress tool, and every PDF/XLSX report's completion percentages (executive + província summary cards, team performance table) — all now measure progress at Activity granularity rather than Discipline granularity. Listing-style queries (`get_overdue_tasks_by_folder`, `get_upcoming_tasks_by_folder`, `get_overdue_tasks_detail`, `get_tasks_by_status`, `get_recent_changes`, `get_period_updates`) were intentionally left on top-level-only filtering, since they enumerate individual task rows rather than compute a percentage (exception: on schedule lists the overdue/upcoming listings enumerate leaf tasks — see "Cronograma de Obra → Relatórios"). The weighted EVM system (`weights_config.py`) is unaffected — it already worked from subtasks.
 
-**Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. `GET /`, `GET /assistente`, and `GET /documentacoes` follow this pattern. `/rdo` and `/progresso-civil` do not have mobile variants (no mobile UI was ever built for the RDO module).
+**Mobile template selection** (`main.py`): `_is_mobile()` checks the `?view=` query param first (`desktop` or `mobile` to force), then falls back to user-agent sniffing for `mobile/android/iphone/ipad/ipod`. `GET /` and `GET /assistente` follow this pattern. `/rdo` and `/progresso-civil` do not have mobile variants (no mobile UI was ever built for the RDO module).
 
-**Mobile navigation**: all three mobile templates (`index_mobile.html`, `chat_mobile.html`, `documentacoes_mobile.html`) share the same hamburger-menu pattern instead of a persistent bottom tab bar (a bottom nav was tried first but conflicted with chat's fixed input bar, so it was replaced everywhere for consistency). Each page has a `.mob-menu-btn` in the header that calls `openMenu()`, opening a `.mob-drawer#main-menu` with links to Dashboard, Assistente IA (conditional on `chat_enabled`), Documentações, plus buttons for Relatórios (closes the menu and opens the reports drawer) and Atualizar Cache. The reports drawer itself (`#reports-drawer` + `openDrawer`/`closeDrawer`/`setReportLang`/`exportPDF`/`exportDiario`/`exportSemanal`/`toggleProvinciaDrawer`/`exportProvincia`) and `triggerRefresh()` are duplicated verbatim into all three templates — same copy-per-page convention already used for the desktop sidebar, since there's no shared-partial/include mechanism in this template-per-page architecture. `chat_mobile.html` did not have `#mob-toast`/`showToast()` before this and needed them added for `triggerRefresh()`'s feedback.
+**Mobile navigation**: both mobile templates (`index_mobile.html`, `chat_mobile.html`) share the same hamburger-menu pattern instead of a persistent bottom tab bar (a bottom nav was tried first but conflicted with chat's fixed input bar, so it was replaced everywhere for consistency). Each page has a `.mob-menu-btn` in the header that calls `openMenu()`, opening a `.mob-drawer#main-menu` with links to Dashboard, Assistente IA (conditional on `chat_enabled`), Cronogramas, plus buttons for Relatórios (closes the menu and opens the reports drawer) and Atualizar Cache. The reports drawer itself (`#reports-drawer` + `openDrawer`/`closeDrawer`/`setReportLang`/`exportPDF`/`exportDiario`/`exportSemanal`/`toggleProvinciaDrawer`/`exportProvincia`) and `triggerRefresh()` are duplicated verbatim into both templates — same copy-per-page convention already used for the desktop sidebar, since there's no shared-partial/include mechanism in this template-per-page architecture. `chat_mobile.html` did not have `#mob-toast`/`showToast()` before this and needed them added for `triggerRefresh()`'s feedback.
 
 **Tema escuro (paleta do hub U2)**: toda a UI segue as cores de
 `u2broadcast.engenhariarf.com` — `--u2-black #0a0a0b` (fundo), `--u2-ink #111113` (sidebar),
@@ -205,7 +199,7 @@ CSS/JS faz o navegador servir o arquivo antigo — vale para o deploy e para o t
 **Modo embutido (Nextcloud › External sites)**: o External sites abre a app num `<iframe id="ifm" allowfullscreen>`
 simples, sem `sandbox` — downloads, SSE e `target="_blank"` funcionam sem ajuste. O que muda é a moldura: a
 barra superior, a marca e o menu de apps já são do Nextcloud, e sobra menos área. `src/static/embed.js` +
-`embed.css` (carregados nos 6 templates de dashboard/assistente/documentações, logo depois de `theme-dark.css`)
+`embed.css` (carregados nos 6 templates de dashboard/assistente, logo depois de `theme-dark.css`)
 detectam o iframe (`window.self !== window.top`) e põem a classe `embed` no `<html>`; **fora de um iframe não
 fazem nada** — o layout com barra lateral é o mesmo de antes (tag `backup/layout-pre-nextcloud`).
 - **Desktop**: a `<aside>` vira o painel "Relatórios", que desliza pela direita (botão no topo, fecha com Esc
@@ -416,7 +410,7 @@ Folder (Province)
 
 **Overriding weights via API**: `POST /disciplines/folder/{folder_id}` saves per-list weights (0.0–1.0, must sum to 1.0) to the `discipline_weights` DB table. `GET /disciplines/folder/{folder_id}` returns current weighted progress (no password needed — read-only). When DB weights exist for a folder's lists, `get_weighted_progress()` uses them instead of the equal-weight fallback.
 
-**Password-gated writes**: both `POST` (set/change weights) and `DELETE /disciplines/folder/{folder_id}` (remove weights) require the header `X-Delete-Password`, checked with `secrets.compare_digest` against the same `settings.documents_delete_password` shared with the Documentações module's delete gate (403 if missing/wrong — see `_check_delete_password()` in `disciplines.py`). The desktop dashboard's weights modal (`saveDisciplineWeights()` in `app.js`) prompts for it via `prompt()` before calling `POST`, same pattern as document deletion. There's no UI wired to the `DELETE` endpoint yet, but it's gated the same way.
+**Password-gated writes**: both `POST` (set/change weights) and `DELETE /disciplines/folder/{folder_id}` (remove weights) require the header `X-Delete-Password`, checked with `secrets.compare_digest` against the same `settings.documents_delete_password` (a name inherited from the removed Documentações module; kept so existing `.env` files keep working) (403 if missing/wrong — see `_check_delete_password()` in `disciplines.py`). The desktop dashboard's weights modal (`saveDisciplineWeights()` in `app.js`) prompts for it via `prompt()` before calling `POST`. There's no UI wired to the `DELETE` endpoint yet, but it's gated the same way.
 
 **Evolution curve** (`build_province_evolution`): reconstructs a temporal weighted-progress series from `date_closed` of each completed **task or subtask**. Used by `GET /dashboard/evolution` → `DashboardService.get_evolution_data()`. Each point is `{date: ISO, progress: float}` representing cumulative weighted progress at that moment. The series always starts at 0.0 (first task creation date) and ends with today's current value.
 
@@ -426,7 +420,7 @@ Folder (Province)
 
 ## Civil Works Module (RDO)
 
-**⚠ Temporarily disabled** via `RDO_MODULE_ENABLED=false` (default). While disabled: `main.py` does not register `civil.router`/`progress_civil.router` (all `/civil/*` and `/civil/progress/*` endpoints 404), `GET /rdo` and `GET /progresso-civil` return a 503 placeholder instead of rendering, and the "RDO Diário"/"Controle de Progresso" sidebar links are hidden (`{% if rdo_module_enabled %}` in `index.html` and `documentacoes.html`; `rdo.html`/`progress_civil.html` still contain their own copies of these links but those pages are unreachable while the flag is off). Set `RDO_MODULE_ENABLED=true` to restore full access — no code changes needed, the module itself was not touched.
+**⚠ Temporarily disabled** via `RDO_MODULE_ENABLED=false` (default). While disabled: `main.py` does not register `civil.router`/`progress_civil.router` (all `/civil/*` and `/civil/progress/*` endpoints 404), `GET /rdo` and `GET /progresso-civil` return a 503 placeholder instead of rendering, and the "RDO Diário"/"Controle de Progresso" sidebar links are hidden (`{% if rdo_module_enabled %}` in `index.html`; `rdo.html`/`progress_civil.html` still contain their own copies of these links but those pages are unreachable while the flag is off). Set `RDO_MODULE_ENABLED=true` to restore full access — no code changes needed, the module itself was not touched.
 
 The civil works module is independent of the ClickUp↔Airbox sync and manages construction site daily reports (RDO — *Relatório Diário de Obra*).
 
@@ -479,23 +473,6 @@ CivilProgressMeasurement (site_id, activity_def_id, date, qty_yesterday, qty_tod
 **Key endpoint:** `GET /civil/progress/site/{site_id}?date=YYYY-MM-DD` returns `SiteProgressResult` (dataclass serialized via `dataclasses.asdict`). `GET /civil/progress/summary` returns `GlobalProgressResult`.
 
 **FK note:** `CivilSite.profile_id` references `civil_progress_profile`. Both `civil_models` and `progress_models` **must be imported** in `main.py` before `init_db()` runs — the current import order in `main.py` handles this correctly. Reordering these imports will cause FK errors at table creation.
-
-## Documentações Module (Document Library)
-
-Independent PDF document library, separate from the ClickUp↔Airbox sync and from the civil works RDO tables. Lets users upload, list, download, and delete PDF files, each tied to a ClickUp Folder (province).
-
-**Storage:** files are written to disk under `settings.documents_dir` (env `DOCUMENTS_DIR`, default `./documents`; production should point at the same Railway Volume used for RDO photos, e.g. `/data/documents` — see the Database section for the Volume setup). Each file is renamed to `<uuid4>.pdf` on disk (`document.stored_filename`); the original filename is preserved only in the DB (`document.original_filename`) and re-applied via `Content-Disposition` on download. Unlike RDO photos (served statically at `/uploads`), documents are **not** mounted as static files — downloads always go through `GET /documents/{id}/download`, which streams a `FileResponse` with the original filename restored.
-
-**Data model** (`document_models.py`): single table `document` — `folder_id`/`folder_name` (denormalized from `clickup_folder_cache` at upload time, same pattern as `CivilSite.clickup_folder_id`+`name`), `original_filename`, `stored_filename`, `file_size`, optional `description`, `uploaded_at`.
-
-**Endpoints** (`api/documents.py`, prefix `/documents`):
-- `GET /documents/folders` — provinces available for the upload dropdown (reuses `CacheRepository.get_all_folders`, same data as `GET /reports/folders`)
-- `GET /documents?folder_id=<id>` — list documents, optionally filtered by province
-- `POST /documents` — multipart upload (`folder_id`, `file`, optional `description`); rejects non-`.pdf` filenames and files over 50 MB; resolves `folder_name` server-side via `CacheRepository.get_folder_by_id` rather than trusting the client
-- `GET /documents/{id}/download` — streams the PDF with the original filename
-- `DELETE /documents/{id}` — requires header `X-Delete-Password` matching `settings.documents_delete_password` (compared with `secrets.compare_digest`, 403 if missing/wrong); deletes both the DB row and the file on disk. This is a shared PIN, not per-user auth — the app has no login system, so this is the only gate on the single destructive action in this module. Both `documentacoes.html` and `documentacoes_mobile.html` prompt for it via `prompt()` before calling delete.
-
-**UI**: `GET /documentacoes` serves `documentacoes.html` (desktop) or `documentacoes_mobile.html` (mobile, via `_is_mobile()`) — both call the same `/documents/*` API, so upload/list/download/delete work identically on phone. Desktop is linked from the sidebar "Obra Civil" section on `/`, `/rdo`, and `/progresso-civil`. Mobile is linked from the hamburger menu (see "Mobile navigation" below) — a standalone page reached via full navigation, not a hash-route inside the dashboard SPA (same pattern as "Assistente" → `/assistente`).
 
 ## Service Authorization Module (Autorização de Serviço)
 
@@ -821,7 +798,7 @@ SQLite (`sync.db`), both locally and in production. No Postgres — schema is au
 
 **New columns on existing tables are added automatically at startup**: `init_db()` (`src/core/database.py`) runs `create_all` and then `_sync_missing_columns()`, a lightweight self-migration for SQLite — it inspects every table already in `Base.metadata`, diffs its real columns against what the ORM model declares, and issues `ALTER TABLE ... ADD COLUMN` for anything missing (SQLite supports this as long as the column is nullable or has a default; existing rows just get `NULL`/the default for the new column). This means adding a plain nullable column to a model (e.g. `observacoes` on `ClickUpTaskCache`) just works on the next deploy/restart — **no manual `ALTER TABLE` or file deletion needed**. It does *not* handle renaming/dropping columns, changing a column's type, or adding a `NOT NULL` column with no default (those still require deleting `sync.db`/`dev.db` to recreate, losing all cached data, or a manual migration).
 
-**Production persistence (Railway) requires a mounted Volume** — Railway's container filesystem is wiped on every redeploy. Without a Volume, `sync.db` (and therefore every RDO, project, site, and ClickUp cache row) is lost on the next deploy. Mount a Volume at `/data` on the web service and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db` (four slashes: `sqlite+aiosqlite://` + absolute path `/data/sync.db`). Also point `CIVIL_UPLOADS_DIR=/data/uploads` and `DOCUMENTS_DIR=/data/documents` at the same volume so RDO photo files and uploaded PDFs survive redeploys too — see `.env.example`.
+**Production persistence (Railway) requires a mounted Volume** — Railway's container filesystem is wiped on every redeploy. Without a Volume, `sync.db` (and therefore every RDO, project, site, and ClickUp cache row) is lost on the next deploy. Mount a Volume at `/data` on the web service and set `DATABASE_URL=sqlite+aiosqlite:////data/sync.db` (four slashes: `sqlite+aiosqlite://` + absolute path `/data/sync.db`). Also point `CIVIL_UPLOADS_DIR=/data/uploads` at the same volume so RDO photo files survive redeploys too — see `.env.example`.
 
 Upserts (`INSERT ... ON CONFLICT`) use `sqlalchemy.dialects.sqlite.insert` directly in `cache_repository.py` and `civil_repository.py` — this only works against SQLite; if the backend ever changes, these call sites need to change too.
 
@@ -854,9 +831,6 @@ Tables:
 - `schedule_task_state` — último (%, concluída?, início, término) que o motor deixou por tarefa; decide quem vence quando % e status discordam e reconhece uma data digitada à mão
 - `schedule_baseline` — linha de base: início e término planeados por tarefa (ver "Linha de base")
 
-**Document table** (in `document_models.py`, imported in `main.py`):
-- `document` — one row per uploaded PDF; `folder_id`/`folder_name` denormalized from `clickup_folder_cache` at upload time; `stored_filename` is a random UUID, `original_filename` is restored on download
-
 ## Key Configuration
 
 | Variable | Purpose | Default |
@@ -885,8 +859,7 @@ Tables:
 | `CHAT_MAX_TOKENS` | Max output tokens per Claude call | `1024` |
 | `CIVIL_UPLOADS_DIR` | Directory for RDO photo uploads; served at `/uploads`. In production, point at the mounted Volume: `/data/uploads` | `./uploads` |
 | `RDO_MODULE_ENABLED` | Feature flag for RDO Diário + Controle de Progresso (temporarily disabled — see Civil Works Module section). Set `true` to re-enable | `false` |
-| `DOCUMENTS_DIR` | Directory for Documentações PDF uploads; served only via `GET /documents/{id}/download` (not a static mount). In production, point at the mounted Volume: `/data/documents` | `./documents` |
-| `DOCUMENTS_DELETE_PASSWORD` | Shared password required (via `X-Delete-Password` header) to delete a document in `/documentacoes` | `u2dashboard2026` |
+| `DOCUMENTS_DELETE_PASSWORD` | Shared password (header `X-Delete-Password`) for the admin writes: discipline weights and schedule baseline/recalculate. Name inherited from the removed Documentações module | `u2dashboard2026` |
 | `EMAIL_ENABLED` | Ativar envio automático de relatório semanal por email | `false` |
 | `EMAIL_SMTP_HOST` | Servidor SMTP | `smtp.gmail.com` |
 | `EMAIL_SMTP_PORT` | Porta SMTP (STARTTLS) | `587` |
@@ -945,9 +918,8 @@ AIRBOX_STAGE_TO_CLICKUP_STATUS: dict[int, str] = {}
 **Database persistence — required setup, not automatic**: add a Volume mounted at `/data` on the web service, then set on that service's environment variables:
 - `DATABASE_URL=sqlite+aiosqlite:////data/sync.db`
 - `CIVIL_UPLOADS_DIR=/data/uploads`
-- `DOCUMENTS_DIR=/data/documents`
 
-Without the Volume, the app still runs (SQLite creates the file happily on local disk), but every RDO, project, site, uploaded document, and cached ClickUp row is wiped the next time Railway redeploys the container — there is no warning, the app just starts fresh and empty.
+Without the Volume, the app still runs (SQLite creates the file happily on local disk), but every RDO, project, site, and cached ClickUp row is wiped the next time Railway redeploys the container — there is no warning, the app just starts fresh and empty.
 
 ## Airbox API
 

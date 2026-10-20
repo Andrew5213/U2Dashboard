@@ -12,7 +12,7 @@ router = APIRouter(prefix="/disciplines", tags=["disciplines"])
 
 
 def _check_delete_password(x_delete_password: str) -> None:
-    """Mesma senha compartilhada usada para excluir documentos em /documents —
+    """Mesma senha compartilhada das ações administrativas (ver settings.documents_delete_password) —
     também protege a alteração/remoção de pesos de disciplinas já configurados."""
     if not secrets.compare_digest(x_delete_password, settings.documents_delete_password):
         raise HTTPException(status_code=403, detail="Senha incorreta")

@@ -51,9 +51,9 @@ class Settings(BaseSettings):
     # Feature flag: RDO Diário + Controle de Progresso (temporariamente desativado)
     rdo_module_enabled: bool = False
 
-    # Documentações — uploads directory for PDFs
-    documents_dir: str = "./documents"
-    # Senha exigida para excluir documentos (a app não tem autenticação de usuário)
+    # Senha compartilhada das ações administrativas (pesos de disciplina e linha de base do
+    # cronograma, via cabeçalho X-Delete-Password). A app não tem autenticação de usuário.
+    # O nome vem do módulo de Documentações, já removido; mantido para não quebrar o .env em produção.
     documents_delete_password: str = "u2dashboard2026"
 
     # Email (relatórios semanais automáticos)

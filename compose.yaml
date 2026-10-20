@@ -15,14 +15,13 @@ services:
       - "127.0.0.1:8001:8000"
 
     volumes:
-      - ./data:/data            # sync.db, uploads/ e documents/ (persistente)
+      - ./data:/data            # sync.db e uploads/ (persistente)
       - ./.env:/app/.env:ro     # segredos; nunca entram na imagem
 
     environment:
       # Caminhos DENTRO do contêiner; sobrepoem as mesmas chaves do .env
       DATABASE_URL: sqlite+aiosqlite:////data/sync.db
       CIVIL_UPLOADS_DIR: /data/uploads
-      DOCUMENTS_DIR: /data/documents
 
     read_only: true
     tmpfs:

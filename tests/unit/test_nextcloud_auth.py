@@ -135,7 +135,7 @@ class TestEndpoint:
         return TestClient(app)
 
     def test_header_token_identifies_the_user(self, client):
-        response = client.get("/auth/me?page=/documentacoes", headers={"X-Nextcloud-JWT": make_token()})
+        response = client.get("/auth/me?page=/assistente", headers={"X-Nextcloud-JWT": make_token()})
         assert response.json() == {
             "enabled": True, "authenticated": True,
             "user": {"uid": "ana", "email": "ana@exemplo.com", "display_name": "Ana Paula"},

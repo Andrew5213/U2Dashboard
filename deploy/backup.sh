@@ -23,7 +23,7 @@ src.close()
 PY
 
 if [ "$(date +%u)" = "7" ]; then
-    tar -czf "$DEST/arquivos-$STAMP.tar.gz" -C "$DATA" documents uploads
+    tar -czf "$DEST/arquivos-$STAMP.tar.gz" -C "$DATA" uploads
 fi
 
 find "$DEST" -type f -mtime +14 -delete
