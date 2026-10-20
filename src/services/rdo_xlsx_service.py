@@ -4,7 +4,7 @@ from datetime import datetime
 
 from src.services.progress_service import SiteProgressResult
 from src.services.xlsx_utils import (
-    AMBER, BLUE, GRAY_200, GREEN, NAVY, RED, WHITE,
+    AMBER, ACCENT, GRAY_200, GREEN, INK, RED, WHITE,
     new_workbook, write_footer, write_kpis, write_kv_rows, write_section, write_table, write_title,
 )
 
@@ -129,11 +129,11 @@ def generate_rdo_xlsx(
     row = write_section(ws, row, "1.2 Resumo do Dia")
     restrictions = report.get("restrictions_count") or 0
     row = write_kpis(ws, row, [
-        ("Frentes Ativas", report.get("active_fronts") or 0, NAVY),
+        ("Frentes Ativas", report.get("active_fronts") or 0, INK),
         ("Ativ. Concluidas", report.get("activities_completed") or 0, GREEN),
-        ("Ativ. em Curso", report.get("activities_in_progress") or 0, BLUE),
+        ("Ativ. em Curso", report.get("activities_in_progress") or 0, ACCENT),
         ("Restricoes", restrictions, AMBER if restrictions > 0 else GRAY_200),
-        ("Total Pessoal", report.get("total_personnel") or 0, NAVY),
+        ("Total Pessoal", report.get("total_personnel") or 0, INK),
     ])
     row = write_kv_rows(ws, row, [
         ("Seg. / Saude", report.get("safety_situation")),
@@ -287,8 +287,8 @@ def generate_weekly_rdo_xlsx(
     )
 
     row = write_kpis(ws, row, [
-        ("RDOs no Periodo", len(reports), NAVY),
-        ("Total Pessoal", total_personnel, BLUE),
+        ("RDOs no Periodo", len(reports), INK),
+        ("Total Pessoal", total_personnel, ACCENT),
         ("Ativ. Concluidas", total_acts_completed, GREEN),
         ("Ocorrencias", total_occurrences, RED if total_occurrences > 0 else GRAY_200),
     ])

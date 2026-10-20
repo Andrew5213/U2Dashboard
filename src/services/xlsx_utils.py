@@ -7,16 +7,16 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 # ── Paleta (mesma de report_service.py / rdo_pdf_service.py) ──────────────────
-NAVY = "1B3A6B"
-BLUE = "3B82F6"
+INK = "1A1A1A"
+ACCENT = "C42032"
 GREEN = "16A34A"
 RED = "DC2626"
 AMBER = "D97706"
 WHITE = "FFFFFF"
-GRAY_50 = "F8FAFC"
-GRAY_200 = "E2E8F0"
-GRAY_600 = "475569"
-DARK = "0F172A"
+GRAY_50 = "F8F8F8"
+GRAY_200 = "DEDEDE"
+GRAY_600 = "636363"
+DARK = "1A1A1A"
 
 _THIN_BOTTOM = Border(bottom=Side(style="thin", color=GRAY_200))
 _TITLE_FONT = Font(name="Calibri", size=16, bold=True, color=WHITE)
@@ -49,12 +49,12 @@ def _fill_row(ws: Worksheet, row: int, n_cols: int, color: str) -> None:
 
 def write_title(ws: Worksheet, row: int, title: str, subtitle: str = "", n_cols: int = 8) -> int:
     """Faixa de titulo (equivalente a capa do PDF). Retorna a proxima linha livre."""
-    _fill_row(ws, row, n_cols, NAVY)
+    _fill_row(ws, row, n_cols, INK)
     ws.cell(row=row, column=1, value=title).font = _TITLE_FONT
     ws.row_dimensions[row].height = 26
     row += 1
     if subtitle:
-        _fill_row(ws, row, n_cols, NAVY)
+        _fill_row(ws, row, n_cols, INK)
         ws.cell(row=row, column=1, value=subtitle).font = _SUBTITLE_FONT
         row += 1
     return row + 1
@@ -62,7 +62,7 @@ def write_title(ws: Worksheet, row: int, title: str, subtitle: str = "", n_cols:
 
 def write_section(ws: Worksheet, row: int, title: str, n_cols: int = 8) -> int:
     """Faixa de secao (equivalente ao section_header do PDF). Retorna a proxima linha livre."""
-    _fill_row(ws, row, n_cols, NAVY)
+    _fill_row(ws, row, n_cols, INK)
     ws.cell(row=row, column=1, value=title).font = _SECTION_FONT
     return row + 1
 

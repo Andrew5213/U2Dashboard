@@ -17,9 +17,25 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.repositories.cache_repository import CacheRepository
 from src.services.report_service import (
-    BLUE, BLUE_BG, BLUE_TXT, DARK, GRAY_50, GRAY_200, GRAY_400, GRAY_600, GREEN, NAVY, RED, WHITE,
+    DARK, GRAY_50, GRAY_200, GRAY_400, GRAY_600, GREEN, RED, WHITE,
     _Report, _descendants, _fmt_progress, _is_schedule, _s,
 )
+
+# O Gantt fica no azul de propósito, a pedido: os relatórios passaram à paleta
+# do timbrado da GatesAir (vermelho #C42032 e preto), mas aqui a barra de
+# progresso ficaria igual à de atraso (RED #dc2626) e o gráfico perderia a
+# distinção. Por isso estas quatro cores são locais e não vêm mais de
+# report_service — mudá-las lá não mexe no Gantt.
+# As faixas da página (título, cabeçalho de tabela, linha de lista) seguem o
+# vermelho do timbrado. O azul fica só nas barras do gráfico, onde carrega
+# informação: planejado (_TRACK) e executado (BAR_DONE).
+HEAD_BG  = (196,  32,  50)  # #C42032 — o mesmo vermelho da faixa do rodapé
+HEAD_SOFT = (253, 237, 240) # fundo claro da linha de lista
+HEAD_TXT = (138,  11,  33)  # texto sobre o fundo claro
+HEAD_FG  = (248, 203, 212)  # texto secundário sobre o vermelho
+
+BAR_DONE = ( 59, 130, 246)  # #3B82F6 — parte executada da barra
+from src.services.letterhead import stamp
 from src.services.report_strings import get_strings
 from src.services.translation import translate
 
@@ -28,8 +44,12 @@ _MONTHS = {
     "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
 }
 
-# geometria da página (A4 paisagem, mm)
-_LEFT, _RIGHT, _BOTTOM = 10.0, 287.0, 196.0
+# Geometria da página (Letter paisagem, 279.4 × 215.9 mm — o formato do papel
+# timbrado deitado). As margens respeitam o timbrado: as logos ocupam o topo até
+# 37.7 mm e a faixa vermelha fica entre 202.9 e 209.1 mm.
+_PAGE_W, _PAGE_H = 279.4, 215.9
+_LEFT, _RIGHT, _BOTTOM = 12.5, _PAGE_W - 12.5, 198.0
+_TOP = 42.0                      # abaixo das logos
 _NAME_W, _DATE_W, _PCT_W = 78.0, 17.0, 11.0
 _TIMELINE_X = _LEFT + _NAME_W + 2 * _DATE_W + _PCT_W
 _TIMELINE_W = _RIGHT - _TIMELINE_X
@@ -101,13 +121,13 @@ def build_gantt_rows(tasks: list, today: date, lang: str = "pt") -> list[dict]:
 
 class _GanttReport(_Report):
     def __init__(self, data: dict) -> None:
-        FPDF.__init__(self, orientation="L", unit="mm", format="A4")
+        FPDF.__init__(self, orientation="L", unit="mm", format="Letter")
         self.space_name = data["folder_name"]
         self.generated_at = data["generated_at"]
         self.lang = data.get("lang", "pt")
         self.t = get_strings(self.lang)
         self.set_auto_page_break(auto=False)
-        self.set_margins(left=_LEFT, top=10, right=297 - _RIGHT)
+        self.set_margins(left=_LEFT, top=_TOP, right=_PAGE_W - _RIGHT)
         self._start: date = data["range_start"]
         self._end: date = data["range_end"]
         self._days = (self._end - self._start).days + 1
@@ -116,15 +136,16 @@ class _GanttReport(_Report):
     def header(self) -> None:
         if self.page_no() == 1:
             return
+        # as logos vêm do timbrado; aqui só a identificação, logo abaixo delas
         self.set_font("Helvetica", size=7)
         self.set_text_color(*GRAY_400)
-        self.set_xy(_LEFT, 5)
+        self.set_xy(_LEFT, _TOP - 5)
         self.cell(_RIGHT - _LEFT, 4, _s(f"{self.t['gantt_title']}  -  {self.space_name}"), align="L")
-        self.set_xy(_LEFT, 5)
+        self.set_xy(_LEFT, _TOP - 5)
         self.cell(_RIGHT - _LEFT, 4, f"{self.generated_at} {self.t['utc_label']}", align="R")
 
     def footer(self) -> None:
-        self.set_y(-10)
+        self.set_y(_BOTTOM + 1)   # acima da faixa do timbrado
         self.set_font("Helvetica", size=7)
         self.set_text_color(*GRAY_400)
         self.cell(0, 4,
@@ -162,30 +183,32 @@ class _GanttReport(_Report):
 
     def build_title(self, data: dict) -> None:
         t = self.t
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 297, 26, style="F")
-        self.set_xy(_LEFT, 5)
+        # a faixa de título começa abaixo das logos do timbrado, não no topo
+        band_y, band_h = _TOP - 2, 26.0
+        self.set_fill_color(*HEAD_BG)
+        self.rect(0, band_y, _PAGE_W, band_h, style="F")
+        self.set_xy(_LEFT, band_y + 5)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(*HEAD_FG)
         self.cell(0, 4, _s(t["gantt_eyebrow"]))
-        self.set_xy(_LEFT, 9.5)
+        self.set_xy(_LEFT, band_y + 9.5)
         self.set_font("Helvetica", style="B", size=16)
         self._set_text(WHITE)
         self.cell(0, 8, self._fit(data["folder_name"], 180))
-        self.set_xy(_LEFT, 18.5)
+        self.set_xy(_LEFT, band_y + 18.5)
         self.set_font("Helvetica", size=8)
-        self.set_text_color(191, 219, 254)
+        self.set_text_color(*HEAD_FG)
         self.cell(0, 4, _s(t["gantt_meta"].format(
             start=data["first_day"].strftime("%d/%m/%Y"), end=data["last_day"].strftime("%d/%m/%Y"),
             n=data["total_tasks"], date=data["generated_at"])))
-        self._legend(29.5)
-        self.set_y(35)
+        self._legend(band_y + band_h + 3.5)
+        self.set_y(band_y + band_h + 9)
 
     def _legend(self, y: float) -> None:
         t = self.t
         items = [
             (t["gantt_legend_planned"], _TRACK, None),
-            (t["gantt_legend_progress"], _TRACK, BLUE),
+            (t["gantt_legend_progress"], _TRACK, BAR_DONE),
             (t["gantt_legend_done"], GREEN, None),
             (t["gantt_legend_overdue"], _TRACK_LATE, RED),
             (t["gantt_legend_summary"], GRAY_600, None),
@@ -212,10 +235,10 @@ class _GanttReport(_Report):
     def _table_head(self) -> None:
         t = self.t
         y = self.get_y()
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*HEAD_BG)
         self.rect(_LEFT, y, _RIGHT - _LEFT, _HEADER_H / 2, style="F")
         self.rect(_LEFT, y, _TIMELINE_X - _LEFT, _HEADER_H, style="F")
-        self.set_fill_color(*BLUE_BG)
+        self.set_fill_color(*HEAD_SOFT)
         self.rect(_TIMELINE_X, y + _HEADER_H / 2, _TIMELINE_W, _HEADER_H / 2, style="F")
 
         self.set_font("Helvetica", style="B", size=7)
@@ -244,7 +267,7 @@ class _GanttReport(_Report):
 
         # semanas: cada uma começa na segunda-feira e leva a data dela (dd/mm)
         self.set_font("Helvetica", size=5.5)
-        self._set_text(BLUE_TXT)
+        self._set_text(HEAD_TXT)
         self.set_draw_color(*GRAY_400)
         self.set_line_width(0.1)
         step = self._label_every()
@@ -284,12 +307,12 @@ class _GanttReport(_Report):
 
     def _list_band(self, name: str) -> None:
         y = self.get_y()
-        self.set_fill_color(*BLUE_BG)
+        self.set_fill_color(*HEAD_SOFT)
         self.rect(_LEFT, y, _RIGHT - _LEFT, _LIST_H, style="F")
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*HEAD_BG)
         self.rect(_LEFT, y, 1.5, _LIST_H, style="F")
         self.set_font("Helvetica", style="B", size=7.5)
-        self._set_text(BLUE_TXT)
+        self._set_text(HEAD_TXT)
         self.set_xy(_LEFT + 3, y)
         self.cell(_NAME_W, _LIST_H, self._fit(name.upper(), _TIMELINE_X - _LEFT - 5))
         self._grid(y, _LIST_H)
@@ -338,7 +361,7 @@ class _GanttReport(_Report):
             self.set_fill_color(*(_TRACK_LATE if row["is_overdue"] else _TRACK))
             self.rect(x0, bar_y, x1 - x0, bar_h, style="F")
             if done_share > 0:
-                self.set_fill_color(*(GREEN if row["is_done"] else RED if row["is_overdue"] else BLUE))
+                self.set_fill_color(*(GREEN if row["is_done"] else RED if row["is_overdue"] else BAR_DONE))
                 self.rect(x0, bar_y, (x1 - x0) * done_share, bar_h, style="F")
         self.set_y(y + _ROW_H)
 
@@ -440,7 +463,7 @@ class GanttReportService:
             pdf.build_notes(data)
         else:
             pdf.build_empty(data)
-        return bytes(pdf.output())
+        return stamp(bytes(pdf.output()), landscape=True)
 
 
 # ── Gantt em planilha (.xlsx) ─────────────────────────────────────────────────

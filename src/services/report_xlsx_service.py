@@ -8,7 +8,7 @@ from copy import copy
 
 from src.services.report_service import _status_with_progress
 from src.services.xlsx_utils import (
-    AMBER, BLUE, GRAY_200, GREEN, NAVY, RED,
+    AMBER, ACCENT, GRAY_200, GREEN, INK, RED,
     new_workbook, write_footer, write_kpis, write_kv_rows, write_section, write_table, write_title,
 )
 
@@ -33,11 +33,11 @@ def render_executive_xlsx(data: dict) -> bytes:
     kpis = data["kpis"]
     row = write_section(ws, row, "Visao Geral")
     row = write_kpis(ws, row, [
-        ("Total de Tasks", kpis["total_tasks"], NAVY),
+        ("Total de Tasks", kpis["total_tasks"], INK),
         ("Concluidas", kpis["completed_tasks"], GREEN),
         ("Em Atraso", kpis["overdue_tasks"], RED if kpis["overdue_tasks"] else GRAY_200),
-        ("Pastas", kpis["total_folders"], BLUE),
-        ("Listas", kpis["total_lists"], BLUE),
+        ("Pastas", kpis["total_folders"], ACCENT),
+        ("Listas", kpis["total_lists"], ACCENT),
     ])
     row = write_kv_rows(ws, row, [("Taxa de Conclusao", kpis["completion_rate"])])
     ws.cell(row=row - 2, column=2).number_format = "0.0%"
@@ -134,10 +134,10 @@ def render_province_xlsx(data: dict) -> bytes:
     kpis = data["kpis"]
     row = write_section(ws, row, "Visao Geral")
     row = write_kpis(ws, row, [
-        ("Total de Tasks", kpis["total_tasks"], NAVY),
+        ("Total de Tasks", kpis["total_tasks"], INK),
         ("Concluidas", kpis["completed_tasks"], GREEN),
         ("Em Atraso", kpis["overdue_tasks"], RED if kpis["overdue_tasks"] else GRAY_200),
-        ("Listas (Modulos)", data["total_lists"], BLUE),
+        ("Listas (Modulos)", data["total_lists"], ACCENT),
     ])
     kv = [("Taxa de Conclusao", kpis["completion_rate"])]
     if data.get("weighted_progress_pct") is not None:
@@ -207,7 +207,7 @@ def render_periodic_xlsx(data: dict) -> bytes:
 
     row = write_section(ws, row, "Resumo do Periodo")
     row = write_kpis(ws, row, [
-        ("Provincias com Atividade", data["n_provinces"], NAVY),
+        ("Provincias com Atividade", data["n_provinces"], INK),
         ("Concluidas", data["n_concluded"], GREEN),
         ("Atualizadas", data["n_updated"], AMBER),
     ])

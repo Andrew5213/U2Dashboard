@@ -314,13 +314,46 @@ Five report types, all generated on-demand using `fpdf2` (Latin-1 fonts — use 
 
 - **`GET /reports/pdf`** — executive report for the full space (cover + summary + project health + overdue + upcoming + team performance). Uses `ReportService`.
 - **`GET /reports/pdf/provincia?folder_id=<id>`** — detailed report for a single folder/province (cover + summary + per-list detail with task-level breakdown). Uses `ProvinceReportService`. Incorporates EVM weighted progress when discipline weights are configured.
-- **`GET /reports/pdf/gantt?folder_id=<id>`** — Gantt da província em A4 paisagem: tabela (tarefa, início, término, %) à esquerda e barras numa linha do tempo à direita, com a linha de "hoje". Usa `GanttReportService` (`gantt_report_service.py`). Entram todas as listas da pasta que têm tarefas com datas — nas de cronograma, os 3 níveis com as datas do motor; nas comuns, o que houver (início nativo e "Vencimento"), e a tarefa-mãe sem data própria cobre o intervalo das filhas. Lista sem nenhuma data fica fora do gráfico e é citada no rodapé. A grade é sempre semanal: cada semana tem a sua linha e o rótulo `dd/mm` da segunda-feira (só em cronogramas muito longos o rótulo salta semanas, em passo regular). "Hoje" é um marcador sobre a linha vermelha, com a data na legenda — um rótulo ali tapava o da semana ao lado. Na UI é o botão "GANTT" ao lado de cada província no menu de relatórios (desktop e mobile).
+- **`GET /reports/pdf/gantt?folder_id=<id>`** — Gantt da província em Letter paisagem (timbrado deitado, ver abaixo): tabela (tarefa, início, término, %) à esquerda e barras numa linha do tempo à direita, com a linha de "hoje". Usa `GanttReportService` (`gantt_report_service.py`). Entram todas as listas da pasta que têm tarefas com datas — nas de cronograma, os 3 níveis com as datas do motor; nas comuns, o que houver (início nativo e "Vencimento"), e a tarefa-mãe sem data própria cobre o intervalo das filhas. Lista sem nenhuma data fica fora do gráfico e é citada no rodapé. A grade é sempre semanal: cada semana tem a sua linha e o rótulo `dd/mm` da segunda-feira (só em cronogramas muito longos o rótulo salta semanas, em passo regular). "Hoje" é um marcador sobre a linha vermelha, com a data na legenda — um rótulo ali tapava o da semana ao lado. Na UI é o botão "GANTT" ao lado de cada província no menu de relatórios (desktop e mobile).
 - **`GET /reports/xlsx/gantt?folder_id=<id>`** — o mesmo Gantt em planilha (`render_gantt_xlsx`, mesmo `_build_data` do PDF): as barras são **células pintadas**, uma coluna por dia (uma por semana acima de 190 dias), com meses, semanas (`dd/mm` da segunda-feira) e dias no cabeçalho congelado, datas e % como valores de verdade, linhas agrupadas por nível (estrutura de tópicos do Excel) e a coluna de hoje com borda vermelha.
 - **`GET /reports/pdf/daily`** — daily updates report (tasks completed/updated yesterday and today). Uses `PeriodicReportService`.
 - **`GET /reports/pdf/weekly`** — weekly updates report (last 7 days). Uses `PeriodicReportService`.
 - **`GET /reports/folders`** — lists folders available for province reports (reads from cache).
 
 Bilingual support: `report_strings.py` holds all UI strings keyed by `get_strings(lang)`. `translation.py` maps normalized Portuguese field names → English equivalents via `translate()` / `translate_task_row()`.
+
+**Papel timbrado da GatesAir em todas as páginas** (`src/services/letterhead.py`): o timbrado veio do
+cliente como PDF **vetorial** (`src/assets/letterhead.pdf`, um único `/Form` XObject, zero imagens raster),
+então em vez de redesenhar a logo e a faixa com fpdf2 — o que exigiria exportá-las como imagem e perderia
+nitidez na impressão — `stamp()` põe o timbrado **por baixo** de cada página gerada (`page.add_underlay()`
+do pikepdf, daí a dependência nova no `requirements.txt` — **o servidor precisa de `pip install -r
+requirements.txt` no próximo deploy**). A logo sai idêntica ao original em qualquer zoom.
+- **Os relatórios são Letter, não A4** (`PAGE_W, PAGE_H = 215.9, 279.4`). É o formato do timbrado; esticar
+  Letter (612×792 pt) para A4 (595×842) pede fatores diferentes em x e y e distorceria a logo.
+- **As margens vêm do timbrado**, medidas no próprio PDF e exportadas como constantes: `TOP_MM = 37.7`
+  (onde acaba o bloco das logos), `FOOTER_TOP_MM = 266.3` (onde começa a faixa vermelha), `SIDE_MM = 12.5`.
+  `report_service` deriva `CONTENT_BOTTOM = FOOTER_TOP_MM - 14` delas, e **todo limite de quebra de página
+  usa `CONTENT_BOTTOM - <folga>`**: os 12 literais de A4 que havia antes (`if row_y > 255`) fizeram o
+  relatório executivo passar de 8 para 19 páginas quando as margens mudaram.
+- **A logo da U2 entra ao lado da GatesAir** (`src/assets/u2-logo.png`), composta em memória por `_template()`
+  — o `letterhead.pdf` continua a ser exatamente o ficheiro que o cliente forneceu, intocado.
+- **Paisagem (Gantt)**: não dá para girar o timbrado (a logo ficaria de lado) nem para esticá-lo, então
+  `_landscape_template()` desenha o mesmo Form XObject **três vezes, recortado**: as logos só descem; o
+  bloco de endereço e o ícone da faixa também andam para a direita, para continuarem encostados à margem;
+  o vão liso que sobra na faixa é pintado com `#C42032`, com 2 pt de sobreposição para a emenda não virar
+  um fio claro ao arredondar para pixel. São **dois cortes diferentes** (`LEFT_CUT = 470`,
+  `RIGHT_CUT = 600`) e não um só: um corte único deixava um pedaço da logo da U2 repetido no meio da página.
+- **`stamp()` falha com elegância**: ficheiro em falta ou PDF ilegível → o relatório sai sem timbrado, com
+  um log de erro, em vez de rebentar o download.
+- **A paleta dos relatórios é a do timbrado**: `INK = #1A1A1A` e `ACCENT = #C42032` (era o azul
+  institucional), nos PDF, nos XLSX (`xlsx_utils.py` — `NAVY`/`BLUE` passaram a `INK`/`ACCENT`) e no HTML do
+  e-mail semanal. **O Gantt é a exceção deliberada**: as faixas da página (título, cabeçalho de tabela,
+  linha de lista) seguem o vermelho (`HEAD_BG`), mas as **cores do gráfico** — `BAR_DONE` azul, `_TRACK`
+  azul claro, `GREEN`, `RED` — são codificação de dado, não moldura, e ficam como estão. Por isso vivem em
+  constantes **locais** de `gantt_report_service.py` em vez de importadas: assim não voltam a ser trocadas
+  junto com a moldura.
+- O timbrado traz o endereço da GatesAir em Cincinnati em todo relatório da U2 — **decisão do cliente
+  pendente** se fica ou é substituído.
 
 **No "created" category — periodic reports and the AI assistant only show real progress**: `CacheRepository.get_period_updates()` (daily/weekly PDF/XLSX) and `get_recent_changes()` (chat assistant tool) used to have a third "created" bucket for newly-created tasks still sitting in their initial status. That bucket was removed entirely — a task/subtask only appears in these reports if it's either `concluded` (closed in the period) or `updated` with its **current** status normalized to one of `_REPORTABLE_UPDATE_STATUSES` in `cache_repository.py` (`fazendo`, `revisão`, `aprovação`, `concluído`/`complete`). Anything still sitting in `planejando` (or any other status outside that list, e.g. `aguardando`/`bloqueado`/`cancelado`) is silently dropped — it never shows up as a "recent change," no matter when it was created or last touched. This also drives the AI assistant: `get_recent_changes` no longer returns a `created` key at all, and its tool description explicitly tells Claude never to mention newly-created tasks.
 
@@ -415,7 +448,7 @@ CivilProject
 
 **Photo upload:** `POST /civil/reports/{id}/photos` — multipart, max 20 MB, stored at `settings.civil_uploads_dir/<report_id>_<uuid>.<ext>`, served at `/uploads/<stored_name>`.
 
-**PDF export:** `generate_rdo_pdf(report_dict, site_name)` in `rdo_pdf_service.py`. Same `_s()` Latin-1 sanitizer and fpdf2 pattern as `report_service.py`.
+**PDF export:** `generate_rdo_pdf(report_dict, site_name)` in `rdo_pdf_service.py`. Same `_s()` Latin-1 sanitizer and fpdf2 pattern as `report_service.py`. Leva o mesmo papel timbrado dos outros relatórios (ver "PDF Reports"); como o módulo está desligado, essa conversão **não foi conferida num PDF gerado** — vale olhar antes de reativar.
 
 ## Civil Progress (EVM for Construction)
 

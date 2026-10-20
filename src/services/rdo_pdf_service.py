@@ -1,21 +1,22 @@
 """Geração de PDF para Relatório Diário de Obra Civil (RDO)."""
 from datetime import datetime
 from fpdf import FPDF
+from src.services.letterhead import FOOTER_TOP_MM, SIDE_MM, TOP_MM, stamp
 from fpdf.enums import XPos, YPos
 from src.services.progress_service import SiteProgressResult
 
 # ── Paleta (mesma de report_service.py) ─────────────────────────────────────
-NAVY    = (27,  58, 107)
-BLUE    = (59, 130, 246)
+INK    = ( 26, 26, 26)
+ACCENT    = (196, 32, 50)
 GREEN   = (22, 163,  74)
 RED     = (220,  38,  38)
 AMBER   = (217, 119,   6)
 WHITE   = (255, 255, 255)
-GRAY_50 = (248, 250, 252)
-GRAY_200= (226, 232, 240)
-GRAY_400= (148, 163, 184)
-GRAY_600= ( 71,  85, 105)
-DARK    = ( 15,  23,  42)
+GRAY_50 = (248, 248, 248)
+GRAY_200= (222, 222, 222)
+GRAY_400= (169, 169, 169)
+GRAY_600= (99, 99,  99)
+DARK    = (26, 26, 26)
 
 _LATIN1_MAP = {
     ord("—"): "-", ord("–"): "-", ord("…"): "...",
@@ -55,29 +56,28 @@ SIG_LABELS = {
 
 class _RdoPDF(FPDF):
     def __init__(self, site_name: str, report_number: int, report_date: str) -> None:
-        super().__init__(orientation="P", unit="mm", format="A4")
+        # Letter + margens do papel timbrado, como os outros relatórios
+        super().__init__(orientation="P", unit="mm", format="Letter")
         self.site_name = _s(site_name)
         self.report_number = report_number
         self.report_date = report_date
         self.generated_at = datetime.now().strftime("%d/%m/%Y %H:%M")
         self.set_auto_page_break(auto=True, margin=18)
-        self.set_margins(left=14, top=16, right=14)
+        self.set_margins(left=SIDE_MM, top=TOP_MM + 6, right=SIDE_MM)
 
     def header(self) -> None:
         if self.page_no() == 1:
             return
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 3, 6, style="F")
         self.set_font("Helvetica", "I", 7)
         self.set_text_color(*GRAY_400)
-        self.set_xy(14, 4)
+        self.set_xy(SIDE_MM, TOP_MM + 1)
         self.cell(0, 4, f"RDO no {self.report_number} - {self.site_name} - {self.report_date}", align="L")
-        self.set_xy(-50, 4)
+        self.set_xy(-50, TOP_MM + 1)
         self.cell(36, 4, f"Gerado em: {self.generated_at}", align="R")
         self.ln(8)
 
     def footer(self) -> None:
-        self.set_y(-12)
+        self.set_y(FOOTER_TOP_MM - 8)
         self.set_draw_color(*GRAY_200)
         self.set_line_width(0.3)
         self.line(14, self.get_y(), 196, self.get_y())
@@ -88,7 +88,7 @@ class _RdoPDF(FPDF):
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def section_header(self, title: str) -> None:
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*INK)
         self.set_text_color(*WHITE)
         self.set_font("Helvetica", "B", 9)
         self.set_x(14)
@@ -143,7 +143,7 @@ class _RdoPDF(FPDF):
             self.multi_cell(w, row_h, _s(text), border="B", fill=shade, max_line_height=line_height, new_x=XPos.RIGHT, new_y=YPos.TOP)
         self.ln(row_h)
 
-    def kpi_box(self, label: str, value: str, color: tuple = NAVY, x: float = 14, w: float = 36) -> None:
+    def kpi_box(self, label: str, value: str, color: tuple = INK, x: float = 14, w: float = 36) -> None:
         y = self.get_y()
         self.set_fill_color(*color)
         self.rect(x, y, w, 14, style="F")
@@ -261,18 +261,19 @@ def generate_rdo_pdf(
     # ── Capa ─────────────────────────────────────────────────────────────────
     pdf.add_page()
 
-    # Faixa superior NAVY
-    pdf.set_fill_color(*NAVY)
-    pdf.rect(0, 0, 210, 40, style="F")
+    # Faixa superior INK
+    pdf.set_fill_color(*INK)
+    band_y = TOP_MM + 4
+    pdf.rect(0, band_y, 215.9, 40, style="F")
     pdf.set_text_color(*WHITE)
     pdf.set_font("Helvetica", "B", 20)
-    pdf.set_xy(14, 10)
+    pdf.set_xy(SIDE_MM, band_y + 10)
     pdf.cell(0, 10, "RELATORIO DIARIO DE OBRA CIVIL", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
-    pdf.set_x(14)
+    pdf.set_x(SIDE_MM)
     pdf.cell(0, 6, f"RDO no {report.get('report_number', '')}  |  {_s(site_name)}  |  {report.get('date', '')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    pdf.set_xy(14, 50)
+    pdf.set_xy(SIDE_MM, band_y + 50)
 
     # ── 1.1 Identificação ────────────────────────────────────────────────────
     pdf.section_header("1.1 Identificacao")
@@ -299,11 +300,11 @@ def generate_rdo_pdf(
     kpi_w = 36
     gap = 0.4
     kpis = [
-        ("Frentes Ativas", str(report.get("active_fronts") or 0), NAVY),
+        ("Frentes Ativas", str(report.get("active_fronts") or 0), INK),
         ("Ativ. Concluidas", str(report.get("activities_completed") or 0), GREEN),
-        ("Ativ. em Curso", str(report.get("activities_in_progress") or 0), BLUE),
+        ("Ativ. em Curso", str(report.get("activities_in_progress") or 0), ACCENT),
         ("Restricoes", str(report.get("restrictions_count") or 0), AMBER if (report.get("restrictions_count") or 0) > 0 else GRAY_400),
-        ("Total Pessoal", str(report.get("total_personnel") or 0), NAVY),
+        ("Total Pessoal", str(report.get("total_personnel") or 0), INK),
     ]
     x = 14.0
     for label, value, color in kpis:
@@ -466,7 +467,7 @@ def generate_rdo_pdf(
     pdf.set_x(14)
     pdf.cell(0, 5, f"Documento gerado automaticamente em {pdf.generated_at} | U2 Broadcast", align="C")
 
-    return bytes(pdf.output())
+    return stamp(bytes(pdf.output()))
 
 
 # ── Relatório semanal ────────────────────────────────────────────────────────
@@ -481,13 +482,11 @@ class _WeeklyRdoPDF(_RdoPDF):
     def header(self) -> None:
         if self.page_no() == 1:
             return
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 3, 6, style="F")
         self.set_font("Helvetica", "I", 7)
         self.set_text_color(*GRAY_400)
-        self.set_xy(14, 4)
+        self.set_xy(SIDE_MM, TOP_MM + 1)
         self.cell(0, 4, f"Relatorio Semanal - {self.site_name} - {_s(self.week_label)}", align="L")
-        self.set_xy(-50, 4)
+        self.set_xy(-50, TOP_MM + 1)
         self.cell(36, 4, f"Gerado em: {self.generated_at}", align="R")
         self.ln(8)
 
@@ -511,14 +510,15 @@ def generate_weekly_rdo_pdf(
 
     # ── Capa ─────────────────────────────────────────────────────────────────
     pdf.add_page()
-    pdf.set_fill_color(*NAVY)
-    pdf.rect(0, 0, 210, 40, style="F")
+    pdf.set_fill_color(*INK)
+    band_y = TOP_MM + 4
+    pdf.rect(0, band_y, 215.9, 40, style="F")
     pdf.set_text_color(*WHITE)
     pdf.set_font("Helvetica", "B", 18)
-    pdf.set_xy(14, 10)
+    pdf.set_xy(SIDE_MM, band_y + 10)
     pdf.cell(0, 10, "RELATORIO SEMANAL DE OBRA CIVIL", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
-    pdf.set_x(14)
+    pdf.set_x(SIDE_MM)
     pdf.cell(0, 6, f"{_s(site_name)}  |  Semana: {_s(week_label)}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     total_personnel = sum(r.get("total_personnel") or 0 for r in reports)
@@ -561,8 +561,8 @@ def generate_weekly_rdo_pdf(
     y = pdf.get_y()
     kpi_w, gap = 40, 2.0
     kpis = [
-        ("RDOs no Periodo", str(len(reports)), NAVY),
-        ("Total Pessoal", str(total_personnel), BLUE),
+        ("RDOs no Periodo", str(len(reports)), INK),
+        ("Total Pessoal", str(total_personnel), ACCENT),
         ("Ativ. Concluidas", str(total_acts_completed), GREEN),
         ("Ocorrencias", str(total_occurrences), RED if total_occurrences > 0 else GRAY_400),
     ]
@@ -648,4 +648,4 @@ def generate_weekly_rdo_pdf(
     pdf.set_x(14)
     pdf.cell(0, 5, f"Documento gerado automaticamente em {pdf.generated_at} | U2 Broadcast", align="C")
 
-    return bytes(pdf.output())
+    return stamp(bytes(pdf.output()))

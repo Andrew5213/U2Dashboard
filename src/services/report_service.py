@@ -9,20 +9,30 @@ from src.services.report_strings import get_strings
 from src.services.translation import translate, translate_task_row
 from src.core.logging import logger
 
-# ── Paleta de cores ──────────────────────────────────────────────────────────
-NAVY   = (27,  58, 107)   # #1B3A6B — primária
-BLUE   = (59, 130, 246)   # #3b82f6 — acento
+from src.services.letterhead import FOOTER_TOP_MM, SIDE_MM, TOP_MM, stamp
+
+# Página Letter, o formato do papel timbrado (mm)
+PAGE_W, PAGE_H = 215.9, 279.4
+# Onde o conteúdo tem de parar: acima da linha do rodapé, que fica logo acima
+# da faixa vermelha do timbrado. Os blocos que decidem sozinhos quando quebrar
+# a página comparam com isto — antes eram números fixos de uma página A4.
+CONTENT_BOTTOM = FOOTER_TOP_MM - 14      # 252.3 mm
+
+# ── Paleta de cores — letterhead da GatesAir ─────────────────────────────────
+# Vermelho, preto e cinzas neutros; o papel timbrado não tem azul nenhum.
+INK    = ( 26,  26,  26)  # #1A1A1A — preto do timbrado (capa, cabeçalhos)
+ACCENT = (196,  32,  50)  # #C42032 — vermelho da marca
 GREEN  = (22, 163,  74)   # #16a34a — sucesso
 RED    = (220,  38,  38)  # #dc2626 — perigo
 AMBER  = (217, 119,   6)  # #d97706 — alerta
 WHITE  = (255, 255, 255)
-GRAY_50  = (248, 250, 252)  # fundo alternado
-GRAY_200 = (226, 232, 240)  # borda leve
-GRAY_400 = (148, 163, 184)  # texto auxiliar
-GRAY_600 = ( 71,  85, 105)  # texto secundário
-DARK     = ( 15,  23,  42)  # texto principal
-BLUE_BG  = (239, 246, 255)  # fundo linha de pasta
-BLUE_TXT = ( 30,  64, 175)  # texto linha de pasta
+GRAY_50  = (248, 248, 248)  # fundo alternado
+GRAY_200 = (222, 222, 222)  # borda leve
+GRAY_400 = (169, 169, 169)  # texto auxiliar
+GRAY_600 = ( 99,  99,  99)  # texto secundário
+DARK     = ( 26,  26,  26)  # texto principal
+ACCENT_BG  = (246, 246, 246)  # fundo linha de pasta
+ACCENT_TXT = (196,  32,  50)  # texto linha de pasta
 
 
 _LATIN1_MAP = {
@@ -76,30 +86,34 @@ class _Report(FPDF):
     """Subclasse FPDF com cabeçalho e rodapé customizados."""
 
     def __init__(self, space_name: str, generated_at: str, lang: str = "pt") -> None:
-        super().__init__(orientation="P", unit="mm", format="A4")
+        # Letter, não A4: é o formato do papel timbrado da GatesAir, que entra por
+        # baixo de cada página em letterhead.stamp(). As margens abrem espaço para
+        # a logo (topo) e para a faixa vermelha (rodapé) — ver as medidas lá.
+        super().__init__(orientation="P", unit="mm", format="Letter")
         self.space_name = space_name
         self.generated_at = generated_at
         self.t = get_strings(lang)
-        self.set_auto_page_break(auto=True, margin=20)
-        self.set_margins(left=14, top=16, right=14)
+        # O conteúdo tem de parar acima da linha do rodapé (que fica em
+        # FOOTER_TOP_MM - 6), senão o texto do rodapé escreve por cima dele.
+        self.set_auto_page_break(auto=True, margin=PAGE_H - FOOTER_TOP_MM + 14)
+        self.set_margins(left=SIDE_MM, top=TOP_MM + 6, right=SIDE_MM)
 
     def header(self) -> None:
+        # A logo e o bloco de endereço vêm do timbrado; aqui só a data de geração,
+        # logo abaixo deles.
         if self.page_no() == 1:
             return
-        # Faixa lateral esquerda
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 3, 6, style="F")
-        # Data de geração (canto superior direito)
         self.set_font("Helvetica", size=7)
         self.set_text_color(*GRAY_400)
-        self.set_xy(14, 5)
-        self.cell(0, 4, f"{self.generated_at} {self.t['utc_label']}", align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.ln(3)
+        self.set_xy(SIDE_MM, TOP_MM + 1)
+        self.cell(PAGE_W - 2 * SIDE_MM, 4, f"{self.generated_at} {self.t['utc_label']}",
+                  align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_y(TOP_MM + 6)
 
     def footer(self) -> None:
         if self.page_no() == 1:
             return
-        self.set_y(-12)
+        self.set_y(FOOTER_TOP_MM - 6)
         self.set_font("Helvetica", size=7)
         self.set_text_color(*GRAY_400)
         self.cell(0, 4,
@@ -115,13 +129,14 @@ class _Report(FPDF):
     def _section_header(self, title: str, subtitle: str = "") -> None:
         h = 8 if not subtitle else 12
         x, y = self.get_x(), self.get_y()
-        self.set_fill_color(*NAVY)
+        # barra vermelha + título preto: o acento do timbrado sem perder a leitura
+        self.set_fill_color(*ACCENT)
         self.rect(x, y, 3, h, style="F")
         self.set_fill_color(*GRAY_50)
         self.rect(x + 3, y, 179, h, style="F")
         self.set_xy(x + 6, y + 1.5)
         self.set_font("Helvetica", style="B", size=9)
-        self._set_text(NAVY)
+        self._set_text(INK)
         self.cell(0, 5, _s(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         if subtitle:
             self.set_xy(x + 6, y + 7)
@@ -132,7 +147,7 @@ class _Report(FPDF):
 
     def _table_header(self, cols: list[tuple[str, float, str]]) -> None:
         """Cabecalho de tabela. cols = [(label, width_mm, align)]"""
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*INK)
         self._set_text(WHITE)
         self.set_font("Helvetica", style="B", size=7)
         for label, w, align in cols:
@@ -175,53 +190,57 @@ class _Report(FPDF):
     # ── Capa ─────────────────────────────────────────────────────────────────
 
     def build_cover(self, data: dict) -> None:
+        """Capa em papel timbrado: fundo branco, a logo vem do próprio timbrado."""
         t = self.t
         self.add_page()
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 210, 297, style="F")
+        x0, x1 = SIDE_MM, PAGE_W - SIDE_MM
 
-        self.set_xy(18, 28)
+        self.set_xy(x0, TOP_MM + 16)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self._set_text(ACCENT)
         self.cell(0, 5, t["cover_eyebrow"], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        self.set_fill_color(*BLUE)
-        self.rect(18, 36, 18, 2.5, style="F")
+        self.set_fill_color(*ACCENT)
+        self.rect(x0, TOP_MM + 24, 18, 2.5, style="F")
 
-        self.set_xy(18, 42)
+        self.set_xy(x0, TOP_MM + 30)
         self.set_font("Helvetica", style="B", size=24)
-        self._set_text(WHITE)
-        self.multi_cell(174, 10, t["cover_title"], align="L")
+        self._set_text(INK)
+        self.multi_cell(x1 - x0, 10, t["cover_title"], align="L")
 
-        self.set_xy(18, 68)
+        self.set_xy(x0, TOP_MM + 56)
         self.set_font("Helvetica", size=13)
-        self.set_text_color(147, 197, 253)
+        self._set_text(GRAY_600)
         self.cell(0, 8, _s(data["space_name"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        self.set_draw_color(37, 99, 235)
+        self.set_draw_color(*ACCENT)
         self.set_line_width(0.3)
-        self.line(18, 82, 192, 82)
+        self.line(x0, TOP_MM + 70, x1, TOP_MM + 70)
 
-        kw, kh, gap = 54, 22, 4
+        gap = 4
+        kw = (x1 - x0 - 2 * gap) / 3
+        kh = 22
         kpis_cover = [
             (str(data["kpis"]["total_tasks"]), t["cover_kpi_total"]),
             (data["kpis"]["completion_pct"],   t["cover_kpi_rate"]),
             (str(data["kpis"]["overdue_tasks"]), t["cover_kpi_overdue"]),
         ]
+        ky = TOP_MM + 76
         for i, (val, lbl) in enumerate(kpis_cover):
-            kx = 18 + i * (kw + gap)
-            ky = 88
-            self.set_fill_color(40, 70, 115)
-            self.set_draw_color(70, 100, 160)
+            kx = x0 + i * (kw + gap)
+            self.set_fill_color(*GRAY_50)
+            self.set_draw_color(*GRAY_200)
             self.set_line_width(0.3)
             self.rect(kx, ky, kw, kh, style="FD")
-            self.set_xy(kx, ky + 3)
+            self.set_fill_color(*ACCENT)
+            self.rect(kx, ky, kw, 1.2, style="F")
+            self.set_xy(kx, ky + 4)
             self.set_font("Helvetica", style="B", size=16)
-            self._set_text(WHITE)
+            self._set_text(INK)
             self.cell(kw, 8, val, align="C", new_x=XPos.LEFT, new_y=YPos.NEXT)
-            self.set_xy(kx, ky + 13)
+            self.set_xy(kx, ky + 14)
             self.set_font("Helvetica", size=6)
-            self.set_text_color(147, 197, 253)
+            self._set_text(GRAY_600)
             self.cell(kw, 4, lbl, align="C")
 
         meta = [
@@ -230,28 +249,29 @@ class _Report(FPDF):
             (t["cover_meta_folders_lists"].format(
                 f=data["kpis"]["total_folders"], l=data["kpis"]["total_lists"]), ""),
         ]
-        y0 = 120
+        y0 = TOP_MM + 108
         for label, value in meta:
-            self.set_xy(18, y0)
+            self.set_xy(x0, y0)
             self.set_font("Helvetica", size=7)
-            self.set_text_color(191, 219, 254)
+            self._set_text(GRAY_400)
             self.cell(0, 4, label, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             if value:
-                self.set_xy(18, y0 + 5)
+                self.set_xy(x0, y0 + 5)
                 self.set_font("Helvetica", style="B", size=9)
-                self._set_text(WHITE)
+                self._set_text(INK)
                 self.cell(0, 5, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 y0 += 14
             else:
                 y0 += 8
 
-        self.set_draw_color(255, 255, 255)
+        self.set_draw_color(*GRAY_200)
         self.set_line_width(0.1)
-        self.line(18, 265, 192, 265)
-        self.set_xy(18, 268)
+        # dentro da área útil: abaixo de CONTENT_BOTTOM o multi_cell abre página nova
+        self.line(x0, CONTENT_BOTTOM - 18, x1, CONTENT_BOTTOM - 18)
+        self.set_xy(x0, CONTENT_BOTTOM - 15)
         self.set_font("Helvetica", size=7)
-        self.set_text_color(96, 165, 250)
-        self.multi_cell(174, 4, t["cover_footnote"], align="L")
+        self._set_text(GRAY_400)
+        self.multi_cell(x1 - x0, 4, t["cover_footnote"], align="L")
 
     # ── Resumo Executivo ─────────────────────────────────────────────────────
 
@@ -263,7 +283,7 @@ class _Report(FPDF):
 
         kpis = data["kpis"]
         cards = [
-            (t["card_total"],  str(kpis["total_tasks"]),      DARK,  NAVY,
+            (t["card_total"],  str(kpis["total_tasks"]),      DARK,  INK,
              t["card_sub_folders_lists"].format(f=kpis["total_folders"], l=kpis["total_lists"])),
             (t["card_completed"], str(kpis["completed_tasks"]),   GREEN, GREEN,
              f"{kpis['completion_pct']} {t['card_sub_of_total']}"),
@@ -385,6 +405,10 @@ class _Report(FPDF):
             alerts.append((GREEN, t["alert_no_issues"]))
 
         for color, msg in alerts[:5]:
+            # o marcador é desenhado antes do texto; sem esta quebra ele ficava
+            # sozinho no pé da página e a frase ia para a seguinte
+            if self.get_y() > CONTENT_BOTTOM - 12:
+                self.add_page()
             row_y = self.get_y()
             self.set_fill_color(*color)
             self.rect(16, row_y + 3, 2.5, 2.5, style="F")
@@ -420,7 +444,7 @@ class _Report(FPDF):
             overdue = folder["overdue_tasks"]
 
             base_y = self.get_y()
-            if base_y > 255:
+            if base_y > CONTENT_BOTTOM - 22:
                 self.add_page()
                 self._table_header(cols)
                 base_y = self.get_y()
@@ -431,7 +455,7 @@ class _Report(FPDF):
                 (str(folder["completed_tasks"]),  22, "C"),
                 ("",                              22, "C"),
                 ("",                              38, "C"),
-            ], fill_color=BLUE_BG, text_color=BLUE_TXT, bold=True)
+            ], fill_color=ACCENT_BG, text_color=ACCENT_TXT, bold=True)
 
             if overdue > 0:
                 badge_x = 14 + 80 + 20 + 22 + 1
@@ -454,7 +478,7 @@ class _Report(FPDF):
                 l_even    = (row_idx % 2 == 0)
                 l_y = self.get_y()
 
-                if l_y > 255:
+                if l_y > CONTENT_BOTTOM - 22:
                     self.add_page()
                     self._table_header(cols)
                     l_y = self.get_y()
@@ -484,7 +508,7 @@ class _Report(FPDF):
             l_even    = (row_idx % 2 == 0)
             l_y = self.get_y()
 
-            if l_y > 255:
+            if l_y > CONTENT_BOTTOM - 22:
                 self.add_page()
                 self._table_header(cols)
                 l_y = self.get_y()
@@ -535,7 +559,7 @@ class _Report(FPDF):
             even = (i % 2 == 0)
             days = task["days_overdue"]
             row_y = self.get_y()
-            if row_y > 255:
+            if row_y > CONTENT_BOTTOM - 22:
                 self.add_page()
                 self._table_header(cols)
                 row_y = self.get_y()
@@ -574,7 +598,7 @@ class _Report(FPDF):
         for i, task in enumerate(tasks):
             even = (i % 2 == 0)
             row_y = self.get_y()
-            if row_y > 255:
+            if row_y > CONTENT_BOTTOM - 22:
                 self.add_page()
                 self._table_header(cols)
 
@@ -607,7 +631,7 @@ class _Report(FPDF):
         for i, person in enumerate(stats):
             even = (i % 2 == 0)
             row_y = self.get_y()
-            if row_y > 255:
+            if row_y > CONTENT_BOTTOM - 22:
                 self.add_page()
                 self._table_header(cols)
                 row_y = self.get_y()
@@ -639,15 +663,14 @@ class _Report(FPDF):
     def build_cover_provincia(self, data: dict) -> None:
         t = self.t
         self.add_page()
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 210, 297, style="F")
+        x0, x1 = SIDE_MM, PAGE_W - SIDE_MM
 
         self.set_xy(18, 28)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 5, t["prov_cover_eyebrow"], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        self.set_fill_color(*BLUE)
+        self.set_fill_color(*ACCENT)
         self.rect(18, 36, 18, 2.5, style="F")
 
         self.set_xy(18, 42)
@@ -657,15 +680,15 @@ class _Report(FPDF):
 
         self.set_xy(18, 66)
         self.set_font("Helvetica", style="B", size=16)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 8, _s(data["folder_name"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         self.set_xy(18, 76)
         self.set_font("Helvetica", size=9)
-        self.set_text_color(191, 219, 254)
+        self.set_text_color(214, 214, 214)
         self.cell(0, 5, _s(data["space_name"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        self.set_draw_color(37, 99, 235)
+        self.set_draw_color(196, 32, 50)
         self.set_line_width(0.3)
         self.line(18, 87, 192, 87)
 
@@ -692,8 +715,8 @@ class _Report(FPDF):
         for i, (val, lbl) in enumerate(kpis_cover):
             kx = 18 + i * (kw + gap)
             ky = 94
-            self.set_fill_color(40, 70, 115)
-            self.set_draw_color(70, 100, 160)
+            self.set_fill_color( 44, 44, 44)
+            self.set_draw_color( 90, 90, 90)
             self.set_line_width(0.3)
             self.rect(kx, ky, kw, kh, style="FD")
             self.set_xy(kx, ky + 3)
@@ -702,7 +725,7 @@ class _Report(FPDF):
             self.cell(kw, 8, val, align="C", new_x=XPos.LEFT, new_y=YPos.NEXT)
             self.set_xy(kx, ky + 13)
             self.set_font("Helvetica", size=6)
-            self.set_text_color(147, 197, 253)
+            self.set_text_color(200, 200, 200)
             self.cell(kw, 4, lbl, align="C")
 
         y0 = 126
@@ -714,7 +737,7 @@ class _Report(FPDF):
         for label, value in meta:
             self.set_xy(18, y0)
             self.set_font("Helvetica", size=7)
-            self.set_text_color(191, 219, 254)
+            self.set_text_color(214, 214, 214)
             self.cell(0, 4, label, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self.set_xy(18, y0 + 5)
             self.set_font("Helvetica", style="B", size=9)
@@ -727,7 +750,7 @@ class _Report(FPDF):
         self.line(18, 265, 192, 265)
         self.set_xy(18, 268)
         self.set_font("Helvetica", size=7)
-        self.set_text_color(96, 165, 250)
+        self.set_text_color(169, 169, 169)
         self.multi_cell(174, 4, t["prov_footnote"])
 
     # ── Resumo Província ─────────────────────────────────────────────────────
@@ -740,7 +763,7 @@ class _Report(FPDF):
 
         kpis = data["kpis"]
         cards = [
-            (t["card_total"],     str(kpis["total_tasks"]), DARK, NAVY,
+            (t["card_total"],     str(kpis["total_tasks"]), DARK, INK,
              t["card_lists_count"].format(n=data["total_lists"])),
             (t["card_completed"], str(kpis["completed_tasks"]), GREEN, GREEN,
              f"{kpis['completion_pct']} {t['card_sub_of_total']}"),
@@ -873,7 +896,7 @@ class _Report(FPDF):
         self._table_header(list_cols)
         for i, lst in enumerate(data["lists"]):
             row_y = self.get_y()
-            if row_y > 262:
+            if row_y > CONTENT_BOTTOM - 15:
                 self.add_page()
                 self._section_header(t["list_summary_cont"])
                 self._table_header(list_cols)
@@ -917,14 +940,14 @@ class _Report(FPDF):
         block_h = title_h + hdr_h + len(task_details) * row_h + 2.0
         block_y = self.get_y()
 
-        self.set_fill_color(*BLUE_BG)
+        self.set_fill_color(*ACCENT_BG)
         self.set_draw_color(*GRAY_200)
         self.set_line_width(0.2)
         self.rect(14, block_y, 182, block_h, style="FD")
 
         self.set_xy(16, block_y + 1.2)
         self.set_font("Helvetica", style="B", size=6)
-        self._set_text(BLUE_TXT)
+        self._set_text(ACCENT_TXT)
         self.cell(0, 3.5, t["disc_block_title"], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         hdr_y = block_y + title_h
@@ -960,7 +983,7 @@ class _Report(FPDF):
 
             self.set_xy(bar_x + 36, row_y + 0.5)
             self.set_font("Helvetica", style="B", size=6)
-            self._set_text(BLUE_TXT)
+            self._set_text(ACCENT_TXT)
             self.cell(16, row_h - 1, f"{w_norm*100:.1f}%", align="C")
 
             self.set_font("Helvetica", style="B", size=6)
@@ -1018,7 +1041,7 @@ class _Report(FPDF):
             self._table_header(cols)
             for i, task in enumerate(tasks):
                 row_y = self.get_y()
-                if row_y > 255:
+                if row_y > CONTENT_BOTTOM - 22:
                     self.add_page()
                     self._section_header(t["list_cont"].format(name=_s(lst["name"])))
                     self._table_header(cols)
@@ -1035,9 +1058,9 @@ class _Report(FPDF):
                 if is_subtask:
                     row_h = 5
                     if even:
-                        self.set_fill_color(248, 248, 252)
+                        self.set_fill_color(250, 250, 250)
                         self.rect(14, row_y, 182, row_h, style="F")
-                    self.set_fill_color(180, 185, 210)
+                    self.set_fill_color(208, 208, 208)
                     self.rect(20, row_y + 0.8, 0.8, 3.2, style="F")
                     txt_color = GRAY_400 if is_done else (RED if is_overdue else GRAY_600)
                     name_txt = _s(task["name"])
@@ -1067,7 +1090,7 @@ class _Report(FPDF):
                         (task["due_date_fmt"],              28, "C"),
                     ], fill=even, text_color=txt_color, bold=(w_norm is not None and not is_done))
                     if w_pct_txt:
-                        peso_color = GRAY_400 if is_done else BLUE_TXT
+                        peso_color = GRAY_400 if is_done else ACCENT_TXT
                         self.set_xy(14 + 65, row_y + 0.5)
                         self.set_font("Helvetica", style="B" if not is_done else "", size=6)
                         self._set_text(peso_color)
@@ -1103,7 +1126,7 @@ class _Report(FPDF):
             level = row.get("level", 0)
             is_summary = bool(row.get("is_summary"))
             row_h = 6.5 if level == 0 else 5.0
-            if self.get_y() + row_h > 268:
+            if self.get_y() + row_h > CONTENT_BOTTOM - 9:
                 self.add_page()
                 if on_new_page:
                     on_new_page()
@@ -1112,16 +1135,16 @@ class _Report(FPDF):
 
             is_done = row.get("is_done", row.get("status_type") in ("done", "closed"))
             if level == 0:
-                self.set_fill_color(*BLUE_BG)
+                self.set_fill_color(*ACCENT_BG)
                 self.rect(14, y, 182, row_h, style="F")
-                color, style, size = BLUE_TXT, "B", 8
+                color, style, size = ACCENT_TXT, "B", 8
             elif is_summary:
                 self.set_fill_color(*GRAY_50)
                 self.rect(14, y, 182, row_h, style="F")
                 color, style, size = DARK, "B", 7
             else:
                 if i % 2 == 0:
-                    self.set_fill_color(248, 248, 252)
+                    self.set_fill_color(250, 250, 250)
                     self.rect(14, y, 182, row_h, style="F")
                 color, style, size = GRAY_600, "", 7
             if is_done and level > 0:
@@ -1152,7 +1175,7 @@ class _Report(FPDF):
                 self.set_fill_color(*GRAY_200)
                 self.rect(x + 1.5, y + row_h / 2 - 1, bar_w, 2, style="F")
                 if pct > 0:
-                    self.set_fill_color(*(GREEN if pct >= 100 else BLUE))
+                    self.set_fill_color(*(GREEN if pct >= 100 else ACCENT))
                     self.rect(x + 1.5, y + row_h / 2 - 1, bar_w * min(pct, 100) / 100, 2, style="F")
                 self.set_xy(x + 1.5 + bar_w, y)
                 self.cell(pct_w - bar_w - 2.5, row_h, _fmt_progress(pct), align="R")
@@ -1184,11 +1207,11 @@ class _Report(FPDF):
 
     def _schedule_report_header(self, eyebrow: str, title: str, meta: str, summary: str) -> None:
         """Faixa de título dos relatórios de lista/disciplina de cronograma."""
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*INK)
         self.rect(0, 0, 210, 44, style="F")
         self.set_xy(14, 10)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 4, _s(eyebrow), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_xy(14, 15)
         self.set_font("Helvetica", style="B", size=17)
@@ -1200,7 +1223,7 @@ class _Report(FPDF):
         self.cell(0, 5, _s(summary), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_xy(14, 34)
         self.set_font("Helvetica", size=8)
-        self.set_text_color(191, 219, 254)
+        self.set_text_color(214, 214, 214)
         self.cell(0, 5, _s(meta), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_y(52)
 
@@ -1233,7 +1256,7 @@ class _Report(FPDF):
         status_x = 196 - status_w
 
         for i, row in enumerate(rows):
-            if self.get_y() > 262:
+            if self.get_y() > CONTENT_BOTTOM - 15:
                 self.add_page()
 
             indent = 9 if row["indent"] else 0
@@ -1245,18 +1268,18 @@ class _Report(FPDF):
 
             if row["indent"]:
                 if i % 2 == 0:
-                    self.set_fill_color(248, 248, 252)
+                    self.set_fill_color(250, 250, 250)
                     self.rect(14, row_y, 182, row_h, style="F")
-                self.set_fill_color(180, 185, 210)
+                self.set_fill_color(208, 208, 208)
                 self.rect(name_x, row_y + 1, 0.8, row_h - 2, style="F")
                 self.set_xy(name_x + 3, row_y + 1)
                 self.set_font("Helvetica", size=7.5)
             else:
-                self.set_fill_color(*BLUE_BG)
+                self.set_fill_color(*ACCENT_BG)
                 self.rect(14, row_y, 182, row_h, style="F")
                 self.set_xy(name_x + 2, row_y + 1.2)
                 self.set_font("Helvetica", style="B", size=9)
-                txt_color = BLUE_TXT
+                txt_color = ACCENT_TXT
 
             name_txt = _s(row["name"])
             max_chars = 60 if row["indent"] else 55
@@ -1299,12 +1322,12 @@ class _Report(FPDF):
             self._schedule_report_body(data)
             return
 
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*INK)
         self.rect(0, 0, 210, 38, style="F")
 
         self.set_xy(14, 10)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 4, _s(breadcrumb.upper()) if breadcrumb else t["disc_report_eyebrow"],
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
@@ -1315,7 +1338,7 @@ class _Report(FPDF):
 
         self.set_xy(14, 27)
         self.set_font("Helvetica", size=8)
-        self.set_text_color(191, 219, 254)
+        self.set_text_color(214, 214, 214)
         self.cell(0, 5, _s(t["disc_report_meta"].format(
             n=data["total_activities"], date=data["generated_at"])), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
@@ -1357,12 +1380,12 @@ class _Report(FPDF):
             self._schedule_report_body(data)
             return
 
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*INK)
         self.rect(0, 0, 210, 38, style="F")
 
         self.set_xy(14, 10)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 4, _s((data.get("folder_name") or t["disc_report_eyebrow"]).upper()),
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
@@ -1373,7 +1396,7 @@ class _Report(FPDF):
 
         self.set_xy(14, 27)
         self.set_font("Helvetica", size=8)
-        self.set_text_color(191, 219, 254)
+        self.set_text_color(214, 214, 214)
         self.cell(0, 5, _s(t["list_report_meta"].format(
             d=data["total_disciplines"], n=data["total_activities"], date=data["generated_at"])),
             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -1648,7 +1671,7 @@ class ReportService:
         pdf.build_upcoming(data["upcoming_tasks"])
         pdf.build_team(data["assignee_stats"])
         pdf.build_footnote(data)
-        return bytes(pdf.output())
+        return stamp(bytes(pdf.output()))
 
 
 class ProvinceReportService:
@@ -1824,7 +1847,7 @@ class ProvinceReportService:
         if data["assignee_stats"]:
             pdf.build_team(data["assignee_stats"])
         pdf.build_footnote(data)
-        return bytes(pdf.output())
+        return stamp(bytes(pdf.output()))
 
 
 class DisciplineReportService:
@@ -1894,7 +1917,7 @@ class DisciplineReportService:
         pdf = _Report(data["discipline_name"], data["generated_at"], lang=lang)
         pdf.alias_nb_pages()
         pdf.build_discipline_report(data)
-        return bytes(pdf.output())
+        return stamp(bytes(pdf.output()))
 
 
 class ListReportService:
@@ -1976,7 +1999,7 @@ class ListReportService:
         pdf = _Report(data["list_name"], data["generated_at"], lang=lang)
         pdf.alias_nb_pages()
         pdf.build_list_report(data)
-        return bytes(pdf.output())
+        return stamp(bytes(pdf.output()))
 
 
 # ── Relatório Periódico (Diário / Semanal) ────────────────────────────────────
@@ -2015,7 +2038,7 @@ class _PeriodicReport(_Report):
     def footer(self) -> None:
         if self.page_no() == 1:
             return
-        self.set_y(-12)
+        self.set_y(FOOTER_TOP_MM - 6)
         self.set_font("Helvetica", size=7)
         self.set_text_color(*GRAY_400)
         self.cell(0, 4,
@@ -2026,15 +2049,14 @@ class _PeriodicReport(_Report):
     def build_cover_periodic(self, data: dict) -> None:
         t = self.t
         self.add_page()
-        self.set_fill_color(*NAVY)
-        self.rect(0, 0, 210, 297, style="F")
+        x0, x1 = SIDE_MM, PAGE_W - SIDE_MM
 
         self.set_xy(18, 28)
         self.set_font("Helvetica", style="B", size=7)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 5, t["cover_eyebrow"], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        self.set_fill_color(*BLUE)
+        self.set_fill_color(*ACCENT)
         self.rect(18, 36, 18, 2.5, style="F")
 
         self.set_xy(18, 42)
@@ -2044,10 +2066,10 @@ class _PeriodicReport(_Report):
 
         self.set_xy(18, 66)
         self.set_font("Helvetica", size=13)
-        self.set_text_color(147, 197, 253)
+        self.set_text_color(200, 200, 200)
         self.cell(0, 8, _s(data["period_label"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        self.set_draw_color(37, 99, 235)
+        self.set_draw_color(196, 32, 50)
         self.set_line_width(0.3)
         self.line(18, 80, 192, 80)
 
@@ -2060,8 +2082,8 @@ class _PeriodicReport(_Report):
         for i, (val, lbl) in enumerate(kpis_cover):
             kx = 18 + i * (kw + gap)
             ky = 86
-            self.set_fill_color(40, 70, 115)
-            self.set_draw_color(70, 100, 160)
+            self.set_fill_color( 44, 44, 44)
+            self.set_draw_color( 90, 90, 90)
             self.set_line_width(0.3)
             self.rect(kx, ky, kw, kh, style="FD")
             self.set_xy(kx, ky + 3)
@@ -2070,7 +2092,7 @@ class _PeriodicReport(_Report):
             self.cell(kw, 8, val, align="C", new_x=XPos.LEFT, new_y=YPos.NEXT)
             self.set_xy(kx, ky + 13)
             self.set_font("Helvetica", size=5)
-            self.set_text_color(147, 197, 253)
+            self.set_text_color(200, 200, 200)
             self.cell(kw, 4, lbl, align="C")
 
         y0 = 118
@@ -2082,7 +2104,7 @@ class _PeriodicReport(_Report):
         for label, value in meta:
             self.set_xy(18, y0)
             self.set_font("Helvetica", size=7)
-            self.set_text_color(191, 219, 254)
+            self.set_text_color(214, 214, 214)
             self.cell(0, 4, label, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self.set_xy(18, y0 + 5)
             self.set_font("Helvetica", style="B", size=9)
@@ -2095,19 +2117,19 @@ class _PeriodicReport(_Report):
         self.line(18, 265, 192, 265)
         self.set_xy(18, 268)
         self.set_font("Helvetica", size=7)
-        self.set_text_color(96, 165, 250)
+        self.set_text_color(169, 169, 169)
         self.multi_cell(174, 4, t["periodic_footnote"], align="L")
 
     def _render_list_subheader(self, list_name: str, n_tasks: int, n_subs: int = 0) -> None:
         t = self.t
         y, h = self.get_y(), 6.5
-        self.set_fill_color(*BLUE_BG)
+        self.set_fill_color(*ACCENT_BG)
         self.rect(14, y, 182, h, style="F")
-        self.set_fill_color(*NAVY)
+        self.set_fill_color(*INK)
         self.rect(14, y, 2, h, style="F")
         self.set_xy(18, y + 1.5)
         self.set_font("Helvetica", style="B", size=7)
-        self._set_text(BLUE_TXT)
+        self._set_text(ACCENT_TXT)
         self.cell(150, 4, _s(list_name.upper()), align="L")
         info = t["list_info_tasks"].format(n=n_tasks)
         if n_subs:
@@ -2153,7 +2175,7 @@ class _PeriodicReport(_Report):
             sub_name = _s(sub["name"])
             sub_name = sub_name[:64] + "..." if len(sub_name) > 64 else sub_name
 
-            self.set_fill_color(180, 185, 210)
+            self.set_fill_color(208, 208, 208)
             self.rect(20, sub_y + 0.8, 0.8, 3.4, style="F")
 
             self.set_font("Helvetica", size=7)
@@ -2199,7 +2221,7 @@ class _PeriodicReport(_Report):
                 continue
 
             cat_y = self.get_y()
-            if cat_y > 248:
+            if cat_y > CONTENT_BOTTOM - 29:
                 self.add_page()
                 self._section_header(t["prov_updates_cont"].format(name=_s(folder_name)))
                 cat_y = self.get_y()
@@ -2221,7 +2243,7 @@ class _PeriodicReport(_Report):
             for list_name, list_tasks in by_list.items():
                 n_subs = sum(len(tk.get("subtasks", [])) for tk in list_tasks)
 
-                if self.get_y() > 252:
+                if self.get_y() > CONTENT_BOTTOM - 25:
                     self.add_page()
                     self._section_header(t["prov_updates_cont"].format(name=_s(folder_name)))
 
@@ -2361,4 +2383,4 @@ class PeriodicReportService:
         else:
             pdf.build_no_updates(data["period_label"])
         pdf.build_footnote(data)
-        return bytes(pdf.output())
+        return stamp(bytes(pdf.output()))

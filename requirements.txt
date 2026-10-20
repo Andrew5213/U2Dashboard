@@ -16,6 +16,7 @@ pytest==8.3.4
 pytest-asyncio==0.24.0
 pytest-httpx==0.35.0
 fpdf2>=2.8.0
+pikepdf>=9.0.0        # aplica o papel timbrado vetorial sobre o PDF gerado
 openpyxl>=3.1.0
 anthropic>=0.40.0
 PyJWT>=2.8.0
