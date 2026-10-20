@@ -311,9 +311,29 @@ class TestGanttReport:
         pdf.add_page()
         pdf.build_title(data)
         pdf.build_lists(data["lists"])
-        assert pdf.page_no() == 3
+        assert pdf.page_no() > 1                    # 91 linhas não cabem numa página
         assert pdf._label_every() > 1               # mais de um ano: o rótulo salta semanas, a grade não
         assert (await GanttReportService(db).generate_pdf("F")).startswith(b"%PDF")
+
+    async def test_continuation_page_starts_below_the_letterhead(self, db):
+        """O timbrado põe as logos no topo de toda página; a tabela da segunda em
+        diante começava no topo e passava por cima delas."""
+        from src.services.gantt_report_service import _BOTTOM, _TOP, GanttReportService, _GanttReport
+        repo = CacheRepository(db)
+        await repo.upsert_space({"id": "S", "name": "Space"})
+        await repo.upsert_folder({"id": "F", "name": "LUENA"}, "S")
+        await repo.upsert_list({"id": "L1", "name": "Site FM"}, "S", "F")
+        await repo.upsert_task(schedule_task("Obra", start=TODAY, due=TODAY + timedelta(days=10)), "L1")
+        await repo.upsert_task(schedule_task("T1", "Obra", duration=3, start=TODAY,
+                                             due=TODAY + timedelta(days=3), created=1), "L1")
+
+        pdf = _GanttReport(await GanttReportService(db)._build_data("F"))
+        pdf.add_page()
+        pdf.set_y(_BOTTOM)          # não cabe mais nada: a próxima linha quebra a página
+        pdf._ensure_room(20)
+
+        assert pdf.page_no() == 2
+        assert pdf.get_y() >= _TOP
 
     async def test_unknown_folder_is_an_error(self, db):
         from src.services.gantt_report_service import GanttReportService

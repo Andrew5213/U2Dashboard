@@ -347,11 +347,16 @@ requirements.txt` no próximo deploy**). A logo sai idêntica ao original em qua
   um log de erro, em vez de rebentar o download.
 - **A paleta dos relatórios é a do timbrado**: `INK = #1A1A1A` e `ACCENT = #C42032` (era o azul
   institucional), nos PDF, nos XLSX (`xlsx_utils.py` — `NAVY`/`BLUE` passaram a `INK`/`ACCENT`) e no HTML do
-  e-mail semanal. **O Gantt é a exceção deliberada**: as faixas da página (título, cabeçalho de tabela,
-  linha de lista) seguem o vermelho (`HEAD_BG`), mas as **cores do gráfico** — `BAR_DONE` azul, `_TRACK`
-  azul claro, `GREEN`, `RED` — são codificação de dado, não moldura, e ficam como estão. Por isso vivem em
-  constantes **locais** de `gantt_report_service.py` em vez de importadas: assim não voltam a ser trocadas
-  junto com a moldura.
+  e-mail semanal.
+- **O vermelho é só do timbrado.** Nenhuma faixa desenhada pela app é vermelha: a única é a do rodapé, que
+  vem do próprio papel. No Gantt, a faixa de título, o cabeçalho de tabela e a linha de lista usam `INK`
+  (`HEAD_BG`), o mesmo cinza-chumbo de `_table_header` e `_schedule_report_header` nos outros relatórios.
+- **As cores do gráfico do Gantt não seguem a paleta**: `BAR_DONE` azul, `_TRACK` azul claro, `GREEN` e
+  `RED` são codificação de dado, não moldura — no vermelho do timbrado a parte executada da barra ficaria
+  igual à de atraso. Por isso vivem em constantes **locais** de `gantt_report_service.py`, e não importadas:
+  trocar a paleta em `report_service` não as alcança.
+- **A continuação do Gantt começa em `_TOP`, não no topo da página**: o timbrado põe as logos em **toda**
+  página, e a tabela da segunda em diante passava por cima delas (`test_continuation_page_starts_below_the_letterhead`).
 - O timbrado traz o endereço da GatesAir em Cincinnati em todo relatório da U2 — **decisão do cliente
   pendente** se fica ou é substituído.
 

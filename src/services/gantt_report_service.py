@@ -16,28 +16,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.logging import logger
 from src.repositories.cache_repository import CacheRepository
+from src.services.letterhead import stamp
 from src.services.report_service import (
-    DARK, GRAY_50, GRAY_200, GRAY_400, GRAY_600, GREEN, RED, WHITE,
+    ACCENT_BG, DARK, GRAY_50, GRAY_200, GRAY_400, GRAY_600, GREEN, INK, RED, WHITE,
     _Report, _descendants, _fmt_progress, _is_schedule, _s,
 )
-
-# O Gantt fica no azul de propósito, a pedido: os relatórios passaram à paleta
-# do timbrado da GatesAir (vermelho #C42032 e preto), mas aqui a barra de
-# progresso ficaria igual à de atraso (RED #dc2626) e o gráfico perderia a
-# distinção. Por isso estas quatro cores são locais e não vêm mais de
-# report_service — mudá-las lá não mexe no Gantt.
-# As faixas da página (título, cabeçalho de tabela, linha de lista) seguem o
-# vermelho do timbrado. O azul fica só nas barras do gráfico, onde carrega
-# informação: planejado (_TRACK) e executado (BAR_DONE).
-HEAD_BG  = (196,  32,  50)  # #C42032 — o mesmo vermelho da faixa do rodapé
-HEAD_SOFT = (253, 237, 240) # fundo claro da linha de lista
-HEAD_TXT = (138,  11,  33)  # texto sobre o fundo claro
-HEAD_FG  = (248, 203, 212)  # texto secundário sobre o vermelho
-
-BAR_DONE = ( 59, 130, 246)  # #3B82F6 — parte executada da barra
-from src.services.letterhead import stamp
 from src.services.report_strings import get_strings
 from src.services.translation import translate
+
+# A moldura da página — faixa de título, cabeçalho de tabela, linha de lista —
+# segue a paleta dos outros relatórios: INK, o mesmo cinza-chumbo de
+# `_table_header` e `_schedule_report_header`. O vermelho do timbrado fica só na
+# faixa do rodapé, que vem do próprio papel e não é desenhada aqui.
+HEAD_BG   = INK             # faixa de título e cabeçalho de tabela
+HEAD_SOFT = ACCENT_BG       # fundo claro da linha de lista
+HEAD_TXT  = INK             # texto sobre o fundo claro
+HEAD_FG   = (200, 200, 200) # texto secundário sobre a faixa escura
+
+# As cores do gráfico são locais de propósito: são codificação de dado, não
+# moldura. No vermelho do timbrado a parte executada da barra ficaria igual à de
+# atraso (RED #dc2626) e o gráfico perderia a distinção — por isso o azul fica.
+BAR_DONE = ( 59, 130, 246)  # #3B82F6 — parte executada da barra
 
 _MONTHS = {
     "pt": ("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"),
@@ -302,7 +301,9 @@ class _GanttReport(_Report):
     def _ensure_room(self, needed: float) -> None:
         if self.get_y() + needed > _BOTTOM:
             self.add_page()
-            self.set_y(12)
+            # _TOP e não o topo da página: a continuação também começa abaixo das
+            # logos do timbrado, senão a tabela passa por cima delas.
+            self.set_y(_TOP)
             self._table_head()
 
     def _list_band(self, name: str) -> None:
