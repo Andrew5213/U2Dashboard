@@ -351,8 +351,8 @@ requirements.txt` no próximo deploy**). A logo sai idêntica ao original em qua
   trocar a paleta em `report_service` não as alcança.
 - **A continuação do Gantt começa em `_TOP`, não no topo da página**: o timbrado põe as logos em **toda**
   página, e a tabela da segunda em diante passava por cima delas (`test_continuation_page_starts_below_the_letterhead`).
-- O timbrado traz o endereço da GatesAir em Cincinnati em todo relatório da U2 — **decisão do cliente
-  pendente** se fica ou é substituído.
+- O timbrado traz o endereço da GatesAir em Cincinnati em todo relatório da U2. **É intencional** — o
+  cliente confirmou em 21/10/2026 que fica assim; não é um descuido a corrigir.
 
 **No "created" category — periodic reports and the AI assistant only show real progress**: `CacheRepository.get_period_updates()` (daily/weekly PDF/XLSX) and `get_recent_changes()` (chat assistant tool) used to have a third "created" bucket for newly-created tasks still sitting in their initial status. That bucket was removed entirely — a task/subtask only appears in these reports if it's either `concluded` (closed in the period) or `updated` with its **current** status normalized to one of `_REPORTABLE_UPDATE_STATUSES` in `cache_repository.py` (`fazendo`, `revisão`, `aprovação`, `concluído`/`complete`). Anything still sitting in `planejando` (or any other status outside that list, e.g. `aguardando`/`bloqueado`/`cancelado`) is silently dropped — it never shows up as a "recent change," no matter when it was created or last touched. This also drives the AI assistant: `get_recent_changes` no longer returns a `created` key at all, and its tool description explicitly tells Claude never to mention newly-created tasks.
 
