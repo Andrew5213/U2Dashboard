@@ -165,6 +165,13 @@ U2I18n.register({
   'Fim': 'Finish',
   'Término': 'Finish',
   'Duração': 'Duration',
+  'dias': 'days',
+  // ── Gantt detalhado da província ───────────────────────────────────────────
+  'Planejado': 'Planned',
+  'Executado': 'Executed',
+  'Resumo': 'Summary',
+  'Sem datas definidas': 'No dates set',
+  'Nenhuma tarefa com datas definidas': 'No task has dates set',
   'Prazo': 'Due date',
   'Vencimento': 'Due date',
   'Atraso': 'Delay',

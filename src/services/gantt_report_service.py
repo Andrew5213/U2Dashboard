@@ -121,6 +121,7 @@ def build_gantt_rows(tasks: list, today: date, lang: str = "pt") -> list[dict]:
             else:
                 progress = 100.0 if is_done else None
             rows.append({
+                "task_id": item.task_id,   # a tela usa para abrir a tarefa; PDF/XLSX ignoram
                 "name": translate(item.name, lang),
                 "level": level,
                 "is_summary": item.task_id in children,
@@ -134,6 +135,17 @@ def build_gantt_rows(tasks: list, today: date, lang: str = "pt") -> list[dict]:
                 "pauses": pauses_of(item),
             })
     return rows
+
+
+def _row_to_json(row: dict) -> dict:
+    """Uma linha de `build_gantt_rows` com as datas em ISO, para a tela."""
+    return {
+        **row,
+        "start": row["start"].isoformat(),
+        "end": row["end"].isoformat(),
+        "pauses": [{**p, "start": p["start"].isoformat(), "end": p["end"].isoformat()}
+                   for p in row["pauses"]],
+    }
 
 
 class _GanttReport(_Report):
@@ -464,6 +476,28 @@ class GanttReportService:
     async def generate_xlsx(self, folder_id: str, lang: str = "pt") -> bytes:
         data = await self._build_data(folder_id, lang)
         return await asyncio.to_thread(render_gantt_xlsx, data)
+
+    async def build_screen_data(self, folder_id: str, lang: str = "pt") -> dict:
+        """O mesmo Gantt do PDF, pronto para JSON (datas em ISO).
+
+        A tela parte exactamente destas linhas — mesma árvore de 3 níveis, mesmas
+        datas, mesmo % — para não divergir do PDF, que é o que o cliente imprime.
+        Divergir aqui seria o pior dos mundos: dois Gantts da mesma província com
+        números diferentes.
+        """
+        data = await self._build_data(folder_id, lang)
+        return {
+            **data,
+            "today": data["today"].isoformat(),
+            "first_day": data["first_day"].isoformat(),
+            "last_day": data["last_day"].isoformat(),
+            "range_start": data["range_start"].isoformat(),
+            "range_end": data["range_end"].isoformat(),
+            "lists": [
+                {**lst, "rows": [_row_to_json(row) for row in lst["rows"]]}
+                for lst in data["lists"]
+            ],
+        }
 
     async def _build_data(self, folder_id: str, lang: str = "pt") -> dict:
         t = get_strings(lang)

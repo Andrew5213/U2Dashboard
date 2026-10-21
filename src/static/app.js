@@ -274,11 +274,26 @@
     setTimeout(function () { el.classList.add('hidden'); }, 3500);
   }
 
-  function setView(html) {
+  /* Geração de navegação: cada passagem pelo router() invalida a anterior.
+
+     Todo render* espera o fetch antes de pintar, então sem isto o que voltasse
+     por último ficava na tela — sair de uma província lenta para uma rápida
+     deixava a lenta pintar por cima da que o utilizador acabara de abrir. Vale
+     também para o SSE e o polling, que chamam router() por conta própria. */
+  let _gen = 0;
+
+  /* `gen` é a navegação a que o render pertence; sem ela pinta na mesma, que é
+     o caso de quem redesenha a pedido do utilizador já dentro da tela. */
+  function setView(html, gen) {
+    if (!isCurrent(gen)) return false;
     Charts.disposeAll();
     const view = document.getElementById('view');
     view.innerHTML = html;
+    return true;
   }
+
+  /* Este render ainda é o que o utilizador espera ver? */
+  function isCurrent(gen) { return gen === undefined || gen === _gen; }
 
   function setBreadcrumb(parts) {
     const el = document.getElementById('breadcrumb');
@@ -330,6 +345,7 @@
 
   /* ── VIEW: Overview ──────────────────────────────────────────────── */
   async function renderOverview() {
+    const gen = _gen;
     loading();
     setBreadcrumb([{ label: 'Visão Geral', href: '#/' }]);
 
@@ -343,7 +359,7 @@
         api('/dashboard/evolution'),
       ]);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro ao carregar dados: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro ao carregar dados: ${esc(e.message)}</div>`, gen);
       return;
     }
 
@@ -496,10 +512,11 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         ${foldersHTML}
       </div>
-    `);
+    `, gen);
 
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
+        if (!isCurrent(gen)) return;
         var foldersSorted = folders.slice().sort(function (a, b) {
           return (a.completion_rate || 0) - (b.completion_rate || 0); // ascendente → ECharts coloca o mais avançado no topo
         });
@@ -518,6 +535,7 @@
 
   /* ── VIEW: Folder (listas) ───────────────────────────────────────── */
   async function renderFolder(folderId) {
+    const gen = _gen;
     loading();
     const folderName = window.__folderName || 'Província';
     setBreadcrumb([
@@ -532,7 +550,7 @@
         fetch('/disciplines/folder/' + folderId).then(function (r) { return r.json(); }).then(function (j) { return j.success ? j.data : null; }).catch(function () { return null; }),
       ]);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       return;
     }
 
@@ -633,10 +651,11 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         ${listsHTML}
       </div>
-    `);
+    `, gen);
 
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
+        if (!isCurrent(gen)) return;
         Charts.renderProgressBars('chart-lists', lists, 'name', 'completed_tasks', 'total_tasks', true, function (l) {
           window.__listName = l.name;
           location.hash = '#/list/' + l.list_id;
@@ -777,6 +796,7 @@
 
   /* ── VIEW: Lista (tasks) ─────────────────────────────────────────── */
   async function renderList(listId) {
+    const gen = _gen;
     loading();
     const listName = window.__listName || 'Área';
     setBreadcrumb([
@@ -794,7 +814,7 @@
         api('/dashboard/list/' + listId + '/kpis').catch(function () { return null; }),
       ]);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       return;
     }
 
@@ -889,7 +909,7 @@
           </table>
         </div>
       </div>
-    `);
+    `, gen);
   }
 
   /* ── VIEW: Equipe / responsável (tarefas por período) ────────────── */
@@ -916,6 +936,7 @@
   }
 
   async function renderAssignee(name) {
+    const gen = _gen;
     setBreadcrumb([
       { label: 'Visão Geral', href: '#/' },
       { label: name },
@@ -925,7 +946,7 @@
     try {
       tasks = await api('/dashboard/assignee/tasks?name=' + encodeURIComponent(name));
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       return;
     }
 
@@ -1000,7 +1021,7 @@
           ${kpiCard(ICONS.check, 'Concluídas', done.length, scoped.length ? fmtPct(done.length / scoped.length) + ' das tarefas' : null, 'text-emerald-600')}
         </div>
         ${sections}${doneSection}${empty}
-      `);
+      `, gen);
       const select = document.getElementById('team-province');
       if (select) select.addEventListener('change', function () { draw(select.value); });
     }
@@ -1099,6 +1120,7 @@
 
   /* ── VIEW: Task (detalhe + subtasks) ─────────────────────────────── */
   async function renderTask(taskId) {
+    const gen = _gen;
     loading();
     const taskName = window.__taskName || 'Task';
     setBreadcrumb([
@@ -1113,9 +1135,9 @@
       task = await api('/dashboard/task/' + taskId);
     } catch (e) {
       if (e.message.includes('404')) {
-        setView(`<div class="text-gray-500 text-center py-12">Task não encontrada no cache. Aguarde o próximo refresh.</div>`);
+        setView(`<div class="text-gray-500 text-center py-12">Task não encontrada no cache. Aguarde o próximo refresh.</div>`, gen);
       } else {
-        setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+        setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       }
       return;
     }
@@ -1236,11 +1258,12 @@
       ${dependencySection('Depende de', 'Só pode começar depois que estas terminarem.', task.depends_on)}
       ${dependencySection('Libera', 'Estas esperam o término desta para começar.', task.blocks)}
       ${subtaskSection}
-    `);
+    `, gen);
   }
 
   /* ── VIEW: Cronograma Geral (overview de províncias) ─────────────── */
   async function renderGanttOverview() {
+    const gen = _gen;
     loading();
     setBreadcrumb([
       { label: 'Visão Geral', href: '#/' },
@@ -1252,7 +1275,7 @@
       var json = await res.json();
       rows = json.data || [];
     } catch (e) {
-      setView('<div class="text-center py-16 text-red-500 text-sm">Erro ao carregar cronograma geral.</div>');
+      setView('<div class="text-center py-16 text-red-500 text-sm">Erro ao carregar cronograma geral.</div>', gen);
       return;
     }
     var tasks = rows.filter(function (r) { return r.due_date; });
@@ -1297,10 +1320,11 @@
         <p class="text-xs text-gray-400 mb-3">Cada quadrado = 1 semana · Clique em uma província para ver o detalhe</p>
         <div id="chart-gantt-overview" style="width:100%;"></div>
       </div>
-    `);
+    `, gen);
 
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
+        if (!isCurrent(gen)) return;
         Charts.renderGanttChart('chart-gantt-overview', ganttTasks, function (t) {
           window.__folderName = t.name;
           location.hash = '#/folder/' + t.task_id;
@@ -1311,7 +1335,7 @@
 
   /* ── Helper Gantt compartilhado ─────────────────────────────────── */
   function _renderGanttView(opts) {
-    /* opts: { title, backHref, backLabel, chartId, tasks, noDateCount, onClickTask } */
+    /* opts: { title, backHref, backLabel, chartId, tasks, noDateCount, onClickTask, gen } */
     var tasks    = opts.tasks;
     var overdueN = tasks.filter(function (t) { return t.is_overdue && !t.is_done; }).length;
     var doneN    = tasks.filter(function (t) { return t.is_done; }).length;
@@ -1348,17 +1372,26 @@
         <p class="text-xs text-gray-400 mb-3">Cada quadrado = 1 semana · Clique em uma tarefa para ver o detalhe · Role horizontalmente para navegar no tempo</p>
         <div id="${esc(opts.chartId)}" style="width:100%;"></div>
       </div>
-    `);
+    `, opts.gen);
 
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
+        if (!isCurrent(opts.gen)) return;
         Charts.renderGanttChart(opts.chartId, tasks, opts.onClickTask);
       });
     });
   }
 
-  /* ── VIEW: Gantt Província ───────────────────────────────────────── */
+  /* ── VIEW: Gantt Província ───────────────────────────────────────────
+     O cronograma inteiro da província, nos mesmos termos do PDF: a árvore de
+     3 níveis, as colunas de data e %, planejado × executado. Vem de
+     /detail — o mesmo _build_data do PDF e do XLSX — e não de
+     /dashboard/gantt/folder/<id>, que devolve só as tarefas de topo.
+
+     As outras duas telas de Gantt (lista e tarefa) seguem no gráfico simples
+     de semanas: ali o recorte é pequeno e a árvore não acrescenta nada. */
   async function renderGanttFolder(folderId) {
+    const gen = _gen;
     loading();
     var folderName = window.__folderName || nav.folderName || 'Província';
     setBreadcrumb([
@@ -1367,34 +1400,66 @@
       { label: 'Cronograma', href: '#/gantt/folder/' + folderId },
     ]);
 
-    var allTasks;
+    var data;
     try {
-      allTasks = await api('/dashboard/gantt/folder/' + folderId);
+      var lang = (window.U2I18n && window.U2I18n.lang) || 'pt';
+      data = await api('/dashboard/gantt/folder/' + folderId + '/detail?lang=' + lang);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       return;
     }
 
     nav.folderId   = folderId;
     nav.folderName = folderName;
 
-    var tasks   = allTasks.filter(function (t) { return t.due_date; });
-    var noDate  = allTasks.length - tasks.length;
+    /* Os contadores do subtítulo contam tarefas, não resumos: um resumo em
+       atraso é a soma das suas tarefas e seria contado duas vezes. */
+    var rows = [];
+    (data.lists || []).forEach(function (l) { rows = rows.concat(l.rows || []); });
+    var leaves  = rows.filter(function (r) { return !r.is_summary; });
+    var overdue = leaves.filter(function (r) { return r.is_overdue && !r.is_done; }).length;
+    var done    = leaves.filter(function (r) { return r.is_done; }).length;
 
-    _renderGanttView({
-      title:        folderName + ' — Cronograma',
-      backHref:     '#/folder/' + folderId,
-      backLabel:    'Voltar para província',
-      chartId:      'chart-gantt',
-      tasks:        tasks,
-      noDateCount:  noDate,
-      actions:      ganttButtons(folderId),
-      onClickTask:  function (t) { window.__taskName = t.name; location.hash = '#/task/' + t.task_id; },
+    var sub = leaves.length + ' tarefa(s)';
+    if (overdue) sub += ' · <span class="text-red-500 font-medium">' + overdue + ' em atraso</span>';
+    if (done)    sub += ' · <span class="text-emerald-600">' + done + ' concluídas</span>';
+
+    setView(`
+      <div class="flex items-center justify-between mb-4 gap-4">
+        <div class="min-w-0">
+          <h1 class="text-base font-bold text-gray-800 truncate">${esc(folderName)} — Cronograma</h1>
+          <p class="text-xs text-gray-400 mt-0.5">${sub}</p>
+        </div>
+        <div class="flex items-center gap-4 shrink-0">
+          ${ganttButtons(folderId)}
+          <a href="#/folder/${esc(folderId)}"
+            class="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 border-l border-gray-200 pl-4">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
+            </svg>
+            Voltar para província
+          </a>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-4">
+        <div id="chart-gantt"></div>
+      </div>
+    `, gen);
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (!isCurrent(gen)) return;
+        Charts.renderGanttDetail('chart-gantt', data, function (row) {
+          window.__taskName = row.name;
+          location.hash = '#/task/' + row.task_id;
+        });
+      });
     });
   }
 
   /* ── VIEW: Gantt Task (task + subtasks) ─────────────────────────── */
   async function renderGanttTask(taskId) {
+    const gen = _gen;
     loading();
     var taskName = window.__taskName || nav.taskName || 'Task';
     setBreadcrumb([
@@ -1409,7 +1474,7 @@
     try {
       allTasks = await api('/dashboard/gantt/task/' + taskId);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       return;
     }
 
@@ -1417,6 +1482,7 @@
     var noDate = allTasks.length - tasks.length;
 
     _renderGanttView({
+      gen:         gen,
       title:       taskName + ' — Cronograma',
       backHref:    '#/task/' + taskId,
       backLabel:   'Voltar para task',
@@ -1431,6 +1497,7 @@
 
   /* ── VIEW: Gantt por área (lista) ───────────────────────────────── */
   async function renderGantt(listId) {
+    const gen = _gen;
     loading();
     var listName = window.__listName || nav.listName || 'Área';
     setBreadcrumb([
@@ -1444,7 +1511,7 @@
     try {
       allTasks = await api('/dashboard/gantt/' + listId);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro: ${esc(e.message)}</div>`, gen);
       return;
     }
 
@@ -1452,6 +1519,7 @@
     var noDate = allTasks.length - tasks.length;
 
     _renderGanttView({
+      gen:         gen,
       title:       listName + ' — Cronograma',
       backHref:    '#/list/' + listId,
       backLabel:   'Voltar para lista',
@@ -1488,6 +1556,7 @@
   }
 
   async function renderGantts() {
+    const gen = _gen;
     loading();
     setBreadcrumb([{ label: 'Visão Geral', href: '#/' }, { label: 'Cronogramas' }]);
 
@@ -1495,7 +1564,7 @@
     try {
       [folders, spans] = await Promise.all([api('/dashboard/folders'), api('/dashboard/gantt/overview')]);
     } catch (e) {
-      setView(`<div class="text-red-500 text-center py-12">Erro ao carregar dados: ${esc(e.message)}</div>`);
+      setView(`<div class="text-red-500 text-center py-12">Erro ao carregar dados: ${esc(e.message)}</div>`, gen);
       return;
     }
     const span = {};
@@ -1563,11 +1632,12 @@
           </table>
         </div>
       </div>
-    `);
+    `, gen);
   }
 
   /* ── Roteador ────────────────────────────────────────────────────── */
   function router() {
+    _gen++;                 // o que estiver a meio caminho deixa de valer
     const hash  = location.hash.replace(/^#\/?/, '');
     const parts = hash.split('/').filter(Boolean);
     const route = parts[0] || '';

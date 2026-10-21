@@ -108,6 +108,7 @@ src/
 │   ├── webhooks.py          # POST /webhooks/clickup — verifies HMAC, syncs to Airbox, updates cache + SSE
 │   ├── dashboard.py         # GET /dashboard/overview|folders|folder/{id}|list/{id}|task/{id}|assignees|upcoming|evolution
 │   │                        #   GET /dashboard/gantt/{list_id}|gantt/folder/{id}|gantt/task/{id}
+│   │                        #   GET /dashboard/gantt/folder/{id}/detail — o Gantt do PDF em JSON, para a tela
 │   │                        #   POST /dashboard/refresh
 │   ├── dashboard_stream.py  # GET /dashboard/stream (Server-Sent Events)
 │   ├── reports.py           # GET /reports/pdf, /reports/pdf/provincia, /reports/pdf/daily, /reports/pdf/weekly, /reports/folders
@@ -161,6 +162,23 @@ The app maintains a local SQLite cache of the ClickUp space structure to serve t
 **SSE stream**: `GET /dashboard/stream` — clients receive `update` events (with `type`, `task_id`, `list_id`) whenever a webhook updates a task. Sends `ping` keepalives every `SSE_KEEPALIVE_SECONDS` (default 15s).
 
 **Dashboard UI**: served at `GET /` via `src/templates/index.html` (or `index_mobile.html`). The frontend calls `/dashboard/*` REST endpoints and connects to `/dashboard/stream` for live updates.
+
+**Geração de navegação (`_gen` em `app.js`)** — toda tela nova tem de respeitar.
+`router()` incrementa `_gen` a cada navegação; cada `render*` captura `const gen = _gen;` na
+**primeira linha** e passa esse `gen` a todo `setView(html, gen)`. `setView` recusa pintar (devolve
+`false`) quando a geração já não é a corrente, e quem desenha gráfico depois confere
+`isCurrent(gen)` dentro do `requestAnimationFrame`.
+- **Porquê**: todo `render*` é assíncrono — pinta só depois do `await api(...)`. Sem isto, quem
+  voltasse por último ficava na tela: sair de uma província lenta para uma rápida deixava a lenta
+  pintar por cima da que o utilizador acabara de abrir (reproduzível com `location.hash = '#/'`
+  seguido, 300 ms depois, de `#/gantt/folder/<id>`: a visão geral chegava ~800 ms depois e tapava o
+  Gantt). Vale também para o SSE e para o *polling fallback*, que chamam `router()` por conta
+  própria enquanto um render pode estar em voo.
+- **Função nova que esquece o `gen`** não quebra nada visivelmente — só volta a poder pintar por
+  cima de uma tela mais recente. `setView` sem `gen` pinta sempre, de propósito: é o caso de quem
+  redesenha a pedido do utilizador já dentro da tela (o filtro de província em `renderAssignee`,
+  que passa o `gen` capturado no fecho).
+- `_renderGanttView` recebe a geração em `opts.gen`, porque é um ajudante partilhado por duas telas.
 
 **Completion-rate unit of measure**: `get_overview_kpis`, `get_folders_with_metrics`, `get_lists_with_metrics`, `get_gantt_overview`, `get_folder_kpis`, `get_assignee_task_stats`, and `get_assignee_stats_by_folder` (`cache_repository.py`) count progress in terms of "leaf tasks" — via the `_leaf_tasks_clause()` helper (task_id not present as anyone's `parent_task_id`) — not top-level tasks. This means a top-level task (Discipline) with subtasks is excluded from the count and its subtasks (Activities) are counted instead; a top-level task with no subtasks still counts as itself. This affects the overview KPIs, province/module cards, the status donut, the general Gantt, the AI assistant's per-province progress tool, and every PDF/XLSX report's completion percentages (executive + província summary cards, team performance table) — all now measure progress at Activity granularity rather than Discipline granularity. Listing-style queries (`get_overdue_tasks_by_folder`, `get_upcoming_tasks_by_folder`, `get_overdue_tasks_detail`, `get_tasks_by_status`, `get_recent_changes`, `get_period_updates`) were intentionally left on top-level-only filtering, since they enumerate individual task rows rather than compute a percentage (exception: on schedule lists the overdue/upcoming listings enumerate leaf tasks — see "Cronograma de Obra → Relatórios"). The weighted EVM system (`weights_config.py`) is unaffected — it already worked from subtasks.
 
@@ -271,6 +289,25 @@ uma linha por província com período, progresso, desvio e três ações — ver
 com o aviso de definir o início da lista. A tela de Gantt da província tem os mesmos dois downloads no
 cabeçalho. O período vem de `get_gantt_overview`, cujo início é o primeiro `start_date` real da
 província (a data de criação só vale de aproximação quando nenhuma tarefa tem início).
+
+**O Gantt da província na tela é o mesmo do PDF** (`Charts.renderGanttDetail` em `charts.js`,
+alimentado por `GET /dashboard/gantt/folder/{id}/detail?lang=`). Esse endpoint chama
+`GanttReportService.build_screen_data`, que é o `_build_data` do PDF e do XLSX com as datas em ISO —
+os três partem da mesma árvore, das mesmas datas e do mesmo %. **Divergir aqui é o pior dos mundos**:
+o cliente olha a tela e imprime o PDF, e os dois mostrariam cronogramas diferentes da mesma província.
+- A tela traz os 3 níveis indentados (disciplina → grupo → tarefa), as colunas Início/Término/%, o
+  resumo como barra achatada, planejado × executado, a zebra das pausas e a linha de hoje — a mesma
+  leitura do PDF. Só a paleta muda: segue o tema escuro da app, senão ficaria um quadro branco no
+  meio da página.
+- **Não é ECharts**: são divs posicionados por dia dentro de uma tabela com as quatro primeiras
+  colunas congeladas (`position:sticky`). A tabela **precisa de `width` explícito** — `table-layout:
+  fixed` é ignorado sem ele, e o navegador estica a coluna do nome até caber o nome mais comprido,
+  empurrando a linha do tempo para fora da tela.
+- A semana estica para ocupar a largura disponível (mínimo 32 px, aí passa a rolar). As linhas de
+  `build_gantt_rows` levam `task_id` só para esta tela — clicar abre a tarefa; PDF e XLSX ignoram.
+- `GET /dashboard/gantt/folder/{id}` (sem `/detail`) continua a devolver só as tarefas de topo e
+  serve as outras duas telas de Gantt, a da lista (`#/gantt/<list_id>`) e a da tarefa
+  (`#/gantt/task/<id>`), que seguem no gráfico simples de semanas.
 
 **Busca** (`GET /dashboard/search?q=`, campo na barra do topo do dashboard desktop, atalho `/`):
 todas as palavras têm de aparecer no nome, sem diferenciar caixa nem acento. O filtro é em Python

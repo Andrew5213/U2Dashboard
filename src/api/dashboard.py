@@ -6,6 +6,7 @@ from src.core.logging import logger
 from src.models.dashboard_schemas import DashboardEnvelope
 from src.services.cache_service import CacheService
 from src.services.dashboard_service import DashboardService
+from src.services.gantt_report_service import GanttReportService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -113,6 +114,21 @@ async def get_gantt_overview(svc: DashboardService = Depends(_svc)):
 async def get_gantt_folder(folder_id: str, svc: DashboardService = Depends(_svc)):
     data = await svc.get_gantt_tasks_by_folder(folder_id)
     return DashboardEnvelope(data=[t.model_dump() for t in data])
+
+
+@router.get("/gantt/folder/{folder_id}/detail", response_model=DashboardEnvelope)
+async def get_gantt_folder_detail(folder_id: str, lang: str = "pt",
+                                  db: AsyncSession = Depends(get_db)):
+    """O Gantt detalhado da província — a mesma árvore que o PDF e o XLSX.
+
+    Separado de `/gantt/folder/{id}`, que devolve só as tarefas de topo e alimenta
+    as telas de lista e de tarefa.
+    """
+    try:
+        data = await GanttReportService(db).build_screen_data(folder_id, lang)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return DashboardEnvelope(data=data)
 
 
 @router.get("/gantt/task/{task_id}", response_model=DashboardEnvelope)

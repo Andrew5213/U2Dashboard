@@ -85,6 +85,26 @@ async def test_folders_endpoint(app_with_db):
 
 
 @pytest.mark.asyncio
+async def test_gantt_folder_detail_endpoint(app_with_db):
+    """O Gantt detalhado da tela: a mesma árvore do PDF, em JSON."""
+    async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+        resp = await client.get("/dashboard/gantt/folder/f1/detail")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["folder_name"] == "Studios"
+    # as tarefas semeadas não têm datas, então a lista fica fora do gráfico
+    assert data["undated_lists"] == ["Studio CT3"] and data["lists"] == []
+    assert isinstance(data["today"], str) and isinstance(data["range_start"], str)
+
+
+@pytest.mark.asyncio
+async def test_gantt_folder_detail_unknown_folder_is_404(app_with_db):
+    async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
+        resp = await client.get("/dashboard/gantt/folder/nao-existe/detail")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_folder_endpoint(app_with_db):
     async with AsyncClient(transport=ASGITransport(app=app_with_db), base_url="http://test") as client:
         resp = await client.get("/dashboard/folder/f1")

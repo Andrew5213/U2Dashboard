@@ -315,6 +315,42 @@ class TestGanttReport:
         assert pdf._label_every() > 1               # mais de um ano: o rótulo salta semanas, a grade não
         assert (await GanttReportService(db).generate_pdf("F")).startswith(b"%PDF")
 
+    async def test_screen_data_is_the_same_gantt_with_iso_dates(self, repo, db):
+        """A tela parte do mesmo _build_data do PDF; só as datas viram texto ISO.
+
+        Se divergirem, a mesma província mostra um cronograma na tela e outro no
+        PDF que o cliente imprime.
+        """
+        from src.services.gantt_report_service import GanttReportService
+
+        pdf_data = await self._data(db)
+        screen = await GanttReportService(db).build_screen_data("F")
+
+        assert screen["today"] == pdf_data["today"].isoformat()
+        assert screen["range_start"] == pdf_data["range_start"].isoformat()
+        assert screen["range_end"] == pdf_data["range_end"].isoformat()
+        assert screen["undated_lists"] == pdf_data["undated_lists"]
+
+        site = next(lst for lst in screen["lists"] if lst["name"] == "Site FM")
+        origem = next(lst for lst in pdf_data["lists"] if lst["name"] == "Site FM")
+        assert [r["name"] for r in site["rows"]] == [r["name"] for r in origem["rows"]]
+        assert [r["level"] for r in site["rows"]] == [r["level"] for r in origem["rows"]]
+
+        cura = next(r for r in site["rows"] if r["name"] == "Cura do Concreto")
+        assert cura["start"] == TODAY.isoformat()
+        assert cura["end"] == (TODAY + timedelta(days=3)).isoformat()
+        assert cura["progress_pct"] == 40
+        # a tela abre a tarefa ao clicar: sem o id não há para onde ir
+        assert cura["task_id"]
+
+    async def test_screen_data_is_json_serializable(self, repo, db):
+        """O endpoint devolve isto como JSON — um `date` solto rebentaria lá, não aqui."""
+        import json
+
+        from src.services.gantt_report_service import GanttReportService
+
+        json.dumps(await GanttReportService(db).build_screen_data("F"))
+
     async def test_continuation_page_starts_below_the_letterhead(self, db):
         """O timbrado põe as logos no topo de toda página; a tabela da segunda em
         diante começava no topo e passava por cima delas."""
