@@ -869,68 +869,6 @@ body {
 }
 .mob-field-error.hidden { display: none; }
 
-/* ── Cards de documento ──────────────────────────────────────────── */
-.mob-doc-card {
-  background: var(--u2-panel);
-  border-radius: 14px;
-  border: 1px solid var(--u2-line);
-  padding: 14px;
-  margin-bottom: 8px;
-}
-
-.mob-doc-card-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.mob-doc-icon { flex-shrink: 0; color: var(--u2-red); }
-
-.mob-doc-info { flex: 1; min-width: 0; }
-
-.mob-doc-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--u2-white);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mob-doc-meta {
-  font-size: 11px;
-  color: var(--u2-gray);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.mob-doc-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.mob-doc-btn {
-  flex: 1;
-  text-align: center;
-  padding: 8px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  text-decoration: none;
-  -webkit-tap-highlight-color: transparent;
-}
-.mob-doc-btn-download { background: rgba(232,38,42,.12); color: var(--u2-red); }
-.mob-doc-btn-download:active { background: rgba(232,38,42,.14); }
-.mob-doc-btn-delete { background: rgba(232,38,42,.12); color: var(--u2-red); }
-.mob-doc-btn-delete:active { background: rgba(232,38,42,.18); }
-
 /* ── Cronogramas: ações de cada província ────────────────────────── */
 .mob-gantt-actions { display: flex; gap: 8px; margin-top: 10px; }
 .mob-gantt-btn {

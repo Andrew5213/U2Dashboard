@@ -134,8 +134,23 @@ html.embed .embed-backdrop {
 }
 html.embed.embed-panel-open .embed-backdrop { opacity: 1; pointer-events: auto; }
 
-/* ── Mobile: a marca já aparece na barra do Nextcloud ─────────────────────── */
+/* ── Mobile (Nextcloud no celular) ────────────────────────────────────────────
+   A página mobile aberta num iframe fica sob a barra do Nextcloud, então cada
+   pixel de altura conta. Como no desktop: a marca já está na moldura, o cabeçalho
+   encolhe e quem está a ver aparece no menu. A navegação continua no menu em
+   gaveta — uma barra de abas fixa embaixo foi tentada e brigava com a caixa de
+   texto do assistente. */
 html.embed .mob-header > img { display: none; }
+html.embed body { padding-top: 0 !important; }   /* o entalhe é do Nextcloud, não do iframe */
+html.embed .mob-header { height: 44px; padding: 0 8px; gap: 8px; }
+html.embed .mob-main { padding-top: 8px; }
+html.embed .mob-drawer-title { display: flex; align-items: baseline; gap: 10px; }
+html.embed .mob-drawer-title .embed-user {
+  margin-left: 0;
+  max-width: none;
+  font-size: 12px;
+  font-weight: 500;
+}
 
 /* ── Diálogo (substitui prompt/confirm dentro do iframe) ──────────────────── */
 .u2-dialog-overlay {

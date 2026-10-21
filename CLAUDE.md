@@ -210,6 +210,12 @@ fazem nada** — o layout com barra lateral é o mesmo de antes (tag `backup/lay
   iframe chamam os nativos; dentro, abrem um diálogo da própria página — num iframe de outra origem os nativos
   aparecem como "uma página incorporada diz…" e podem ser bloqueados pelo navegador. Os módulos desligados
   (`rdo.html`, `progress_civil.html`) ainda usam os nativos e não carregam o `embed.js`.
+- **Mobile (Nextcloud no celular)**: o template mobile já era escolhido pelo user-agent dentro do iframe; o
+  modo embutido só o ajusta (`html.embed .mob-*` em `embed.css`): cabeçalho de 44 px em vez de 52, sem o
+  `padding-top` do safe-area (o entalhe é do Nextcloud) e sem o logo. A navegação segue no menu em gaveta e o
+  nome de quem está a ver (JWT) aparece no título dessa gaveta — `showUser` em `embed.js` cai nela quando não
+  há o botão "Relatórios" do desktop. Uma barra de abas fixa embaixo já foi tentada e brigava com a caixa de
+  texto do assistente.
 - **Teste sem Nextcloud**: `?embed=1` força o modo e `?embed=0` desliga (a escolha fica em `sessionStorage`
   até fechar a aba).
 - **Quem pode embutir**: `EMBED_ALLOWED_ORIGINS` (ex.: `https://cloud.exemplo.com`) faz toda resposta levar

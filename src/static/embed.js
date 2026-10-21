@@ -124,15 +124,20 @@
     return token;
   }
 
+  // Desktop: ao lado do botão "Relatórios". Mobile (sem esse botão): no título da
+  // gaveta do menu, que é onde a navegação mora.
   function showUser(user) {
+    if (document.getElementById('embed-user')) return;
     var button = document.getElementById('embed-reports-btn');
-    if (!button || document.getElementById('embed-user')) return;
+    var menuTitle = document.querySelector('#main-menu .mob-drawer-title');
+    if (!button && !menuTitle) return;
     var chip = document.createElement('span');
     chip.id = 'embed-user';
     chip.className = 'embed-user';
     chip.textContent = user.display_name || user.uid;
     chip.title = [user.display_name, user.email, user.uid].filter(Boolean).join(' · ');
-    button.parentNode.insertBefore(chip, button);
+    if (button) button.parentNode.insertBefore(chip, button);
+    else menuTitle.appendChild(chip);
   }
 
   window.U2User = null;
