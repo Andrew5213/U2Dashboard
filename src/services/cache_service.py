@@ -52,42 +52,27 @@ class CacheService:
                     summary.errors.append(f"members: {exc}")
                     await self._db.rollback()
 
-                # 3) Folders + listas + tasks — SEM commits intermediários.
-                # Todos os dados ficam na sessão e são gravados atomicamente ao final.
-                # Isso impede que o dashboard leia estados parciais (ex: pasta com 0 tasks
-                # porque o commit ocorreu antes de carregar as tasks daquela lista).
-                seen_folder_ids: set[str] = set()
-                seen_list_ids: set[str] = set()
+                # 3) Folders + listas + tasks. Primeiro LÊ tudo do ClickUp (leva minutos) e só
+                # depois grava, numa transação curta e única: o dashboard continua a ver dados
+                # completos ou o estado anterior, e o banco não fica travado durante a leitura.
+                # Antes a transação abria no primeiro upsert e só fechava no fim — o motor do
+                # cronograma, que grava no mesmo SQLite, falhava com "database is locked".
+                folders = await self._fetch_folders(clickup, space_id, summary)
 
-                folders = await clickup.get_folders(space_id)
-                for folder in folders:
-                    folder_id = str(folder["id"])
-                    seen_folder_ids.add(folder_id)
-                    await self._repo.upsert_folder(folder, space_id)
-                    summary.folders_updated += 1
-
-                    lists = await clickup.get_lists_in_folder(folder_id)
-                    for lst in lists:
-                        list_id = str(lst["id"])
-                        seen_list_ids.add(list_id)
+                for folder, lists in folders:
+                    folder_id = str(folder["id"]) if folder else None
+                    if folder:
+                        await self._repo.upsert_folder(folder, space_id)
+                        summary.folders_updated += 1
+                    for lst, tasks in lists:
                         await self._repo.upsert_list(lst, space_id, folder_id)
                         summary.lists_updated += 1
+                        if tasks is not None:
+                            await self._store_tasks(str(lst["id"]), tasks, summary)
 
-                        await self._load_tasks(clickup, list_id, summary)
-                        await asyncio.sleep(0.6)
-
-                # 4) Listas sem folder
-                folderless = await clickup.get_folderless_lists(space_id)
-                for lst in folderless:
-                    list_id = str(lst["id"])
-                    seen_list_ids.add(list_id)
-                    await self._repo.upsert_list(lst, space_id, None)
-                    summary.lists_updated += 1
-
-                    await self._load_tasks(clickup, list_id, summary)
-                    await asyncio.sleep(0.6)
-
-                # 5) Poda de listas e pastas apagadas no ClickUp (não retornadas mais pela API)
+                # 4) Poda de listas e pastas apagadas no ClickUp (não retornadas mais pela API)
+                seen_folder_ids = {str(folder["id"]) for folder, _ in folders if folder}
+                seen_list_ids = {str(lst["id"]) for _, lists in folders for lst, _ in lists}
                 summary.lists_removed = await self._repo.mark_lists_stale(space_id, seen_list_ids)
                 summary.folders_removed = await self._repo.mark_folders_stale(space_id, seen_folder_ids)
 
@@ -127,20 +112,40 @@ class CacheService:
         )
         return summary
 
-    async def _load_tasks(self, clickup: ClickUpClient, list_id: str, summary: CacheRefreshSummary) -> None:
+    async def _fetch_folders(
+        self, clickup: ClickUpClient, space_id: str, summary: CacheRefreshSummary,
+    ) -> list[tuple[dict | None, list[tuple[dict, list[dict] | None]]]]:
+        """Pastas (None = listas sem pasta) com as suas listas e as tarefas de cada uma, lidas
+        do ClickUp sem tocar no banco. Tarefas None = a leitura daquela lista falhou."""
+        out: list[tuple[dict | None, list[tuple[dict, list[dict] | None]]]] = []
+        for folder in await clickup.get_folders(space_id):
+            lists = await clickup.get_lists_in_folder(str(folder["id"]))
+            out.append((folder, [(lst, await self._fetch_tasks(clickup, str(lst["id"]), summary)) for lst in lists]))
+        folderless = await clickup.get_folderless_lists(space_id)
+        out.append((None, [(lst, await self._fetch_tasks(clickup, str(lst["id"]), summary)) for lst in folderless]))
+        return out
+
+    async def _fetch_tasks(
+        self, clickup: ClickUpClient, list_id: str, summary: CacheRefreshSummary,
+    ) -> list[dict] | None:
         try:
-            tasks = await clickup.get_tasks(list_id, include_closed=True)
-            seen: set[str] = set()
-            for task in tasks:
-                await self._repo.upsert_task(task, list_id)
-                seen.add(str(task["id"]))
-                summary.tasks_updated += 1
-            await self._repo.mark_tasks_stale(list_id, seen)
-            # Sem commit aqui — o refresh_cache_full commita tudo atomicamente ao final
+            return await clickup.get_tasks(list_id, include_closed=True)
         except Exception as exc:
             logger.error(f"Cache: erro ao carregar tasks da lista {list_id}: {exc}")
             summary.errors.append(f"list {list_id}: {exc}")
-            # Sem rollback — erros de lista são coletados e o refresh continua nas demais listas
+            # erros de lista são coletados e o refresh continua nas demais listas
+            return None
+        finally:
+            await asyncio.sleep(0.6)
+
+    async def _store_tasks(self, list_id: str, tasks: list[dict], summary: CacheRefreshSummary) -> None:
+        seen: set[str] = set()
+        for task in tasks:
+            await self._repo.upsert_task(task, list_id)
+            seen.add(str(task["id"]))
+            summary.tasks_updated += 1
+        await self._repo.mark_tasks_stale(list_id, seen)
+        # Sem commit aqui — o refresh_cache_full commita tudo atomicamente ao final
 
     async def refresh_list(self, list_id: str) -> int:
         count = 0

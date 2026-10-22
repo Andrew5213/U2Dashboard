@@ -65,16 +65,22 @@ class ClickUpClient:
         data = await self._get(f"/folder/{folder_id}/list", {"archived": "false"})
         return data.get("lists", [])
 
-    async def get_tasks(self, list_id: str, include_closed: bool = True) -> list[dict]:
+    async def get_tasks(
+        self, list_id: str, include_closed: bool = True, date_updated_gt: int | None = None,
+    ) -> list[dict]:
+        """`date_updated_gt` (ms): só as tarefas alteradas depois desse instante."""
         all_tasks: list[dict] = []
         page = 0
         while True:
-            data = await self._get(f"/list/{list_id}/task", {
+            params = {
                 "include_closed": str(include_closed).lower(),
                 "subtasks": "true",
                 "include_group_assignees": "true",
                 "page": str(page),
-            })
+            }
+            if date_updated_gt is not None:
+                params["date_updated_gt"] = str(date_updated_gt)
+            data = await self._get(f"/list/{list_id}/task", params)
             tasks = data.get("tasks", [])
             if not tasks:
                 break

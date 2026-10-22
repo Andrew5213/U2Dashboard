@@ -378,6 +378,40 @@ class TestManualDates:
         tasks = self._chain(d={"not_before": date(2026, 10, 24)})       # sábado
         assert self._dates(tasks, "d") == (date(2026, 10, 26), date(2026, 10, 27))
 
+    def test_fixed_start_beats_the_predecessor(self):
+        tasks = self._chain(b={"fixed_start": date(2026, 10, 20)})        # a termina 21
+        assert self._dates(tasks, "b") == (date(2026, 10, 20), date(2026, 10, 21))
+        assert self._dates(tasks, "c") == (date(2026, 10, 22), date(2026, 10, 22))
+
+    def test_fixed_start_stays_when_the_predecessor_slips(self):
+        tasks = self._chain(a={"duration": 6}, b={"fixed_start": date(2026, 10, 22)})   # a até 26
+        assert self._dates(tasks, "b") == (date(2026, 10, 22), date(2026, 10, 23))
+
+    def test_fixed_start_beats_the_floor_of_its_block(self):
+        tasks = self._chain(a={"not_before": date(2026, 10, 26)}, b={"fixed_start": date(2026, 10, 21)})
+        assert self._dates(tasks, "b")[0] == date(2026, 10, 21)
+
+    def test_fixed_start_on_a_rest_day_starts_on_the_next_workday(self):
+        tasks = self._chain(d={"fixed_start": date(2026, 10, 24)})        # sábado
+        assert self._dates(tasks, "d") == (date(2026, 10, 26), date(2026, 10, 27))
+
+    def test_fixed_start_in_the_past_of_a_task_not_started_moves_to_today(self):
+        cal = WorkCalendar(start=date(2026, 10, 5), weekend_mask="0000011")
+        tasks = self._chain(d={"fixed_start": date(2026, 10, 6)})
+        result = compute_schedule(tasks, cal, date(2026, 10, 15)).results["d"]
+        assert result.start == date(2026, 10, 15)
+
+    def test_fixed_start_is_ignored_once_the_task_started(self):
+        tasks = self._chain(d={"fixed_start": date(2026, 11, 2), "percent": 50, "start": date(2026, 10, 14)})
+        assert self._dates(tasks, "d")[0] == date(2026, 10, 14)
+
+    def test_a_task_in_progress_with_no_work_left_does_not_end_in_the_past(self):
+        """Marco sem duração posto "em andamento" (fuzz de 2026-10-22, Saurimo): terminava ontem."""
+        tasks = self._chain(d={"duration": 0, "percent": 50, "start": date(2026, 10, 13)})
+        cal = WorkCalendar(start=date(2026, 10, 5), weekend_mask="0000011")
+        result = compute_schedule(tasks, cal, date(2026, 10, 15)).results["d"]
+        assert result.finish == date(2026, 10, 15)
+
     def test_not_before_is_ignored_once_the_task_started(self):
         tasks = self._chain(d={"not_before": date(2026, 11, 2), "percent": 50, "start": date(2026, 10, 14)})
         assert self._dates(tasks, "d")[0] == date(2026, 10, 14)

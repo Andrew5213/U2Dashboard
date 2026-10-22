@@ -182,3 +182,48 @@ async def test_refresh_full_task_error_continues(db):
 
     assert len(summary.errors) > 0
     assert summary.tasks_updated == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_full_does_not_hold_the_database_while_reading_clickup(tmp_path):
+    """O refresh leva minutos a ler o ClickUp. Enquanto lê, outra conexão (o motor do
+    cronograma, um webhook) tem de conseguir gravar: antes, a transação ficava aberta
+    do primeiro upsert até o commit final e o motor falhava com "database is locked"."""
+    import sqlite3
+
+    path = tmp_path / "cache.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{path}", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    blocked: list[str] = []
+
+    def other_writer() -> None:
+        con = sqlite3.connect(path, timeout=0.2)
+        try:
+            con.execute("CREATE TABLE IF NOT EXISTS probe (x INTEGER)")
+            con.execute("INSERT INTO probe VALUES (1)")
+            con.commit()
+        except sqlite3.OperationalError as exc:
+            blocked.append(str(exc))
+        finally:
+            con.close()
+
+    tasks = [{"id": "t1", "name": "Task 1", "status": {"status": "open", "type": "open"}, "list": {"id": "l1"}}]
+
+    async def get_tasks(list_id, include_closed=True):
+        other_writer()             # o motor grava enquanto o refresh espera o ClickUp
+        return [{**t, "id": f"{t['id']}-{list_id}"} for t in tasks]
+
+    mock_client = _make_clickup_client(lists=[{"id": "l1", "name": "L1"}, {"id": "l2", "name": "L2"}])
+    mock_client.get_tasks = AsyncMock(side_effect=get_tasks)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            with patch("src.services.cache_service.ClickUpClient", return_value=mock_client), \
+                 patch("asyncio.sleep", new_callable=AsyncMock):
+                summary = await CacheService(session).refresh_cache_full("s1", trigger="test")
+    finally:
+        await engine.dispose()
+
+    assert blocked == []
+    assert summary.tasks_updated == 2
+    assert summary.errors == []

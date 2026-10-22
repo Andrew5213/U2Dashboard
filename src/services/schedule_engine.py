@@ -90,7 +90,11 @@ class ScheduleTask:
     start: date | None = None        # início hoje gravado (vale como início real se em andamento)
     finished_on: date | None = None  # data real de conclusão
     cancelled: bool = False
-    # "não começar antes de": início digitado à mão numa tarefa não iniciada
+    # "começa em": início digitado à mão numa tarefa não iniciada. Vence as antecessoras
+    # (como o "Must start on" do MS Project) — só não começa antes de hoje
+    fixed_start: date | None = None
+    # "não começar antes de": início digitado num grupo/disciplina, que vale para todas as
+    # tarefas do bloco — aqui as antecessoras continuam a valer
     not_before: date | None = None
     # datas mantidas como estão (fora do alcance de uma edição) — as sucessoras
     # que forem recalculadas partem delas
@@ -179,10 +183,13 @@ def compute_schedule(
 
         blocks = _blocked_positions(calendar, t.pauses)
         if not reschedule or p <= 0:
-            floor = max(0.0, pred_finish)
+            if t.fixed_start:
+                floor = float(calendar.index_of(t.fixed_start))
+            else:
+                floor = max(0.0, pred_finish)
+                if t.not_before:
+                    floor = max(floor, float(calendar.index_of(t.not_before)))
             n = max(floor, float(today_pos)) if reschedule else floor
-            if t.not_before:
-                n = max(n, float(calendar.index_of(t.not_before)))
             n, o = _work_through(n, m, blocks)
             start_day = calendar.date_at(math.floor(n + _EPS))
             finish_day = calendar.date_at(_finish_index(n, o))
@@ -198,7 +205,8 @@ def compute_schedule(
             # o que falta é feito a partir de hoje, pulando as pausas que vierem
             _, rest_end = _work_through(float(today_pos), m * (1 - p), blocks)
             o = round(max(n, rest_end), 6)
-            finish_day = max(calendar.date_at(_finish_index(n, o)), start_day)
+            # aberta, nunca termina antes de hoje (um marco sem duração terminava ontem)
+            finish_day = max(calendar.date_at(_finish_index(n, o)), start_day, calendar.date_at(today_pos))
 
         pos_start[tid], pos_finish[tid] = n, o
         dates[tid] = (start_day, finish_day)

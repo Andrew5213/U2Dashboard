@@ -148,6 +148,8 @@ After each handled webhook event, the cache is updated and an SSE broadcast fire
 
 **Deleted-task pruning on cache refresh**: `CacheRepository.mark_tasks_stale(list_id, seen_ids)` diffs the full task list against what ClickUp currently returns (which includes subtasks, since `get_tasks()` always passes `subtasks=true`) and deletes any cached row not in that set — this covers both top-level tasks and subtasks with no parent-vs-subtask distinction. (This method used to filter to `parent_task_id IS NULL` only, so a subtask deleted in ClickUp was never pruned by a refresh, only ever by the `taskDeleted` webhook above — the two paths are now consistent.)
 
+**Cache refresh reads first, writes later**: `refresh_cache_full` fetches every folder, list and task from ClickUp into memory (`_fetch_folders`, ~150 s for the space) and only then upserts everything in one short transaction. It used to upsert while walking, holding SQLite's write lock for the whole walk — the schedule engine (same database, `busy_timeout` 30 s) failed with `database is locked` every 30 minutes in production, after it had already written to ClickUp, which could turn its own dates into "typed" edits on the next run. `test_refresh_full_does_not_hold_the_database_while_reading_clickup` guards it.
+
 **Deleted-list/folder pruning on cache refresh**: `CacheService.refresh_cache_full` collects every folder/list ID actually returned by the ClickUp API during the walk, then calls `CacheRepository.mark_lists_stale(space_id, seen_list_ids)` and `mark_folders_stale(space_id, seen_folder_ids)` once at the end to delete any cached folder/list not in those sets. There is no webhook equivalent for list/folder deletion (ClickUp doesn't send one), so a deleted list/folder only disappears from the dashboard/reports after the next full refresh (`cache_worker` interval, `POST /dashboard/refresh`, or app restart) — never immediately. SQLite doesn't enforce foreign keys here, so `mark_lists_stale` manually cascades: it deletes the list's tasks and `discipline_weights` rows before deleting the list row itself.
 
 ## Dashboard & Cache Layer
@@ -616,7 +618,7 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 | Status | status nativo | os dois — ver regra abaixo |
 | Antecessores | dependências nativas ("waiting on") | utilizador |
 | Início / fim | `start_date` / `due_date` **nativos**, só o dia | motor; o utilizador pode mexer numa folha — ver "Datas digitadas à mão" |
-| Início fixado | campo `Início fixado` (date): "não começar antes de" | motor, quando alguém muda o início à mão; o utilizador apaga para soltar |
+| Início fixado | campo `Início fixado` (date). Numa tarefa: "começa em" (vence as antecessoras). Num grupo/disciplina: "não começar antes de" para o bloco | motor, quando alguém muda o início à mão (da tarefa ou do grupo); o utilizador apaga para soltar |
 | Pausa | campos `Pausa de` / `Pausa até` (date) / `Motivo da pausa` (short_text) + `Histórico de pausas` (text) | utilizador (a pausa atual); motor (arquiva no histórico) — ver "Pausas" |
 | Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
 | Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
@@ -650,39 +652,77 @@ recálculo (exceto um status fora do trio, que é respeitado).
 **Datas digitadas à mão** (numa tarefa-folha). `schedule_task_state` guarda também o início e o
 término que o motor deixou em cada tarefa; uma data diferente foi mexida por alguém e vira **entrada**
 do cálculo em vez de ser desfeita (`_typed_dates` detecta, `_interpret_edit` traduz):
-- não iniciada: o início vira o campo **Início fixado** ("não começar antes de" — `not_before` no
-  motor) e o vencimento vira a **duração** que faz a tarefa terminar nesse dia, contada de onde ela
+- não iniciada: o início vira o campo **Início fixado** ("começa em" — `fixed_start` no motor) e o
+  vencimento vira a **duração** que faz a tarefa terminar nesse dia, contada de onde ela
   começa — inclusive a meio de um dia, quando a antecessora termina a meio (durações de 0,25/0,5 e
   curas "Corrido" deixam frações): por isso a duração pode sair fracionada (ex.: 4,5). Em "Corrido",
-  dias corridos. Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
+  a duração em dias corridos que, convertida (× 6/7), termina nesse dia — também fracionada (ex.:
+  17,5); antes saíam dias corridos inteiros e o fim caía um dia depois (fuzz de 2026-10-22). Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
 - em andamento: o início já valia como início real; o vencimento vira a duração cujo restante
-  (`duração × (1 − %)`), contado de hoje, termina nesse dia (50% e 5 dias até o vencimento → 10);
-  vencimento antes de hoje é recusado com aviso;
+  (`duração × (1 − %)`), contado de hoje, termina nesse dia (50% e 5 dias até o vencimento → 10;
+  em "Corrido", convertido para dias corridos); vencimento antes de hoje é recusado com aviso. Uma
+  tarefa aberta nunca termina antes de hoje (um marco sem duração "em andamento" terminava ontem);
 - concluída: o vencimento vira a `Data de Conclusão`.
 - `_interpret_edit` usa um cálculo prévio, sem as edições, para saber a posição exata (com a fração)
   de cada tarefa; as folhas fora do alcance da edição só são fixadas (`pinned`) se esse cálculo as
   moveria — fixar todas perdia a fração de dia e empurrava a sucessora meio dia (achado no teste real).
-- **O estado vem do ClickUp:** depois de gravar, a lista é relida (`_dates_after_writes`) e o que o
-  ClickUp guardou vale como "o que o motor deixou"; se ele ficou com outra data, sai um aviso. Antes o
-  estado guardava o que tinha sido *enviado*, e uma diferença virava "edição fantasma" (Início fixado e
-  comentário numa tarefa que ninguém mexeu — visto no teste real de 2026-10-19).
+- **O estado vem do ClickUp:** cada tarefa gravada tem três leituras — o enviado, a resposta do PUT e a
+  releitura da lista no fim (`_dates_after_writes`). Resposta diferente do enviado = o ClickUp guardou
+  outra coisa, e é isso que fica (senão viraria "edição fantasma", visto no teste real de 2026-10-19).
+  Resposta ou releitura com **uma só** das datas nova e a outra ainda a antiga = o ClickUp aplicou a
+  gravação pela metade (visto no QA de 2026-10-22: o início não fica, o vencimento sim; causa não
+  identificada, raro) — `_write_dates_again` regrava na hora. Releitura diferente de outro jeito =
+  alguém mexeu depois do motor: o estado fica com o que o motor gravou e a execução seguinte trata a
+  diferença como edição (antes era desfeita em silêncio).
 
 Nessa execução **só a tarefa mexida e as que dependem dela** (`dependents_of`, com as dependências de
 resumo expandidas) — mais os grupos e disciplinas que as contêm — têm as datas regravadas. As outras
 folhas entram no motor com as datas de agora (`pinned`), e as sucessoras partem delas; o recálculo
-seguinte sem edição volta a ser completo. A dependência vence o Início fixado: um início antes do fim
-da antecessora (ou num dia que já passou, numa tarefa não iniciada) é ajustado e o motor deixa um
-**comentário na tarefa** explicando. Apagar o Início fixado devolve a tarefa às dependências. O campo é
-criado sozinho na primeira vez que for preciso (as listas importadas antes não o têm) e faz parte do
-`FIELD_DEFS` do importador. Editar um resumo continua a ser desfeito. Estado sem datas (de antes deste
-recurso, ou tarefa nova) não conta como edição — o primeiro cálculo só registra as datas.
+seguinte sem edição volta a ser completo. **A data digitada vence a dependência** (decisão do
+utilizador em 2026-10-22, como o "Must start on" do MS Project): uma tarefa com Início fixado começa
+nesse dia mesmo antes de a antecessora terminar, e continua lá se a antecessora atrasar depois; o motor
+deixa um **comentário de alerta** na tarefa. Só "hoje" ainda vence: numa tarefa não iniciada, um início
+que já passou vira hoje (com comentário). As sucessoras dela seguem a partir dali. Apagar o Início
+fixado devolve a tarefa às dependências. O campo é criado sozinho na primeira vez que for preciso (as
+listas importadas antes não o têm) e faz parte do `FIELD_DEFS` do importador. Estado sem datas (de antes
+deste recurso, ou tarefa nova) não conta como edição — o primeiro cálculo só registra as datas.
+
+**Datas digitadas num grupo ou disciplina** (decisões de 2026-10-22). Antes eram desfeitas em silêncio
+— era a maior parte dos "mudei a data e ela voltou" relatados. O estado guarda agora as datas de todos
+os resumos, não só da primeira linha:
+- **início** → grava o **Início fixado do próprio resumo**, que vale como "não começar antes de" para
+  todas as tarefas do bloco (`not_before` no motor, via `_block_floors`); as dependências continuam a
+  valer. Se o bloco não pôde começar no dia digitado, o motor comenta no grupo o que o segurou. É um
+  piso: não puxa nada para antes do início do projeto;
+- o bloco **leva junto** o Início fixado das tarefas dele, deslocado pela mesma distância — senão uma
+  tarefa fixada seguraria o bloco no lugar velho, ou perderia a vantagem que tinha sobre a antecessora;
+- arrastar a barra do grupo (as duas datas com a mesma distância) = mudar o início;
+- **vencimento** → desfeito, com comentário (o fim de um resumo vem das tarefas dele);
+- **primeira linha**: o início dela continua a ser o início do projeto. Como é um resumo, com uma tarefa
+  iniciada ou concluída antes ela continua a mostrar essa data — o motor comenta na linha que o início
+  do projeto mudou. A "primeira linha" é a disciplina **criada primeiro**: numa lista **duplicada** no
+  ClickUp a ordem de criação pode sair outra (no space "PEMx - RNA (Teste 2)" é a Logística).
+
+**Proteções contra quem mexe durante uma execução** (QA de 2026-10-22):
+- antes de cada lote de `_CHECK_EVERY` gravações, `_changed_since` pergunta ao ClickUp
+  (`get_tasks(date_updated_gt=…)`) o que mudou desde a leitura; tarefa que alguém mexeu entretanto não é
+  regravada — fica para a execução seguinte, que o webhook dessa edição dispara. Antes, editar uma
+  tarefa poucos segundos depois de outra (enquanto o motor gravava as dependentes) era desfeito;
+- **estado velho** (banco restaurado de backup, estado que não chegou a ser salvo): mais de
+  `_MAX_EDITS_PER_RUN` datas diferentes do estado guardado numa execução não é uma pessoa — com "a data
+  digitada vence a dependência", isso criaria dezenas de "começa em" falsos (aconteceu no QA). As datas
+  guardadas são descartadas, a execução só recalcula e regista, e sai um aviso. **Nunca rodar o motor
+  contra as listas de produção com outro banco** (um `dry_run` não grava nada e é seguro);
+- erro 5xx do ClickUp é tentado de novo (`_call`), como o 429 — perdia-se a execução inteira.
 - **Fuso:** as datas são lidas no fuso da obra (`ms_to_site_date`, `SCHEDULE_UTC_OFFSET_HOURS`): uma
   data escolhida no ClickUp sem hora chega como a meia-noite de quem digitou, e a meia-noite de Angola em
   UTC já é o dia anterior. A data digitada é regravada pelo motor para a dashboard, que lê em UTC,
   mostrar o mesmo dia: o ClickUp guarda data sem hora como a meia-noite do fuso de quem grava (o token
   da app: 03:00 UTC, conferido em 2026-10-15), não o instante enviado.
-- **Limitação:** uma data digitada no intervalo entre a leitura da lista e a gravação do motor (alguns
-  segundos) pode ser sobrescrita sem virar edição.
+- **Limitação:** sobra uma janela de ~1 s (entre a checagem e o PUT de um lote) em que uma data
+  digitada pode ser sobrescrita sem virar edição.
+- **Log:** cada execução com edições regista o que cada data virou (`_Edit.describe`) — antes só havia a
+  contagem, e reconstruir um "a data voltou" a partir do log era impossível.
 
 **Sem laço de webhook**: `ScheduleService.recalculate` grava só as diferenças. As gravações disparam
 webhooks, que agendam outro recálculo, que não encontra nada para gravar. Qualquer campo novo
@@ -698,7 +738,14 @@ feriados muda. `POST /schedule/{list_id}/recalculate?dry_run=true` mostra o que 
 
 **Pré-requisitos no space (manuais, verificados em 2026-10-08):** *Nested Subtasks* ligado e
 *Reschedule Dependencies* **desligado** — ligado, o ClickUp move sozinho as tarefas dependentes com
-regras próprias (sem feriados nem sábado útil) e briga com o motor. Todo membro de uma equipe precisa
+regras próprias (sem feriados nem sábado útil) e briga com o motor. **Em 2026-10-22 a API mostrava
+`remap_dependency_settings: enabled` no space de produção** (e no Teste 2): gravações pela API não
+disparam o reagendamento (testado), mas pela tela não deu para testar — conferir em ClickApps.
+**Automação do ClickUp:** há uma que grava `Data de Conclusão` = hoje quando o status vira concluído
+(veio na cópia do space; quase certamente existe em produção) — ela sobrescreve uma data real
+preenchida **antes** de concluir. O motor já põe hoje quando o campo está vazio, então a automação é
+redundante; para registar uma data real, preencher o campo **depois** de concluir (ou mudar o
+vencimento da tarefa concluída). Todo membro de uma equipe precisa
 ter acesso à lista, senão o ClickUp recusa a atribuição (`ACCESS_200`).
 
 **Dashboard**: o cache guarda `progress_pct` / `duration_days` / `calendar_type`
@@ -990,6 +1037,7 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada), datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso), início pela primeira linha e dependências entre disciplinas
+- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx
 - `test_schedule_pauses.py` — pausas: histórico (leitura/escrita), arquivamento com junção de pausas contíguas e o efeito no motor
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)

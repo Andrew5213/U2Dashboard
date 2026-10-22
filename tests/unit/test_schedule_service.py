@@ -74,6 +74,11 @@ class FakeClickUp:
             t.setdefault("date_created", str(1_000 + i))
         self.tasks = {t["id"]: t for t in tasks}
         self.store_instead: dict[str, dict] = {}      # gravação que o ClickUp guarda diferente
+        self.after_write: dict[str, object] = {}      # o que uma pessoa faz logo depois da gravação
+        self.halfway_once: set[str] = set()           # a releitura mostra o início antigo (só 1 vez)
+        self.drop_start_once: set[str] = set()        # o PUT descarta o início (e a resposta mostra)
+        self.before_check = None                      # o que uma pessoa faz antes de o motor gravar
+        self.freshness_checks = 0
         self.start, self.content, self.fields = start, content, list(fields)
         self.holidays = list(holidays)
         self.writes: list[tuple] = []
@@ -93,10 +98,18 @@ class FakeClickUp:
             self.start = ms_to_date(payload["start_date"])
         self.writes.append(("list", list_id, payload))
 
-    async def get_tasks(self, list_id, include_closed=True):
+    async def get_tasks(self, list_id, include_closed=True, date_updated_gt=None):
         if list_id == "HOLIDAYS":
             return [{"id": f"h{i}", "due_date": str(date_to_ms(d))} for i, d in enumerate(self.holidays)]
+        if date_updated_gt is not None:
+            self.freshness_checks += 1
+            hook, self.before_check = self.before_check, None
+            if hook:
+                hook()                                 # a pessoa mexe entre a leitura e a gravação
         return copy.deepcopy(list(self.tasks.values()))
+
+    async def get_task(self, task_id):
+        return copy.deepcopy(self.tasks[task_id])
 
     def _check(self, task_id):
         if task_id in self.fail_on:
@@ -106,13 +119,25 @@ class FakeClickUp:
     async def update_task_fields(self, task_id, payload):
         self._check(task_id)
         task = self.tasks[task_id]
+        old_start = task.get("start_date")
         for key in ("start_date", "due_date"):
             if key in payload:
                 task[key] = str(self.store_instead.get(task_id, {}).get(key, payload[key]))
+        if task_id in self.drop_start_once and "start_date" in payload:
+            self.drop_start_once.discard(task_id)
+            task["start_date"] = old_start
         if "status" in payload:
             status = next(s for s in STATUSES if s["status"] == payload["status"])
             task["status"] = {"status": status["status"], "type": status["type"]}
         self.writes.append(("task", task_id, payload))
+        response = copy.deepcopy(task)                 # como a API: a tarefa depois da gravação
+        if task_id in self.halfway_once and "start_date" in payload:
+            self.halfway_once.discard(task_id)
+            task["start_date"] = old_start
+        hook = self.after_write.pop(task_id, None)
+        if hook:
+            hook()
+        return response
 
     async def set_custom_field(self, task_id, field_id, value, value_options=None):
         self._check(task_id)
@@ -409,6 +434,37 @@ def test_rate_limit_wait_reads_the_clickup_reset_header():
     assert schedule_service.rate_limit_wait(far) == 60
 
 
+async def test_clickup_server_errors_are_retried(monkeypatch):
+    """O ClickUp devolve 500/502/503 de vez em quando (7 vezes em 3 dias em produção) e a
+    execução inteira era perdida na primeira; agora tenta de novo, como já fazia no 429."""
+    monkeypatch.setattr(schedule_service, "_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(schedule_service, "_WRITE_PAUSE_SECONDS", 0)
+    calls = []
+
+    async def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise httpx.HTTPStatusError("erro", request=httpx.Request("GET", "https://x"),
+                                        response=httpx.Response(502 if len(calls) == 1 else 500))
+        return "ok"
+
+    assert await ScheduleService(None, None)._call(flaky) == "ok"
+    assert len(calls) == 3
+
+
+async def test_clickup_client_errors_are_not_retried(monkeypatch):
+    monkeypatch.setattr(schedule_service, "_RETRY_DELAY_SECONDS", 0)
+    calls = []
+
+    async def bad_request():
+        calls.append(1)
+        raise httpx.HTTPStatusError("erro", request=httpx.Request("PUT", "https://x"), response=httpx.Response(400))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await ScheduleService(None, None)._call(bad_request)
+    assert len(calls) == 1
+
+
 def test_today_follows_the_site_timezone(monkeypatch):
     from datetime import datetime, timezone
 
@@ -592,6 +648,31 @@ class TestManualDates:
         assert summary.changed == 0 and clickup.writes == []
         assert clickup.dates("a") == (date(2026, 10, 15), date(2026, 10, 16))
 
+    async def test_due_date_typed_on_a_calendar_day_task_is_honoured(self, db):
+        """Cura do betão ("Corrido"): o vencimento digitado vira a duração em dias corridos que
+        termina nesse dia — fracionada se for preciso, como nas tarefas de dias úteis. Antes saía
+        em dias corridos inteiros e a conversão para dias úteis (× 6/7) terminava um dia depois
+        (achado no fuzz de 2026-10-22, Saurimo)."""
+        clickup = FakeClickUp(_project())
+        await _run(db, clickup)                                   # c: 14 corridos, 16–29/10
+        clickup.type_dates("c", due=date(2026, 11, 2))
+
+        await _run(db, clickup)
+
+        assert clickup.dates("c") == (date(2026, 10, 16), date(2026, 11, 2))
+        assert float(clickup.value("c", F_DURATION)) == 17.5     # 15 dias úteis × 7/6
+
+    async def test_due_date_typed_on_a_calendar_day_task_in_progress_is_honoured(self, db):
+        clickup = FakeClickUp(_project())
+        await _run(db, clickup)
+        clickup.tasks["c"]["status"] = {"status": "fazendo", "type": "custom"}
+        clickup._set("c", F_PERCENT, {"current": "50"})
+        clickup.type_dates("c", start=date(2026, 10, 16), due=date(2026, 11, 2))
+
+        await _run(db, clickup, today=date(2026, 10, 16))
+
+        assert clickup.dates("c")[1] == date(2026, 11, 2)
+
     async def test_typed_dates_are_rewritten_in_the_engine_format(self, db):
         clickup = await _planned(db)
         clickup.type_dates("a", due=date(2026, 10, 16))
@@ -600,17 +681,29 @@ class TestManualDates:
 
         assert clickup.tasks["a"]["due_date"] == str(date_to_ms(date(2026, 10, 16)))
 
-    async def test_start_before_the_predecessor_finishes_loses_and_is_explained(self, db):
+    async def test_start_before_the_predecessor_finishes_wins_with_an_alert(self, db):
+        """Decisão de 22/10/2026: a data digitada vence a dependência ("Must start on")."""
         clickup = await _planned(db)
         clickup.type_dates("b", start=date(2026, 10, 13), due=date(2026, 10, 13))
 
         summary = await _run(db, clickup)
 
-        assert clickup.dates("b") == (date(2026, 10, 15), date(2026, 10, 15))     # a termina 14
+        assert clickup.dates("b") == (date(2026, 10, 13), date(2026, 10, 13))     # a termina 14
+        assert clickup.dates("c") == (date(2026, 10, 14), date(2026, 10, 16))     # c segue b
         comments = [w for w in clickup.writes if w[0] == "comment"]
         assert len(comments) == 1 and comments[0][1] == "b"
-        assert '"A"' in comments[0][2] and "14/10/2026" in comments[0][2] and "15/10/2026" in comments[0][2]
-        assert any("13/10/2026 não foi possível" in w for w in summary.warnings)
+        assert '"A"' in comments[0][2] and "14/10/2026" in comments[0][2] and "13/10/2026" in comments[0][2]
+        assert any("antes do fim" in w for w in summary.warnings)
+
+    async def test_a_fixed_start_stays_when_the_predecessor_slips_later(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("b", start=date(2026, 10, 17), due=date(2026, 10, 17))
+        await _run(db, clickup)
+        clickup.type_dates("a", due=date(2026, 10, 20))                          # a passa a terminar 20
+
+        await _run(db, clickup)
+
+        assert clickup.dates("b")[0] == date(2026, 10, 17)
 
     async def test_start_on_a_rest_day_just_moves_to_the_next_workday_without_a_comment(self, db):
         clickup = await _planned(db)
@@ -825,6 +918,207 @@ class TestEditsFoundInTheRealClickUp:
         assert second.ok
 
 
+class TestWritesRacingWithPeople:
+    """O motor relê a lista depois de gravar. O que mudou entre a gravação e a releitura
+    é de uma pessoa (ou um tropeço do ClickUp) — nunca pode ser desfeito em silêncio."""
+
+    async def test_an_edit_made_right_after_the_engine_wrote_the_task_is_kept(self, db):
+        clickup = await _planned(db)
+        clickup.after_write["c"] = lambda: clickup.type_dates("c", start=date(2026, 10, 22))
+        clickup.type_dates("a", due=date(2026, 10, 16))       # a cresce → b e c são regravadas
+
+        await _run(db, clickup)                                # a pessoa mexe em c logo depois do motor
+        second = await _run(db, clickup)
+        assert second.ok
+        assert clickup.dates("c") == (date(2026, 10, 22), date(2026, 10, 24))   # respeitada, 3 dias
+        assert clickup.value("c", F_FIXED) is not None
+
+    async def test_an_edit_made_between_the_read_and_the_write_is_not_overwritten(self, db):
+        clickup = await _planned(db)
+        clickup.before_check = lambda: clickup.type_dates("c", start=date(2026, 10, 22))
+        clickup.type_dates("a", due=date(2026, 10, 16))       # a cresce → b e c seriam regravadas
+
+        first = await _run(db, clickup)
+        assert first.ok
+        assert not [w for w in clickup.touched("c") if w[0] == "task"]   # o motor não passa por cima
+
+        await _run(db, clickup)                                # a execução que o webhook dispara
+        assert clickup.dates("c") == (date(2026, 10, 22), date(2026, 10, 24))
+        assert ms_to_date(clickup.value("c", F_FIXED)) == date(2026, 10, 22)
+
+    async def test_writes_are_checked_for_fresh_changes_in_small_batches(self, db, monkeypatch):
+        monkeypatch.setattr(schedule_service, "_CHECK_EVERY", 2)
+        clickup = FakeClickUp(_chains())
+        await _run(db, clickup)                                # 7 tarefas gravadas
+        assert clickup.freshness_checks >= 4
+
+    async def test_a_start_the_clickup_drops_on_the_put_is_written_again(self, db):
+        """Visto no ClickUp real: a resposta do PUT já vem com o início antigo."""
+        clickup = await _planned(db)
+        clickup.drop_start_once.add("c")
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok
+        assert not any("ficou com" in w for w in summary.warnings)
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 21))
+
+    async def test_a_date_the_clickup_applies_only_halfway_is_written_again(self, db):
+        clickup = await _planned(db)
+        clickup.halfway_once.add("c")                          # visto no ClickUp real: o início não fica
+        clickup.type_dates("a", due=date(2026, 10, 16))
+
+        summary = await _run(db, clickup)
+        assert summary.ok
+        assert clickup.dates("c") == (date(2026, 10, 19), date(2026, 10, 21))
+
+        clickup.writes.clear()
+        await _run(db, clickup)
+        assert clickup.value("c", F_FIXED) is None                                 # nada de edição fantasma
+        assert not [w for w in clickup.writes if w[0] == "comment"]
+
+
+class TestSummaryEdits:
+    """Datas digitadas num grupo ou disciplina (resumo). Decisão de 22/10/2026: mudar o
+    início move o bloco — vira "não começar antes de" para todas as tarefas dele, com as
+    dependências valendo; um vencimento digitado num resumo é desfeito, com comentário."""
+
+    async def test_moving_a_group_start_holds_the_whole_block(self, db):
+        clickup = await _planned(db)                      # n2 = grupo com a → b, 13–15
+        clickup.type_dates("n2", start=date(2026, 10, 19))
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok, summary.errors
+        assert ms_to_date(clickup.value("n2", F_FIXED)) == date(2026, 10, 19)
+        assert clickup.dates("a") == (date(2026, 10, 19), date(2026, 10, 20))
+        assert clickup.dates("b") == (date(2026, 10, 21), date(2026, 10, 21))
+        assert clickup.dates("n2") == (date(2026, 10, 19), date(2026, 10, 21))
+        assert clickup.dates("c") == (date(2026, 10, 22), date(2026, 10, 24))  # c depende de b
+        assert clickup.touched("x") == []                                      # outra cadeia
+        assert not [w for w in clickup.writes if w[0] == "comment"]
+
+        clickup.writes.clear()
+        second = await _run(db, clickup)
+        assert second.changed == 0 and clickup.writes == []
+
+    async def test_a_group_start_still_waits_for_the_dependencies(self, db):
+        clickup = await _planned(db, TestAcrossDisciplines()._two_disciplines())
+        clickup.type_dates("t2", start=date(2026, 10, 13))                    # z espera a (13–14)
+
+        await _run(db, clickup)
+
+        assert ms_to_date(clickup.value("t2", F_FIXED)) == date(2026, 10, 13)
+        assert clickup.dates("z") == (date(2026, 10, 15), date(2026, 10, 16))
+        comments = [w for w in clickup.writes if w[0] == "comment"]
+        assert len(comments) == 1 and comments[0][1] == "t2" and '"A"' in comments[0][2]
+
+    async def test_dragging_a_group_moves_the_block(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n2", start=date(2026, 10, 15), due=date(2026, 10, 17))   # +2 dias
+
+        await _run(db, clickup)
+
+        assert clickup.dates("a") == (date(2026, 10, 15), date(2026, 10, 16))
+        assert clickup.dates("b") == (date(2026, 10, 17), date(2026, 10, 17))
+        assert not [w for w in clickup.writes if w[0] == "comment"]
+
+    async def test_changing_only_the_due_date_of_a_group_is_undone_and_explained(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n2", due=date(2026, 10, 20))
+
+        await _run(db, clickup)
+
+        assert clickup.dates("n2") == (date(2026, 10, 13), date(2026, 10, 15))
+        assert clickup.value("n2", F_FIXED) is None
+        comments = [w for w in clickup.writes if w[0] == "comment"]
+        assert len(comments) == 1 and comments[0][1] == "n2"
+
+    async def test_moving_a_group_carries_the_fixed_starts_inside_it(self, db):
+        """Mover o bloco desloca o "começa em" das tarefas dele pela mesma distância."""
+        clickup = await _planned(db)
+        clickup.type_dates("b", start=date(2026, 10, 16), due=date(2026, 10, 16))   # b "começa em" 16
+        await _run(db, clickup)
+        clickup.type_dates("n2", start=date(2026, 10, 20))                         # 13 → 20: +7 dias
+
+        await _run(db, clickup)
+
+        assert ms_to_date(clickup.value("b", F_FIXED)) == date(2026, 10, 23)
+        assert clickup.dates("a") == (date(2026, 10, 20), date(2026, 10, 21))
+        assert clickup.dates("b") == (date(2026, 10, 23), date(2026, 10, 23))
+
+    async def test_a_fixed_start_ahead_of_its_predecessor_keeps_its_lead_when_the_group_moves(self, db):
+        """Como a AC Distribution Panel de Lubango: posta antes do fim da antecessora e depois
+        a disciplina inteira adiada — continua à frente, pela mesma distância."""
+        clickup = await _planned(db, TestAcrossDisciplines()._two_disciplines())   # z espera a (13–14)
+        clickup.type_dates("z", start=date(2026, 10, 13), due=date(2026, 10, 14))   # z na frente de a
+        await _run(db, clickup)
+        clickup.type_dates("t1", start=date(2026, 10, 20))                         # disciplina +7
+
+        await _run(db, clickup)
+
+        assert clickup.dates("z")[0] == date(2026, 10, 20)
+        assert clickup.dates("t1")[0] == date(2026, 10, 20)
+
+    async def test_moving_a_group_earlier_carries_its_fixed_starts_too(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("b", start=date(2026, 10, 24), due=date(2026, 10, 24))
+        await _run(db, clickup)
+        clickup.type_dates("n2", start=date(2026, 10, 9))                          # 13 → 9: −4 dias
+
+        await _run(db, clickup)
+
+        assert ms_to_date(clickup.value("b", F_FIXED)) == date(2026, 10, 20)
+        assert clickup.dates("b") == (date(2026, 10, 20), date(2026, 10, 20))
+        # "não começar antes de" é um piso: a não vai para antes do início do projeto (13)
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
+        comments = [w for w in clickup.writes if w[0] == "comment"]
+        assert len(comments) == 1 and comments[0][1] == "n2" and "o projeto começa em 13/10/2026" in comments[0][2]
+
+    async def test_clearing_the_group_floor_lets_the_block_come_back(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n2", start=date(2026, 10, 19))
+        await _run(db, clickup)
+        clickup._set("n2", F_FIXED, None)
+
+        await _run(db, clickup)
+
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
+        assert clickup.dates("n2") == (date(2026, 10, 13), date(2026, 10, 15))
+
+
+class TestStaleState:
+    """Estado guardado desatualizado (banco restaurado de um backup, gravação do estado que
+    falhou): todas as diferenças pareceriam datas digitadas — e com "a data digitada vence a
+    dependência" isso criaria dezenas de "começa em" falsos. Nenhuma pessoa mexe em tantas
+    tarefas entre duas execuções: aí o motor não trata nada como edição e avisa."""
+
+    async def test_too_many_typed_dates_at_once_are_not_taken_as_edits(self, db, monkeypatch):
+        monkeypatch.setattr(schedule_service, "_MAX_EDITS_PER_RUN", 2)
+        clickup = await _planned(db)
+        for task_id in ("a", "c", "x"):                    # 3 tarefas andaram 1 dia "sozinhas"
+            start, due = clickup.dates(task_id)
+            clickup.type_dates(task_id, start=start + timedelta(days=2), due=due + timedelta(days=2))
+
+        summary = await _run(db, clickup)
+
+        assert any("estado guardado" in w for w in summary.warnings)
+        assert all(clickup.value(t, F_FIXED) is None for t in ("a", "c", "x"))
+        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))      # de volta ao cálculo
+        assert not [w for w in clickup.writes if w[0] == "comment"]
+
+    async def test_a_few_edits_are_still_edits(self, db, monkeypatch):
+        monkeypatch.setattr(schedule_service, "_MAX_EDITS_PER_RUN", 2)
+        clickup = await _planned(db)
+        clickup.type_dates("a", start=date(2026, 10, 15), due=date(2026, 10, 16))
+        clickup.type_dates("x", start=date(2026, 10, 15), due=date(2026, 10, 16))
+
+        await _run(db, clickup)
+
+        assert ms_to_date(clickup.value("a", F_FIXED)) == date(2026, 10, 15)
+
+
 class TestAcrossDisciplines:
     """Subtarefa de uma disciplina que espera por subtarefa de outra disciplina."""
 
@@ -897,6 +1191,7 @@ class TestProjectStart:
         assert clickup.dates("x") == (date(2026, 10, 20), date(2026, 10, 21))   # todas as cadeias andam
         assert clickup.dates("y") == (date(2026, 10, 22), date(2026, 10, 22))
 
+        assert not [w for w in clickup.writes if w[0] == "comment"]
         clickup.writes.clear()
         summary = await _run(db, clickup)
         assert summary.changed == 0 and clickup.writes == []
@@ -935,6 +1230,21 @@ class TestProjectStart:
 
         assert any("já passou" in w for w in summary.warnings)
         assert clickup.dates("a")[0] == TODAY                               # não iniciada: começa hoje
+
+    async def test_a_project_start_the_first_row_cannot_show_is_explained(self, db):
+        """A primeira linha é um resumo: com uma tarefa concluída antes, ela continua a mostrar
+        o início dessa tarefa — o motor explica, num comentário, que o início mudou."""
+        tasks = [make_task("x", parent="n1", duration=2, status="complete", percent=100,
+                           completed=date(2026, 10, 9)) if t["id"] == "x" else t for t in _chains()]
+        clickup = await _planned(db, tasks)
+        clickup.type_dates("n1", start=date(2026, 10, 20))
+
+        await _run(db, clickup)
+
+        assert clickup.start == date(2026, 10, 20)
+        assert clickup.dates("n1")[0] < date(2026, 10, 20)
+        comments = [w for w in clickup.writes if w[0] == "comment"]
+        assert len(comments) == 1 and comments[0][1] == "n1" and "20/10/2026" in comments[0][2]
 
     async def test_dry_run_does_not_touch_the_list(self, db):
         clickup = FakeClickUp(_chains(), start=None)
