@@ -700,7 +700,8 @@ os resumos, não só da primeira linha:
 - **vencimento** → desfeito, com comentário (o fim de um resumo vem das tarefas dele);
 - **primeira linha**: o início dela continua a ser o início do projeto. Como é um resumo, com uma tarefa
   iniciada ou concluída antes ela continua a mostrar essa data — o motor comenta na linha que o início
-  do projeto mudou. A "primeira linha" é a disciplina **criada primeiro**: numa lista **duplicada** no
+  do projeto mudou. Mudar o início do projeto também leva junto, pela mesma distância, todos os "começa
+  em" das tarefas e os "não antes de" dos grupos — senão ficavam sozinhos no lugar velho. A "primeira linha" é a disciplina **criada primeiro**: numa lista **duplicada** no
   ClickUp a ordem de criação pode sair outra (no space "PEMx - RNA (Teste 2)" é a Logística).
 
 **Proteções contra quem mexe durante uma execução** (QA de 2026-10-22):

@@ -1196,6 +1196,32 @@ class TestProjectStart:
         summary = await _run(db, clickup)
         assert summary.changed == 0 and clickup.writes == []
 
+    async def test_moving_the_project_carries_the_fixed_starts(self, db):
+        """Mudar o início do projeto (primeira linha) leva junto o "começa em" das tarefas,
+        pela mesma distância — senão elas ficavam sozinhas no lugar velho."""
+        clickup = await _planned(db)
+        clickup.type_dates("b", start=date(2026, 10, 16), due=date(2026, 10, 16))   # b "começa em" 16
+        await _run(db, clickup)
+        clickup.type_dates("n1", start=date(2026, 10, 20))                          # 13 → 20: +7
+
+        await _run(db, clickup)
+
+        assert clickup.start == date(2026, 10, 20)
+        assert ms_to_date(clickup.value("b", F_FIXED)) == date(2026, 10, 23)
+        assert clickup.dates("a") == (date(2026, 10, 20), date(2026, 10, 21))
+        assert clickup.dates("b") == (date(2026, 10, 23), date(2026, 10, 23))
+
+    async def test_moving_the_project_carries_the_group_floors(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n2", start=date(2026, 10, 15))                          # grupo: não antes de 15
+        await _run(db, clickup)
+        clickup.type_dates("n1", start=date(2026, 10, 20))                          # projeto +7
+
+        await _run(db, clickup)
+
+        assert ms_to_date(clickup.value("n2", F_FIXED)) == date(2026, 10, 22)
+        assert clickup.dates("a") == (date(2026, 10, 22), date(2026, 10, 23))
+
     async def test_first_row_can_also_bring_the_project_forward(self, db):
         clickup = await _planned(db)
         clickup.type_dates("n1", start=date(2026, 10, 9))

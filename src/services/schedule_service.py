@@ -281,6 +281,20 @@ class ScheduleService:
         # vencimento é desfeito com comentário — o fim de um resumo vem das tarefas dele.
         # A primeira linha fica de fora: o início dela é o início do projeto.
         floors = {c.id: c.fixed_start for c in current.values() if c.id in parents and c.fixed_start}
+        # Início do projeto mudado na primeira linha: os "começa em" das tarefas e os "não antes
+        # de" dos grupos andam a mesma distância — senão ficavam sozinhos no lugar velho
+        carried: dict[str, date] = {}
+        floors_moved: set[str] = set()
+        if from_top and list_start and start != list_start:
+            project_shift = start - list_start
+            for c in current.values():
+                if not c.fixed_start or c.id == top_id:
+                    continue
+                if c.id in parents:
+                    floors[c.id] = c.fixed_start + project_shift
+                    floors_moved.add(c.id)
+                else:
+                    carried[c.id] = c.fixed_start + project_shift
         block_edits: dict[str, date] = {}
         summary_due_typed: set[str] = set()
         for c in current.values():
@@ -298,7 +312,6 @@ class ScheduleService:
         # Mover o bloco leva junto o "começa em" das tarefas dele, pela mesma distância —
         # senão uma tarefa fixada seguraria o bloco no lugar velho (ou perderia a vantagem
         # que tinha sobre a antecessora, se fosse apagado)
-        carried: dict[str, date] = {}
         for sid, typed_start in block_edits.items():
             prev_start = previous[sid].start
             if not prev_start:
@@ -425,9 +438,10 @@ class ScheduleService:
             if result.is_summary:
                 typed = (from_top and c.id == top_id) or c.id in block_edits or c.id in summary_due_typed
                 plan = _plan_summary(c, result, names, f_percent, f_duration, dates_allowed, normalize=typed)
-                if c.id in block_edits and f_fixed and block_edits[c.id] != c.fixed_start:
-                    plan["fields"].append((f_fixed["id"], date_to_ms(block_edits[c.id])))
-                    plan["log"]["inicio_fixado"] = [_iso(c.fixed_start), _iso(block_edits[c.id])]
+                new_floor = floors.get(c.id) if (c.id in block_edits or c.id in floors_moved) else None
+                if new_floor and f_fixed and new_floor != c.fixed_start:
+                    plan["fields"].append((f_fixed["id"], date_to_ms(new_floor)))
+                    plan["log"]["inicio_fixado"] = [_iso(c.fixed_start), _iso(new_floor)]
             elif c.status_type == "closed":
                 continue
             else:
