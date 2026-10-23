@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, time
 from pathlib import Path
 
 import pytest
@@ -12,7 +12,12 @@ from src.services.schedule_engine import (
     compute_schedule,
     dependents_of,
     display_percent,
+    WorkDay,
+    clock_time,
+    overall_percent,
+    project_weights,
     reconcile_leaf,
+    rollup,
     summary_status,
     useful_duration,
     workdays_between,
@@ -293,6 +298,132 @@ class TestSummaryCompletion:
         assert summary_status(percent, "fazendo", "custom", NAMES) == "fazendo"
 
 
+class TestWeights:
+    """Coluna "Weight (%)" das planilhas de tipos de site (2026-10-23): o % de um resumo é a
+    média ponderada pelo peso de cada filho direto, nível a nível; sem peso, pela duração."""
+
+    def test_summary_percent_follows_the_weights_of_its_children(self):
+        tasks = [
+            ScheduleTask("g"),
+            ScheduleTask("a", parent_id="g", duration=1, percent=50, weight=80),
+            ScheduleTask("b", parent_id="g", duration=9, percent=0, weight=20),
+        ]
+        assert _run(tasks, date(2026, 10, 13))["g"].percent == pytest.approx(40)    # pela duração: 5
+
+    def test_weights_apply_level_by_level(self):
+        tasks = [
+            ScheduleTask("d", weight=100),
+            ScheduleTask("g1", parent_id="d", weight=50),
+            ScheduleTask("a", parent_id="g1", duration=1, percent=100, finished_on=date(2026, 10, 13), weight=100),
+            ScheduleTask("g2", parent_id="d", weight=50),
+            ScheduleTask("b", parent_id="g2", duration=1, weight=30),
+            ScheduleTask("c", parent_id="g2", duration=20, weight=70),
+        ]
+        results = _run(tasks, date(2026, 10, 13))
+        assert results["g1"].percent == pytest.approx(100)
+        assert results["g2"].percent == pytest.approx(0)
+        assert results["d"].percent == pytest.approx(50)            # pela duração seria 100/22
+
+    def test_without_weights_the_duration_still_rules(self):
+        tasks = [
+            ScheduleTask("g"),
+            ScheduleTask("a", parent_id="g", duration=1, percent=50),
+            ScheduleTask("b", parent_id="g", duration=9, percent=0),
+        ]
+        assert _run(tasks, date(2026, 10, 13))["g"].percent == pytest.approx(5)
+
+    def test_a_child_without_weight_falls_back_to_the_duration(self):
+        tasks = [
+            ScheduleTask("g"),
+            ScheduleTask("a", parent_id="g", duration=1, percent=50, weight=80),
+            ScheduleTask("b", parent_id="g", duration=9, percent=0),
+        ]
+        assert _run(tasks, date(2026, 10, 13))["g"].percent == pytest.approx(5)
+
+    def test_cancelled_children_leave_the_weighting(self):
+        tasks = [
+            ScheduleTask("g"),
+            ScheduleTask("a", parent_id="g", duration=1, percent=50, weight=50),
+            ScheduleTask("b", parent_id="g", duration=1, weight=50, cancelled=True),
+        ]
+        assert _run(tasks, date(2026, 10, 13))["g"].percent == pytest.approx(50)
+
+    def test_overall_percent_weights_the_top_level(self):
+        tasks = [
+            ScheduleTask("civil", weight=15),
+            ScheduleTask("a", parent_id="civil", duration=30, percent=100, finished_on=date(2026, 10, 13), weight=100),
+            ScheduleTask("handover", duration=1, weight=85),
+        ]
+        results = compute_schedule(tasks, WorkCalendar(start=date(2026, 10, 13)), date(2026, 10, 13)).results
+        assert overall_percent(tasks, results) == pytest.approx(15)
+
+    def test_overall_percent_without_weights_uses_the_durations(self):
+        tasks = [
+            ScheduleTask("civil"),
+            ScheduleTask("a", parent_id="civil", duration=3, percent=100, finished_on=date(2026, 10, 13)),
+            ScheduleTask("handover", duration=1),
+        ]
+        results = compute_schedule(tasks, WorkCalendar(start=date(2026, 10, 13)), date(2026, 10, 13)).results
+        assert overall_percent(tasks, results) == pytest.approx(75)
+
+
+class TestWorkDay:
+    """Jornada da planilha (Parameters): 08:00–17:00, almoço 12:00–13:00, 8 h por dia; as
+    durações fracionadas viram horas. Início que cai às 12:00 vai para 13:00; fim às 12:00 fica."""
+
+    WD = WorkDay(start=time(8), hours=8, lunch_start=time(12), lunch_hours=1)
+
+    def test_start_times_skip_the_lunch_break(self):
+        assert clock_time(self.WD, 0, end=False) == time(8)
+        assert clock_time(self.WD, 0.25, end=False) == time(10)
+        assert clock_time(self.WD, 0.5, end=False) == time(13)
+        assert clock_time(self.WD, 0.75, end=False) == time(15)
+
+    def test_finish_times(self):
+        assert clock_time(self.WD, 1, end=True) == time(17)
+        assert clock_time(self.WD, 0.5, end=True) == time(12)
+        assert clock_time(self.WD, 0.2, end=True) == time(9, 36)          # Cable Tray na planilha
+
+    def test_without_a_lunch_break(self):
+        wd = WorkDay(start=time(7), hours=10, lunch_start=None, lunch_hours=0)
+        assert clock_time(wd, 0.5, end=False) == time(12)
+        assert clock_time(wd, 1, end=True) == time(17)
+
+
+class TestProjectWeightsAndRollup:
+    def _tasks(self, **extra):
+        return [
+            ScheduleTask("d", weight=60),
+            ScheduleTask("g1", parent_id="d", weight=25),
+            ScheduleTask("a", parent_id="g1", duration=1, weight=100, **extra),
+            ScheduleTask("g2", parent_id="d", weight=75),
+            ScheduleTask("b", parent_id="g2", duration=1, weight=40),
+            ScheduleTask("c", parent_id="g2", duration=3, weight=60),
+            ScheduleTask("h", duration=1, weight=40),
+        ]
+
+    def test_project_weight_multiplies_the_weights_down_the_tree(self):
+        weights = project_weights(self._tasks())
+        assert weights == pytest.approx({"d": 60, "g1": 15, "a": 15, "g2": 45, "b": 18, "c": 27, "h": 40})
+
+    def test_no_project_weight_where_a_level_has_no_weights(self):
+        tasks = [ScheduleTask("d", weight=100), ScheduleTask("a", parent_id="d", duration=1)]
+        assert project_weights(tasks) == {"d": 100}
+
+    def test_rollup_follows_the_same_rule_as_the_percent(self):
+        tasks = self._tasks()
+        results = compute_schedule(tasks, WorkCalendar(start=date(2026, 10, 13)), date(2026, 10, 13)).results
+        values = rollup(tasks, results, {"a": 100, "b": 50, "c": 0, "h": 0})
+        assert values["g2"] == pytest.approx(20)             # 40% × 50
+        assert values["d"] == pytest.approx(40)              # 25% × 100 + 75% × 20
+
+    def test_rollup_without_weights_uses_the_duration(self):
+        tasks = [ScheduleTask("g"), ScheduleTask("a", parent_id="g", duration=1),
+                 ScheduleTask("b", parent_id="g", duration=3)]
+        results = compute_schedule(tasks, WorkCalendar(start=date(2026, 10, 13)), date(2026, 10, 13)).results
+        assert rollup(tasks, results, {"a": 100, "b": 0})["g"] == pytest.approx(25)
+
+
 # ─── % concluído × status ────────────────────────────────────────────────────
 
 class TestReconcile:
@@ -365,18 +496,42 @@ class TestManualDates:
         assert self._dates(tasks, "b") == (date(2026, 10, 22), date(2026, 10, 23))
         assert self._dates(tasks, "c") == (date(2026, 10, 26), date(2026, 10, 26))
 
-    def test_not_before_pushes_the_task_and_its_successors(self):
-        tasks = self._chain(b={"not_before": date(2026, 10, 27)})
-        assert self._dates(tasks, "b") == (date(2026, 10, 27), date(2026, 10, 28))
-        assert self._dates(tasks, "c") == (date(2026, 10, 29), date(2026, 10, 29))
+    # "Início fixado" num grupo (decisão de 2026-10-23): é a data de início do bloco, como numa
+    # tarefa — as antecessoras de fora do grupo não o seguram; dentro dele a ordem continua
 
-    def test_not_before_earlier_than_the_predecessor_is_overruled(self):
-        tasks = self._chain(b={"not_before": date(2026, 10, 20)})
-        assert self._dates(tasks, "b") == (date(2026, 10, 22), date(2026, 10, 23))
+    def test_a_group_fixed_start_is_where_the_block_starts(self):
+        tasks = self._chain(g={"fixed_start": date(2026, 10, 27)})
+        assert self._dates(tasks, "a") == (date(2026, 10, 27), date(2026, 10, 29))
+        assert self._dates(tasks, "b") == (date(2026, 10, 30), date(2026, 11, 2))   # depois de a
+        assert self._dates(tasks, "c") == (date(2026, 11, 3), date(2026, 11, 3))    # as sucessoras seguem
+        assert self._dates(tasks, "e") == (date(2026, 11, 3), date(2026, 11, 3))
 
-    def test_not_before_on_a_rest_day_starts_on_the_next_workday(self):
-        tasks = self._chain(d={"not_before": date(2026, 10, 24)})       # sábado
-        assert self._dates(tasks, "d") == (date(2026, 10, 26), date(2026, 10, 27))
+    def test_a_group_fixed_start_beats_the_predecessors_from_outside(self):
+        tasks = self._chain(g={"predecessors": ("d",), "fixed_start": date(2026, 10, 19)})   # d até 20
+        assert self._dates(tasks, "a")[0] == date(2026, 10, 19)
+
+    def test_without_it_the_group_waits_for_its_predecessor(self):
+        tasks = self._chain(g={"predecessors": ("d",)})
+        assert self._dates(tasks, "a")[0] == date(2026, 10, 21)
+
+    def test_the_innermost_fixed_group_wins(self):
+        tasks = [
+            ScheduleTask(id="D", fixed_start=date(2026, 10, 26)),
+            ScheduleTask(id="g", parent_id="D", fixed_start=date(2026, 11, 2)),
+            ScheduleTask(id="a", parent_id="g", duration=1),
+            ScheduleTask(id="h", parent_id="D", duration=1),
+        ]
+        assert self._dates(tasks, "a")[0] == date(2026, 11, 2)
+        assert self._dates(tasks, "h")[0] == date(2026, 10, 26)
+
+    def test_a_group_fixed_start_on_a_rest_day_starts_on_the_next_workday(self):
+        tasks = self._chain(g={"fixed_start": date(2026, 10, 24)})       # sábado
+        assert self._dates(tasks, "a") == (date(2026, 10, 26), date(2026, 10, 28))
+
+    def test_a_group_fixed_start_in_the_past_moves_to_today(self):
+        cal = WorkCalendar(start=date(2026, 10, 5), weekend_mask="0000011")
+        tasks = self._chain(g={"fixed_start": date(2026, 10, 6)})
+        assert compute_schedule(tasks, cal, date(2026, 10, 15)).results["a"].start == date(2026, 10, 15)
 
     def test_fixed_start_beats_the_predecessor(self):
         tasks = self._chain(b={"fixed_start": date(2026, 10, 20)})        # a termina 21
@@ -387,8 +542,8 @@ class TestManualDates:
         tasks = self._chain(a={"duration": 6}, b={"fixed_start": date(2026, 10, 22)})   # a até 26
         assert self._dates(tasks, "b") == (date(2026, 10, 22), date(2026, 10, 23))
 
-    def test_fixed_start_beats_the_floor_of_its_block(self):
-        tasks = self._chain(a={"not_before": date(2026, 10, 26)}, b={"fixed_start": date(2026, 10, 21)})
+    def test_fixed_start_of_a_task_beats_the_one_of_its_group(self):
+        tasks = self._chain(g={"fixed_start": date(2026, 10, 26)}, b={"fixed_start": date(2026, 10, 21)})
         assert self._dates(tasks, "b")[0] == date(2026, 10, 21)
 
     def test_fixed_start_on_a_rest_day_starts_on_the_next_workday(self):
@@ -412,9 +567,9 @@ class TestManualDates:
         result = compute_schedule(tasks, cal, date(2026, 10, 15)).results["d"]
         assert result.finish == date(2026, 10, 15)
 
-    def test_not_before_is_ignored_once_the_task_started(self):
-        tasks = self._chain(d={"not_before": date(2026, 11, 2), "percent": 50, "start": date(2026, 10, 14)})
-        assert self._dates(tasks, "d")[0] == date(2026, 10, 14)
+    def test_a_group_fixed_start_is_ignored_by_a_task_already_started(self):
+        tasks = self._chain(g={"fixed_start": date(2026, 11, 2)}, a={"percent": 50, "start": date(2026, 10, 14)})
+        assert self._dates(tasks, "a")[0] == date(2026, 10, 14)
 
     def test_pinned_task_keeps_its_dates_and_the_successors_start_from_them(self):
         tasks = self._chain(a={"pinned": (date(2026, 10, 19), date(2026, 10, 23))})

@@ -9,7 +9,7 @@ from src.core.config import settings
 from src.services.schedule_engine import useful_duration
 from src.services.schedule_pauses import pauses_to_json
 from src.services.schedule_fields import (
-    FIELD_CALENDAR, FIELD_DURATION, FIELD_PERCENT, find_field, read_calendar, read_number, read_percent,
+    FIELD_CALENDAR, FIELD_DURATION, FIELD_PERCENT, FIELD_WEIGHT, find_field, read_calendar, read_number, read_percent,
     read_task_pauses,
 )
 from src.models.schedule_models import ScheduleBaseline
@@ -178,9 +178,47 @@ def _build_schedule_tree(tasks: list[ClickUpTaskCache]) -> list[dict]:
             return [] if t.status_type == "closed" else [leaf_node(t)]
         return [leaf for kid in kids for leaf in leaves_of(kid)]
 
+    def active(t: ClickUpTaskCache) -> bool:
+        kids = children.get(t.task_id)
+        return any(active(k) for k in kids) if kids else t.status_type != "closed"
+
+    def weighted_leaves(t: ClickUpTaskCache, share: float = 1.0) -> list[dict] | None:
+        """Folhas com o peso efetivo (produto dos "Peso (%)" do caminho, normalizados em cada
+        nível) — o mesmo % da média nível a nível. None se alguma linha não tiver peso."""
+        kids = [k for k in children.get(t.task_id, []) if active(k)]
+        if not kids:
+            return [{**leaf_node(t), "weight": share}]
+        if any(k.weight_pct is None for k in kids):
+            return None
+        total = sum(k.weight_pct or 0.0 for k in kids)
+        if total <= 0:
+            return None
+        out: list[dict] = []
+        for k in kids:
+            sub = weighted_leaves(k, share * (k.weight_pct or 0.0) / total)
+            if sub is None:
+                return None
+            out += sub
+        return out
+
+    tops = [t for t in tasks if t.parent_task_id not in by_id and active(t)]
+    by_weight = bool(tops) and all(t.weight_pct is not None for t in tops)
+
     tree: list[dict] = []
     for t in tasks:
         if t.parent_task_id in by_id:
+            continue
+        if by_weight and active(t):
+            # a linha de topo pesa pelo "Peso (%)"; dentro dela, folhas pelo peso efetivo
+            # (ou pela duração, se alguma linha de dentro não tiver peso)
+            is_done = t.status_type == "done"
+            node = {"task_id": t.task_id, "name": t.name or "", "is_done": is_done,
+                    "date_created": t.date_created, "date_closed": _closed_at(t, is_done),
+                    "weight": t.weight_pct}
+            if t.task_id in children:
+                tree.append({**node, "subtasks": weighted_leaves(t) or leaves_of(t)})
+            else:
+                tree.append({**node, "progress": leaf_node(t)["progress"], "subtasks": []})
             continue
         is_done = t.status_type == "done"
         node = {
@@ -391,12 +429,13 @@ class CacheRepository:
         # Nessas, o prazo é a data de fim nativa — é o motor que a calcula e grava.
         custom_fields = task.get("custom_fields") or []
         percent_field = find_field(custom_fields, FIELD_PERCENT, "manual_progress")
-        progress_pct = duration_days = calendar_type = None
+        progress_pct = duration_days = calendar_type = weight_pct = None
         schedule_due = False
         if percent_field is not None:
             progress_pct = read_percent(percent_field) or 0.0
             duration_days = read_number(find_field(custom_fields, FIELD_DURATION, "number"))
             calendar_type = read_calendar(find_field(custom_fields, FIELD_CALENDAR, "drop_down"))
+            weight_pct = read_number(find_field(custom_fields, FIELD_WEIGHT, "number"))
             due_date = task.get("due_date")
             schedule_due = True
         current_pause, pause_history, _ = read_task_pauses(custom_fields, settings.schedule_utc_offset_hours)
@@ -428,6 +467,7 @@ class CacheRepository:
             progress_pct=progress_pct,
             duration_days=duration_days,
             calendar_type=calendar_type,
+            weight_pct=weight_pct,
             depends_on_json=json.dumps(depends_on),
             pauses_json=pauses_json,
             url=task.get("url"),
@@ -451,6 +491,7 @@ class CacheRepository:
                 "progress_pct": stmt.excluded.progress_pct,
                 "duration_days": stmt.excluded.duration_days,
                 "calendar_type": stmt.excluded.calendar_type,
+                "weight_pct": stmt.excluded.weight_pct,
                 "depends_on_json": stmt.excluded.depends_on_json,
                 "pauses_json": stmt.excluded.pauses_json,
                 "parent_task_id": stmt.excluded.parent_task_id,

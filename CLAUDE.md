@@ -100,6 +100,7 @@ src/
 │   ├── schedule_fields.py   # Campos do ClickUp usados pelo cronograma (casados por nome)
 │   ├── schedule_service.py  # Lê a lista, roda o motor e grava só as diferenças
 │   ├── schedule_xlsx.py     # Leitura das planilhas PMEx (importador e fixture de teste)
+│   ├── schedule_xlsx_sitetype.py # Planilhas de tipos de site de transmissão (Type 1–4, com Peso %)
 │   └── authorization_emails.py  # HTML dos e-mails de pedido e de decisão
 ├── api/
 │   ├── health.py            # GET /health
@@ -615,10 +616,11 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 |---|---|---|
 | Duração, tipo (Útil/Corrido) | campos `Duração (dias)` (number) e `Calendário` (drop_down) | utilizador (folhas); motor nos resumos: **soma** das durações das tarefas dele (canceladas fora) |
 | % concluído | campo `% Concluído` (manual_progress — barra nativa) | utilizador (folhas); motor (resumos) |
+| Peso | campo `Peso (%)` (number): peso do item dentro do pai — ver "Peso (%)" | importador (planilhas de tipos de site); utilizador |
 | Status | status nativo | os dois — ver regra abaixo |
 | Antecessores | dependências nativas ("waiting on") | utilizador |
-| Início / fim | `start_date` / `due_date` **nativos**, só o dia | motor; o utilizador pode mexer numa folha — ver "Datas digitadas à mão" |
-| Início fixado | campo `Início fixado` (date). Numa tarefa: "começa em" (vence as antecessoras). Num grupo/disciplina: "não começar antes de" para o bloco | motor, quando alguém muda o início à mão (da tarefa ou do grupo); o utilizador apaga para soltar |
+| Início / fim | `start_date` / `due_date` **nativos**: só o dia, ou com hora quando a lista tem jornada — ver "Jornada" | motor; o utilizador pode mexer numa folha — ver "Datas digitadas à mão" |
+| Início fixado | campo `Início fixado` (date). Numa tarefa: "começa em" (vence as antecessoras). Num grupo/disciplina: o dia em que o bloco começa (vence as antecessoras de fora do bloco) | motor, quando alguém muda o início à mão (da tarefa ou do grupo); o utilizador apaga para soltar |
 | Pausa | campos `Pausa de` / `Pausa até` (date) / `Motivo da pausa` (short_text) + `Histórico de pausas` (text) | utilizador (a pausa atual); motor (arquiva no histórico) — ver "Pausas" |
 | Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
 | Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
@@ -690,10 +692,13 @@ deste recurso, ou tarefa nova) não conta como edição — o primeiro cálculo 
 **Datas digitadas num grupo ou disciplina** (decisões de 2026-10-22). Antes eram desfeitas em silêncio
 — era a maior parte dos "mudei a data e ela voltou" relatados. O estado guarda agora as datas de todos
 os resumos, não só da primeira linha:
-- **início** → grava o **Início fixado do próprio resumo**, que vale como "não começar antes de" para
-  todas as tarefas do bloco (`not_before` no motor, via `_block_floors`); as dependências continuam a
-  valer. Se o bloco não pôde começar no dia digitado, o motor comenta no grupo o que o segurou. É um
-  piso: não puxa nada para antes do início do projeto;
+- **início** → grava o **Início fixado do próprio resumo**, que é **o dia em que o bloco começa**
+  (decisão de 2026-10-23 — antes era só um piso, "não começar antes de"): no motor, cada tarefa do
+  bloco parte dessa data (`fixed_start` do resumo; `_fixed_block` acha o grupo fixado mais interno
+  acima dela) e as antecessoras **de fora** do bloco não a seguram; as de dentro continuam a valer, e as
+  sucessoras do bloco partem do fim dele. Como numa tarefa: só "hoje" vence (data passada numa tarefa
+  não iniciada → hoje, com comentário no grupo), o "Início fixado" de uma tarefa vence o do grupo, e
+  o motor comenta no grupo quando ele começa antes do fim de uma antecessora de fora (alerta);
 - o bloco **leva junto** o Início fixado das tarefas dele, deslocado pela mesma distância — senão uma
   tarefa fixada seguraria o bloco no lugar velho, ou perderia a vantagem que tinha sobre a antecessora;
 - arrastar a barra do grupo (as duas datas com a mesma distância) = mudar o início;
@@ -701,7 +706,7 @@ os resumos, não só da primeira linha:
 - **primeira linha**: o início dela continua a ser o início do projeto. Como é um resumo, com uma tarefa
   iniciada ou concluída antes ela continua a mostrar essa data — o motor comenta na linha que o início
   do projeto mudou. Mudar o início do projeto também leva junto, pela mesma distância, todos os "começa
-  em" das tarefas e os "não antes de" dos grupos — senão ficavam sozinhos no lugar velho. A "primeira linha" é a disciplina **criada primeiro**: numa lista **duplicada** no
+  em" das tarefas e os "Início fixado" dos grupos — senão ficavam sozinhos no lugar velho. A "primeira linha" é a disciplina **criada primeiro**: numa lista **duplicada** no
   ClickUp a ordem de criação pode sair outra (no space "PEMx - RNA (Teste 2)" é a Logística).
 
 **Proteções contra quem mexe durante uma execução** (QA de 2026-10-22):
@@ -783,7 +788,9 @@ aparece como a data de fim do projeto a andar. Quem mede isso é a linha de base
 
 **Linha de base** (tabela `schedule_baseline`: início e término planeados por tarefa). É gravada
 sozinha no **primeiro cálculo real** de uma lista — o plano puro (`compute_schedule(reschedule=False)`
-sobre as tarefas sem %, início nem conclusão), não o andamento — e depois não muda. Um `dry_run` não
+sobre as tarefas sem %, início nem conclusão), não o andamento — e depois não muda. Os "Início fixado" que já
+existem nesse primeiro cálculo **entram** no plano (2026-10-23): o gerente fixa as datas obrigatórias e só
+depois põe o início do projeto, e essas datas são plano, não desvio; as fixadas depois contam como desvio. Um `dry_run` não
 grava. `POST /schedule/{list_id}/baseline` (senha `X-Delete-Password`) **redefine**: adota o cronograma
 atual (com a reprogramação) como o novo plano, sem escrever nada no ClickUp; na dashboard é o botão
 "Redefinir linha de base" da lista. Vive no SQLite da app, não no ClickUp — apagar o `sync.db` perde o
@@ -825,6 +832,72 @@ Tarefas concluídas e em andamento não andam com o início do projeto (têm dat
 linha já tem tarefas feitas, o início que ela mostra volta a ser o real — o do projeto fica na lista.
 Dependências entre subtarefas de tarefas e disciplinas diferentes da mesma lista valem sempre (ex.: o
 rack da Área Técnica espera a concretagem da Obra Civil); dependência para outra lista é ignorada com aviso.
+
+**Peso (%)** (planilhas de tipos de site, 2026-10-23, decisão do utilizador: "o peso manda no %").
+Cada linha pode ter o peso dela dentro do pai (os de um mesmo pai somam 100 nas planilhas). Quando
+**todos** os filhos ativos de um resumo têm peso, o % do resumo é a média ponderada por ele — nível a
+nível, como a coluna "% Complete" da planilha; senão continua pela duração útil das tarefas-folha,
+como sempre foi (as listas antigas, sem o campo, não mudam). Vale nos três lugares, que têm de dar o
+mesmo número:
+- **motor** (`compute_schedule`, resumos do mais fundo para o topo; `overall_percent` para a lista) —
+  é o % que vai para o ClickUp;
+- **dashboard e relatórios** (`_build_schedule_tree`): com peso em todas as linhas de topo, cada uma
+  pesa pelo seu `Peso (%)` e as folhas de dentro levam o **peso efetivo** (produto dos pesos do caminho,
+  normalizados em cada nível) — dá exatamente a média nível a nível; o cache guarda o campo em
+  `clickup_task_cache.weight_pct`;
+- conferido no ClickUp real (lista "Prova Tipo 2 (peso)" no Teste 2): 3,75% no motor e na dashboard.
+
+**Planilhas de tipos de site de transmissão** (`schedule_xlsx_sitetype.py`, escolhido por `load_schedule`
+quando há uma aba "Site FM - Type N"): os 4 modelos da pasta "Tipos de Sites Transmissão" — 1 torre e
+abrigo existentes, 2 torre nova e abrigo existente, 3 green field, 4 torre existente sem abrigo — e a
+"Transmitter Type of Site List" diz o tipo de cada província. A WBS (ID, tipo Project/Stage/Task, nível,
+pai) vira disciplina (Stage nível 2) → grupo (Stage nível 3) → tarefa; a linha "Project" é a própria
+lista; "Acceptance & Handover" é uma tarefa de topo sem filhos. As datas por etapa ("Stage Start") ficam
+de fora a pedido do utilizador (só a estrutura); "Resource Names" só vira equipe sem `--no-teams`.
+**Ordem das etapas — cadeia** (decisão de 2026-10-23): na planilha as etapas não têm antecessoras
+entre si; a ordem está só nas datas de "Stage Start", digitadas à mão. Ignorá-las punha as seis etapas a
+começar juntas (o "Acceptance & Handover" de Huambo caía no 3.º dia). Cada etapa passa a **depender da
+etapa anterior** na planilha quando esta começou antes (Logistics → Electrical → Equipment →
+Pre-Commissioning → SAT; Obra Civil e Logística começam juntas e ficam em paralelo). Para uma etapa
+começar num dia certo (as esperas que a planilha tinha, ex.: Equipment Installation só em 10/11),
+preenche-se o **"Início fixado"** dela, que é definitivo. Houve um campo "Início após (dias úteis)" com a
+distância do "Stage Start" ao início do projeto; saiu no mesmo dia, a pedido do utilizador, para ficar só
+o "Início fixado" — a API não apaga campos, então nas 14 listas do Teste 2 ele ficou vazio e fora da vista.
+Aplicadas ao Site FM das 14 províncias da lista no space "PEMx - RNA (Teste 2)" (`--zero --no-teams`,
+sem data de início); Mbanza Congo e Ndalatando não estão na lista.
+
+**Jornada — datas com hora** (decisão de 2026-10-23). Uma lista com a linha `jornada=08:00-17:00` na
+descrição (e, opcional, `almoço=12:00-13:00`) recebe início e fim **com hora**: o motor converte a fração
+de dia da posição em relógio (`clock_time` em `schedule_engine.py`; `parse_workday` em
+`schedule_fields.py`) — uma tarefa de 0,25 dia que começa no início do dia vai das 08:00 às 10:00, e o
+almoço é saltado (um início que cairia às 12:00 vai para as 13:00; um fim às 12:00 fica). A hora é a da
+obra (`SCHEDULE_UTC_OFFSET_HOURS`); o ClickUp mostra-a no fuso de cada utilizador — no Brasil, 08:00 de
+Angola aparece como 04:00. Gravada com `start_date_time`/`due_date_time` = true e comparada pelo ms exato
+(`_date_changes` com `stamp`); as datas digitadas continuam a ser reconhecidas **pelo dia** (mudar só a
+hora de uma tarefa não é edição — o motor repõe a hora). Sem a linha, tudo como antes (só o dia). O
+importador põe a linha a partir da aba Parameters das planilhas de tipos de site (`list_lines`).
+
+**Colunas da planilha que vêm para o ClickUp** (`SITE_TYPE_FIELD_DEFS`, criadas pelo importador só nas
+planilhas de tipos de site; o motor preenche as calculadas **só se a lista tiver o campo**):
+- `ID` (number) e `WBS` (short_text) — o ID da linha na planilha e o **nível no ClickUp**: `1` etapa ou
+  tarefa de topo, `2` grupo, `3` tarefa (o "WBS Level" da planilha menos 1, já que a linha do projeto é a
+  própria lista; decisão de 2026-10-23 — antes era um código `1.2.3`). Gravados pelo importador; o motor
+  não mexe neles.
+- `Peso no projeto (%)` — o peso efetivo da linha no projeto inteiro (`project_weights`: produto dos
+  pesos normalizados do caminho × 100), a coluna "Project Weight (%)" da planilha.
+- `% Planejado` — quanto já devia estar feito no início de hoje segundo a **linha de base** (linear
+  entre o início e o fim planeados, em dias úteis; resumos por `rollup`, a mesma regra de peso/duração
+  do %). Sem linha de base fica em branco.
+- `Situação` (drop_down): Concluída, Pausada (pausa atual), Em andamento, Atrasada (% real abaixo do
+  planejado), Não iniciada.
+- `Dias pausados` — dias úteis parados: o histórico mais a pausa atual até hoje; nos resumos, a soma.
+- `Motivo da pausa` passa a ser **lista fechada** (Logística, Clima, Externo, Outro) nas listas novas; o
+  motor lê tanto a lista quanto o texto antigo (`read_option`). A API **não apaga campos** (`DELETE
+  /field` → 405): uma lista que já tinha o motivo em texto fica com ele — o importador não cria um
+  homónimo.
+- Na vista "Cronograma", ID e WBS entram à frente e os outros no fim (`add_view_columns`).
+- Todos convergem (comparação com tolerância de 0,005 nos números, opção pelo nome no drop_down), então
+  não criam laço de webhook.
 
 **Duração dos resumos** = soma das durações das tarefas dele, como digitadas (tarefas em paralelo somam
 por inteiro; canceladas não entram). Antes era a amplitude em dias úteis; o peso no progresso continua
@@ -1045,6 +1118,8 @@ Unit tests:
 - `test_nextcloud_auth.py` — JWT do Nextcloud: assinatura ES256, expiração, emissor, confusão de algoritmo, formatos da chave e `GET /auth/me`
 - `test_schedule_cache.py` — cache, progresso ponderado por duração e telas com 3 níveis
 - `test_schedule_reports.py` — relatórios (PDF/XLSX), listagens, diário/semanal e Gantt de província sobre a lista de 3 níveis
+- `test_schedule_xlsx_sitetype.py` — leitor das planilhas de tipos de site: 3 níveis a partir da WBS, pesos em %, datas fora, 5º nível recusado, ID/WBS e a jornada
+- `test_schedule_fields_info.py` — leitura da jornada na descrição e dos campos drop_down (opção por nome/orderindex)
 - `test_schedule_xlsx_studio.py` — leitor das planilhas de estúdio: uma lista por sala, disciplina → grupo → tarefa, fases achatadas, marcos externos virando dependências, conferência fórmula × Antecessores
 
 Unit tests:

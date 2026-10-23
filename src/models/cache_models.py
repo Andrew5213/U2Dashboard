@@ -60,6 +60,9 @@ class ClickUpTaskCache(Base):
     progress_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     duration_days: Mapped[float | None] = mapped_column(Float, nullable=True)
     calendar_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # "Peso (%)" do item dentro do pai: com peso em todas as linhas, o progresso da lista é a
+    # média ponderada por ele, nível a nível (planilhas de tipos de site), e não pela duração
+    weight_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Ids das tarefas de que esta depende (dependências "waiting on" do ClickUp), em JSON
     depends_on_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Pausas da tarefa (histórico + a atual), em JSON — para os Gantts desenharem o zebrado

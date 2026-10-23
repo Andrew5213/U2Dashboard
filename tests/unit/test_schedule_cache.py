@@ -15,7 +15,7 @@ CALENDAR_OPTIONS = [{"id": "u", "name": "Útil", "orderindex": 0}, {"id": "c", "
 
 
 def schedule_task(task_id, parent=None, percent=0, duration=None, corrido=False, status="planejando",
-                  status_type="open", due=None):
+                  status_type="open", due=None, weight=None):
     return {
         "id": task_id, "name": task_id, "parent": parent, "list": {"id": "L1"},
         "status": {"status": status, "type": status_type},
@@ -28,6 +28,7 @@ def schedule_task(task_id, parent=None, percent=0, duration=None, corrido=False,
              "value": None if duration is None else str(duration)},
             {"id": "k", "name": "Calendário", "type": "drop_down",
              "type_config": {"options": CALENDAR_OPTIONS}, "value": 1 if corrido else 0},
+            {"id": "w", "name": "Peso (%)", "type": "number", "value": None if weight is None else str(weight)},
         ],
     }
 
@@ -115,6 +116,48 @@ class TestWeightedProgress:
 
         # úteis: solo 2 + cura 12 (14 corridos) + parede 4 + teto 3 = 21; feito: 2 + 12 + 2 = 16
         assert rates["L1"] == pytest.approx(16 / 21)
+
+    async def test_weights_rule_the_list_progress_level_by_level(self, repo):
+        """"Peso (%)" em todas as linhas (planilhas de tipos de site): o progresso é a média
+        ponderada pelo peso, nível a nível — a duração deixa de pesar."""
+        for task in [
+            schedule_task("civil", weight=60),
+            schedule_task("base", parent="civil", weight=25),
+            schedule_task("solo", parent="base", duration=2, percent=100, status="complete", status_type="done",
+                          weight=100),
+            schedule_task("pintura", parent="civil", weight=75),
+            schedule_task("parede", parent="pintura", duration=4, percent=50, status="fazendo",
+                          status_type="custom", weight=40),
+            schedule_task("teto", parent="pintura", duration=30, weight=60),
+            schedule_task("aceite", duration=1, weight=40),
+        ]:
+            await repo.upsert_task(task, "L1")
+        await repo._db.commit()
+
+        rates = await repo._weighted_completion_by_list(["L1"])
+
+        # civil = 25%×1 + 75%×(40%×0,5 + 60%×0) = 0,40; lista = 60%×0,40 + 40%×0 = 0,24
+        assert rates["L1"] == pytest.approx(0.24)
+
+    async def test_without_a_weight_on_every_line_the_duration_still_rules(self, repo):
+        await _civil(repo)
+        await repo.upsert_task(schedule_task("civil", weight=60), "L1")
+        await repo._db.commit()
+
+        assert (await repo._weighted_completion_by_list(["L1"]))["L1"] == pytest.approx(16 / 21)
+
+    async def test_a_discipline_with_unweighted_lines_still_weighs_by_its_own_weight(self, repo):
+        for task in [
+            schedule_task("civil", weight=50),
+            schedule_task("a", parent="civil", duration=1, percent=100, status="complete", status_type="done"),
+            schedule_task("b", parent="civil", duration=3),                      # sem peso: pela duração
+            schedule_task("aceite", duration=1, weight=50),
+        ]:
+            await repo.upsert_task(task, "L1")
+        await repo._db.commit()
+
+        # civil = 1/4 pela duração; lista = 50% × 0,25 + 50% × 0
+        assert (await repo._weighted_completion_by_list(["L1"]))["L1"] == pytest.approx(0.125)
 
     async def test_leaf_kpis_count_only_third_level_tasks(self, repo):
         await _civil(repo)

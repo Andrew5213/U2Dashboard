@@ -34,7 +34,15 @@ from src.services.schedule_fields import (  # noqa: E402
     FIELD_DEFS,
     FIELD_DURATION,
     FIELD_FIXED_START,
+    FIELD_PAUSED_DAYS,
     FIELD_PERCENT,
+    FIELD_PLANNED,
+    FIELD_PROJECT_WEIGHT,
+    FIELD_SITUATION,
+    FIELD_TASK_ID,
+    FIELD_WBS,
+    FIELD_WEIGHT,
+    SITE_TYPE_FIELD_DEFS,
     calendar_option_id,
     date_to_ms,
     find_field,
@@ -42,7 +50,7 @@ from src.services.schedule_fields import (  # noqa: E402
     norm,
     parse_weekend_mask,
 )
-from src.services.schedule_pauses import PAUSE_FIELD_DEFS  # noqa: E402
+from src.services.schedule_pauses import FIELD_PAUSE_REASON, PAUSE_FIELD_DEFS  # noqa: E402
 from src.services.schedule_service import ScheduleService, rate_limit_wait, status_names  # noqa: E402
 from src.services.schedule_xlsx import XlsxSchedule, load_schedule  # noqa: E402
 import src.models.schedule_models  # noqa: E402,F401
@@ -86,10 +94,20 @@ def describe(schedule: XlsxSchedule) -> None:
             print(f"  {'    ' * (task.level - 1)}{task.name}")
 
 
-async def ensure_fields(clickup: ClickUpClient, list_id: str) -> list[dict]:
+def field_defs(site_type: bool = False) -> list[dict]:
+    """Campos do cronograma; nas planilhas de tipos de site, também ID, WBS e as colunas
+    calculadas, e o motivo da pausa em lista fechada em vez de texto."""
+    if not site_type:
+        return FIELD_DEFS
+    return [d for d in FIELD_DEFS if d["name"] != FIELD_PAUSE_REASON] + SITE_TYPE_FIELD_DEFS
+
+
+async def ensure_fields(clickup: ClickUpClient, list_id: str, site_type: bool = False) -> list[dict]:
     fields = await call(lambda: clickup.get_list_fields(list_id))
-    for definition in FIELD_DEFS:
-        if not find_field(fields, definition["name"], definition["type"]):
+    for definition in field_defs(site_type):
+        # o motivo da pausa já existente (texto ou lista) não ganha um homónimo
+        any_type = definition["name"] == FIELD_PAUSE_REASON
+        if not find_field(fields, definition["name"], None if any_type else definition["type"]):
             try:
                 await call(lambda d=definition: clickup.create_custom_field(list_id, d), idempotent=False)
             except httpx.HTTPStatusError as exc:
@@ -106,7 +124,13 @@ async def configure_list(clickup: ClickUpClient, lst: dict, schedule: XlsxSchedu
     content = lst.get("content") or ""
     if parse_weekend_mask(content, "") != schedule.weekend_mask:
         days = ", ".join(_WEEKDAY_NAMES[i] for i, flag in enumerate(schedule.weekend_mask) if flag == "1")
-        payload["content"] = (content + "\n" if content else "") + f"folga={days}"
+        content = (content + "\n" if content else "") + f"folga={days}"
+    for line in schedule.list_lines:          # ex.: a jornada das planilhas de tipos de site
+        key = norm(line.split("=")[0])
+        if not any(norm(existing.split("=")[0]) == key for existing in content.splitlines()):
+            content = (content + "\n" if content else "") + line
+    if content != (lst.get("content") or ""):
+        payload["content"] = content
     if payload:
         await call(lambda: clickup.update_list(lst["id"], payload))
         start = f"{schedule.start:%d/%m/%Y}" if schedule.start else "em branco"
@@ -141,17 +165,25 @@ async def ensure_views(clickup: ClickUpClient, list_id: str, fields: list[dict])
 
 
 def schedule_view_columns(fields: list[dict]) -> list[str]:
-    """Colunas da vista "Cronograma", na ordem: datas, duração, %, calendário, dependências,
-    conclusão, início fixado e os campos de pausa."""
+    """Colunas da vista "Cronograma", na ordem: ID e WBS, datas, duração, % (real e planejado),
+    situação, pesos, calendário, dependências, conclusão, início fixado e os campos de pausa."""
+    head = [find_field(fields, FIELD_TASK_ID, "number"), find_field(fields, FIELD_WBS, "short_text")]
     custom = [
         find_field(fields, FIELD_DURATION, "number"),
         find_field(fields, FIELD_PERCENT, "manual_progress"),
+        find_field(fields, FIELD_PLANNED, "number"),
+        find_field(fields, FIELD_SITUATION, "drop_down"),
+        find_field(fields, FIELD_WEIGHT, "number"),
+        find_field(fields, FIELD_PROJECT_WEIGHT, "number"),
         find_field(fields, FIELD_CALENDAR, "drop_down"),
     ]
     tail = [find_field(fields, FIELD_COMPLETION, "date"), find_field(fields, FIELD_FIXED_START, "date")]
-    tail += [find_field(fields, d["name"], d["type"]) for d in PAUSE_FIELD_DEFS]
+    tail += [find_field(fields, d["name"], None if d["name"] == FIELD_PAUSE_REASON else d["type"])
+             for d in PAUSE_FIELD_DEFS]
+    tail += [find_field(fields, FIELD_PAUSED_DAYS, "number")]
     return (
-        ["assignee", "startDate", "dueDate"]
+        [f"cf_{f['id']}" for f in head if f]
+        + ["assignee", "startDate", "dueDate"]
         + [f"cf_{f['id']}" for f in custom if f]
         + ["dependencies"]
         + [f"cf_{f['id']}" for f in tail if f]
@@ -170,8 +202,12 @@ async def add_view_columns(clickup: ClickUpClient, list_id: str, fields: list[di
     missing = [c for c in schedule_view_columns(fields) if c not in present]
     if not missing:
         return []
-    cols = list((full.get("columns") or {}).get("fields", []))
-    cols += [{"field": c, "idx": len(cols) + i, "width": 160, "hidden": False} for i, c in enumerate(missing)]
+    first = {f"cf_{f['id']}" for f in fields if f.get("name") in (FIELD_TASK_ID, FIELD_WBS)}
+    new = [{"field": c, "width": 90 if c in first else 160, "hidden": False} for c in missing]
+    cols = ([c for c in new if c["field"] in first]            # ID e WBS à frente, o resto no fim
+            + list((full.get("columns") or {}).get("fields", []))
+            + [c for c in new if c["field"] not in first])
+    cols = [{**c, "idx": i} for i, c in enumerate(cols)]
     payload = {key: full[key] for key in ("name", "type", "grouping", "divide", "sorting", "filters", "settings")
                if key in full}
     payload["columns"] = {"fields": cols}
@@ -193,8 +229,13 @@ async def delete_existing(clickup: ClickUpClient, list_id: str) -> int:
     return len(tasks)
 
 
-async def create_tasks(clickup: ClickUpClient, lst: dict, fields: list[dict], schedule: XlsxSchedule) -> dict[str, str]:
+async def create_tasks(
+    clickup: ClickUpClient, lst: dict, fields: list[dict], schedule: XlsxSchedule, teams: bool = True,
+) -> dict[str, str]:
     f_duration = find_field(fields, FIELD_DURATION, "number")
+    f_weight = find_field(fields, FIELD_WEIGHT, "number")
+    f_task_id = find_field(fields, FIELD_TASK_ID, "number")
+    f_wbs = find_field(fields, FIELD_WBS, "short_text")
     f_percent = find_field(fields, FIELD_PERCENT, "manual_progress")
     f_calendar = find_field(fields, FIELD_CALENDAR, "drop_down")
     names = status_names(lst.get("statuses"))
@@ -219,8 +260,14 @@ async def create_tasks(clickup: ClickUpClient, lst: dict, fields: list[dict], sc
                 {"id": f_percent["id"], "value": {"current": task.percent}},
                 {"id": f_calendar["id"], "value": calendar_option_id(f_calendar, task.calendar)},
             ]
+        if task.weight is not None and f_weight:
+            payload["custom_fields"].append({"id": f_weight["id"], "value": task.weight})
+        if task.source_id is not None and f_task_id:
+            payload["custom_fields"].append({"id": f_task_id["id"], "value": task.source_id})
+        if task.wbs and f_wbs:
+            payload["custom_fields"].append({"id": f_wbs["id"], "value": task.wbs})
         team_ids = []
-        for resource in task.resources:
+        for resource in task.resources if teams else ():
             if _team_key(resource) in groups:
                 team_ids.append(groups[_team_key(resource)])
             else:
@@ -300,14 +347,17 @@ async def main(args: argparse.Namespace) -> int:
             print(f"  apagando {len(existing)} tarefas existentes…")
             await delete_existing(clickup, list_id)
 
-        fields = await ensure_fields(clickup, list_id)
+        fields = await ensure_fields(clickup, list_id, site_type=any(t.source_id for t in schedule.tasks))
         await configure_list(clickup, lst, schedule)
-        created = await create_tasks(clickup, lst, fields, schedule)
+        created = await create_tasks(clickup, lst, fields, schedule, teams=not args.no_teams)
         print(f"  {len(created)} tarefas criadas")
         print(f"  {await create_dependencies(clickup, schedule, created)} dependências criadas")
         views = await ensure_views(clickup, list_id, fields)
         if views:
             print(f"  vistas criadas: {', '.join(views)}")
+        columns = await add_view_columns(clickup, list_id, fields)
+        if columns:
+            print(f"  colunas acrescentadas à vista Cronograma: {', '.join(columns)}")
 
         if args.holidays_list_id:
             print(f"  {await ensure_holidays(clickup, args.holidays_list_id, schedule)} feriados adicionados")
@@ -340,6 +390,7 @@ if __name__ == "__main__":
     parser.add_argument("--room", choices=["STUDIO", "CTP", "NEWSROOM"],
                         help="planilhas de estúdio: a sala a importar (cada sala é uma lista)")
     parser.add_argument("--zero", action="store_true", help="importa a estrutura com todo o progresso em 0%%")
+    parser.add_argument("--no-teams", action="store_true", help="não atribui equipes (Resource Names da planilha)")
     parser.add_argument("--no-start-date", action="store_true",
                         help="não define a data de início da lista; as tarefas ficam sem datas até ela ser preenchida")
     parser.add_argument("--start-date", metavar="DD/MM/AAAA", help="data de início do projeto (padrão: a da planilha)")

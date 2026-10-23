@@ -6,9 +6,9 @@ cada lista tem ids próprios — por isso tudo aqui casa por NOME, nunca por id.
 from __future__ import annotations
 
 import unicodedata
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
-from src.services.schedule_engine import CAL_CORRIDO, CAL_UTIL
+from src.services.schedule_engine import CAL_CORRIDO, CAL_UTIL, WorkDay
 
 FIELD_DURATION = "Duração (dias)"
 FIELD_PERCENT = "% Concluído"
@@ -17,6 +17,9 @@ FIELD_COMPLETION = "Data de Conclusão"   # já existe em todas as listas do spa
 # "não começar antes de" — preenchido pelo motor quando alguém muda à mão o início
 # de uma tarefa não iniciada; apagar devolve a tarefa ao cálculo pelas dependências
 FIELD_FIXED_START = "Início fixado"
+# peso do item dentro do seu pai (coluna "Weight (%)" das planilhas de tipos de site); com
+# peso em todos os filhos, o % do resumo é a média ponderada por ele, e não pela duração
+FIELD_WEIGHT = "Peso (%)"
 
 OPTION_UTIL = "Útil"
 OPTION_CORRIDO = "Corrido"
@@ -33,6 +36,7 @@ FIELD_DEFS: list[dict] = [
         ]},
     },
     {"name": FIELD_FIXED_START, "type": "date", "type_config": {}},
+    {"name": FIELD_WEIGHT, "type": "number", "type_config": {}},
 ]
 # os quatro campos de pausa ("Pausa de", "Pausa até", "Motivo da pausa", "Histórico de pausas")
 from src.services.schedule_pauses import (  # noqa: E402
@@ -41,6 +45,31 @@ from src.services.schedule_pauses import (  # noqa: E402
 )
 
 FIELD_DEFS += PAUSE_FIELD_DEFS
+
+# Informações das planilhas de tipos de site (2026-10-23). ID e WBS vêm da planilha (importador);
+# os outros são calculados pelo motor a cada recálculo, como as colunas da planilha.
+FIELD_TASK_ID = "ID"
+FIELD_WBS = "WBS"
+FIELD_PROJECT_WEIGHT = "Peso no projeto (%)"
+FIELD_PLANNED = "% Planejado"
+FIELD_SITUATION = "Situação"
+FIELD_PAUSED_DAYS = "Dias pausados"
+SITUATIONS = ("Não iniciada", "Em andamento", "Atrasada", "Pausada", "Concluída")
+_SITUATION_COLORS = ("#87909e", "#1090e0", "#e8262a", "#f8ae00", "#2ecd6f")
+PAUSE_REASONS = ("Logística", "Clima", "Externo", "Outro")       # aba Parameters: Pause reasons
+
+SITE_TYPE_FIELD_DEFS: list[dict] = [
+    {"name": FIELD_TASK_ID, "type": "number", "type_config": {}},
+    {"name": FIELD_WBS, "type": "short_text", "type_config": {}},
+    {"name": FIELD_PROJECT_WEIGHT, "type": "number", "type_config": {}},
+    {"name": FIELD_PLANNED, "type": "number", "type_config": {}},
+    {"name": FIELD_SITUATION, "type": "drop_down", "type_config": {"options": [
+        {"name": name, "color": color} for name, color in zip(SITUATIONS, _SITUATION_COLORS)]}},
+    {"name": FIELD_PAUSED_DAYS, "type": "number", "type_config": {}},
+    # numa lista nova o motivo da pausa é lista fechada; numa que já o tem como texto, fica o texto
+    {"name": FIELD_PAUSE_REASON, "type": "drop_down", "type_config": {"options": [
+        {"name": name} for name in PAUSE_REASONS]}},
+]
 
 _WEEKDAYS = {"seg": 0, "ter": 1, "qua": 2, "qui": 3, "sex": 4, "sab": 5, "dom": 6}
 
@@ -151,10 +180,57 @@ def parse_weekend_mask(text: str | None, default: str) -> str:
     return default
 
 
+def parse_workday(text: str | None) -> WorkDay | None:
+    """Lê "jornada=08:00-17:00" (e "almoço=12:00-13:00") da descrição da lista. Sem a linha
+    da jornada, None: as datas ficam só com o dia, como sempre."""
+    spans: dict[str, tuple[time, time]] = {}
+    for line in (text or "").splitlines():
+        key, sep, value = line.partition("=")
+        if not sep:
+            key, sep, value = line.partition(":")
+        parts = [p.strip() for p in value.replace("–", "-").split("-")]
+        if not sep or len(parts) != 2:
+            continue
+        try:
+            first, last = (datetime.strptime(p, "%H:%M").time() for p in parts)
+        except ValueError:
+            continue
+        spans[norm(key)] = (first, last)          # norm: "almoço" vira "almoco"
+    if "jornada" not in spans:
+        return None
+    start, end = spans["jornada"]
+    lunch = spans.get("almoco")
+    lunch_hours = ((lunch[1].hour * 60 + lunch[1].minute) - (lunch[0].hour * 60 + lunch[0].minute)) / 60 if lunch else 0
+    hours = ((end.hour * 60 + end.minute) - (start.hour * 60 + start.minute)) / 60 - lunch_hours
+    return WorkDay(start=start, hours=hours, lunch_start=lunch[0] if lunch else None, lunch_hours=lunch_hours)
+
+
+def read_option(field: dict | None) -> str | None:
+    """Nome da opção escolhida num campo de lista fechada (o ClickUp devolve o orderindex)."""
+    if not field or field.get("value") in (None, ""):
+        return None
+    options = (field.get("type_config") or {}).get("options") or []
+    for option in options:
+        if str(option.get("orderindex")) == str(field["value"]) or option.get("id") == field["value"]:
+            return option.get("name")
+    return None
+
+
+def option_id(field: dict | None, name: str) -> str | None:
+    for option in ((field or {}).get("type_config") or {}).get("options") or []:
+        if norm(option.get("name")) == norm(name):
+            return option.get("id")
+    return None
+
+
 def read_task_pauses(custom: list[dict] | None, utc_offset_hours: float) -> tuple[Pause | None, list[Pause], list[str]]:
     """(pausa atual ou próxima, pausas do histórico, linhas do histórico que não deu para ler)."""
     start = ms_to_site_date((find_field(custom, FIELD_PAUSE_FROM, "date") or {}).get("value"), utc_offset_hours)
     end = ms_to_site_date((find_field(custom, FIELD_PAUSE_UNTIL, "date") or {}).get("value"), utc_offset_hours)
-    reason = str((find_field(custom, FIELD_PAUSE_REASON) or {}).get("value") or "").strip()
+    reason_field = find_field(custom, FIELD_PAUSE_REASON)
+    if reason_field and reason_field.get("type") == "drop_down":
+        reason = read_option(reason_field) or ""
+    else:
+        reason = str((reason_field or {}).get("value") or "").strip()
     history, bad = parse_history((find_field(custom, FIELD_PAUSE_HISTORY) or {}).get("value"))
     return (Pause(start, end, reason) if start else None), history, bad

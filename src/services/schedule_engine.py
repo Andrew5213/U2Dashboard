@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from functools import cached_property
 
 CAL_UTIL = "util"
@@ -90,18 +90,20 @@ class ScheduleTask:
     start: date | None = None        # início hoje gravado (vale como início real se em andamento)
     finished_on: date | None = None  # data real de conclusão
     cancelled: bool = False
-    # "começa em": início digitado à mão numa tarefa não iniciada. Vence as antecessoras
-    # (como o "Must start on" do MS Project) — só não começa antes de hoje
+    # "começa em" ("Início fixado"): numa tarefa não iniciada, o dia em que ela começa — vence
+    # as antecessoras (como o "Must start on" do MS Project) e só não fica antes de hoje.
+    # Num grupo/disciplina, o dia em que o bloco começa: as antecessoras de fora do bloco não
+    # o seguram, as de dentro continuam a valer; vale o grupo fixado mais interno
     fixed_start: date | None = None
-    # "não começar antes de": início digitado num grupo/disciplina, que vale para todas as
-    # tarefas do bloco — aqui as antecessoras continuam a valer
-    not_before: date | None = None
     # datas mantidas como estão (fora do alcance de uma edição) — as sucessoras
     # que forem recalculadas partem delas
     pinned: tuple[date, date] | None = None
     # pausas: (primeiro dia, último dia) em que a tarefa não anda — o trabalho que cairia
     # ali passa para depois; a duração não muda, o fim se afasta
     pauses: tuple[tuple[date, date], ...] = ()
+    # "Peso (%)": peso da tarefa dentro do seu pai. Com peso em todos os filhos, o % do
+    # resumo é a média ponderada por ele (como nas planilhas de tipos de site), não pela duração
+    weight: float | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,7 @@ def compute_schedule(
         warnings.append("dependência circular entre: " + ", ".join(_ref(tid) for tid in cyclic))
 
     today_pos = calendar.index_of(today)
+    anchors = {tid: a for tid in leaf_ids if (a := _fixed_block(tid, by_id))}
     pos_start: dict[str, float] = {}
     pos_finish: dict[str, float] = {}
     dates: dict[str, tuple[date | None, date | None]] = {}
@@ -183,12 +186,15 @@ def compute_schedule(
 
         blocks = _blocked_positions(calendar, t.pauses)
         if not reschedule or p <= 0:
+            anchor = anchors.get(tid)
             if t.fixed_start:
                 floor = float(calendar.index_of(t.fixed_start))
+            elif anchor:
+                block, block_day = anchor
+                inside = [pos_finish[q] for q in preds[tid] if q in pos_finish and _is_under(q, block, by_id)]
+                floor = max([float(calendar.index_of(block_day))] + inside)
             else:
                 floor = max(0.0, pred_finish)
-                if t.not_before:
-                    floor = max(floor, float(calendar.index_of(t.not_before)))
             n = max(floor, float(today_pos)) if reschedule else floor
             n, o = _work_through(n, m, blocks)
             start_day = calendar.date_at(math.floor(n + _EPS))
@@ -221,18 +227,19 @@ def compute_schedule(
             duration_util=weights[tid], pos_start=pos_start[tid], pos_finish=pos_finish[tid],
         )
 
-    for tid in order:
-        if tid not in children:
-            continue
+    def is_active(task_id: str) -> bool:
+        return any(not by_id[leaf].cancelled for leaf in leaves_of(task_id))
+
+    # do mais fundo para o topo: o % ponderado pelo peso usa o % dos filhos já calculado
+    depth = {tid: _depth(tid, by_id) for tid in order}
+    for tid in sorted((t for t in order if t in children), key=lambda t: -depth[t]):
         active = [leaf for leaf in leaves_of(tid) if not by_id[leaf].cancelled]
         if not active:
             results[tid] = ScheduleResult(tid, True, None, None, 0.0, 0.0, 0.0, 0.0, 0.0)
             continue
         total = sum(weights[leaf] for leaf in active)
-        if total > 0:
-            percent = sum(weights[leaf] * results[leaf].percent for leaf in active) / total
-        else:
-            percent = sum(results[leaf].percent for leaf in active) / len(active)
+        kids = [k for k in children[tid] if is_active(k)]
+        percent = _combine(kids, active, by_id, weights, lambda k: results[k].percent)
         if percent >= 100 and any(results[leaf].percent < 100 for leaf in active):
             # tarefa sem duração não pesa, mas enquanto estiver aberta o resumo não fecha
             percent = 99.99
@@ -248,6 +255,131 @@ def compute_schedule(
         )
 
     return ScheduleOutput(results=results, warnings=tuple(warnings))
+
+
+def _combine(kids: list[str], leaves: list[str], by_id: dict[str, ScheduleTask], util: dict[str, float],
+             value) -> float:
+    """Valor de um resumo a partir dos filhos: com "Peso (%)" em todos os filhos ativos, a
+    média ponderada por ele (nível a nível); senão, pela duração útil das tarefas-folha."""
+    kid_weight = sum(by_id[k].weight or 0.0 for k in kids)
+    if kids and all(by_id[k].weight is not None for k in kids) and kid_weight > 0:
+        return sum((by_id[k].weight or 0.0) * value(k) for k in kids) / kid_weight
+    total = sum(util[leaf] for leaf in leaves)
+    if total > 0:
+        return sum(util[leaf] * value(leaf) for leaf in leaves) / total
+    return sum(value(leaf) for leaf in leaves) / len(leaves)
+
+
+def rollup(tasks: list[ScheduleTask], results: dict[str, ScheduleResult], leaf_values: dict[str, float]) -> dict[str, float]:
+    """Leva um valor das tarefas-folha (ex.: % planejado) aos resumos pela mesma regra do % concluído."""
+    by_id = {t.id: t for t in tasks}
+    graph = _LeafGraph(tasks)
+    util = {leaf: results[leaf].duration_util for leaf in graph.leaf_ids if leaf in results}
+    values = {leaf: float(leaf_values.get(leaf, 0.0)) for leaf in graph.leaf_ids}
+
+    def active_leaves(task_id: str) -> list[str]:
+        return [leaf for leaf in graph.leaves_of(task_id) if not by_id[leaf].cancelled]
+
+    for tid in sorted(graph.children, key=lambda t: -_depth(t, by_id)):
+        leaves = active_leaves(tid)
+        if not leaves:
+            continue
+        kids = [k for k in graph.children[tid] if active_leaves(k)]
+        values[tid] = _combine(kids, leaves, by_id, util, lambda k: values.get(k, 0.0))
+    return values
+
+
+def project_weights(tasks: list[ScheduleTask]) -> dict[str, float]:
+    """Peso de cada item no projeto inteiro (coluna "Project Weight" da planilha): o produto dos
+    pesos do caminho, normalizados em cada nível, em %. Só onde todo o nível tem peso."""
+    by_id = {t.id: t for t in tasks}
+    children: dict[str | None, list[str]] = {}
+    for t in tasks:
+        parent = t.parent_id if t.parent_id in by_id else None
+        children.setdefault(parent, []).append(t.id)
+    out: dict[str, float] = {}
+
+    def walk(parent: str | None, share: float) -> None:
+        kids = children.get(parent, [])
+        if not kids or any(by_id[k].weight is None for k in kids):
+            return
+        total = sum(by_id[k].weight or 0.0 for k in kids)
+        if total <= 0:
+            return
+        for k in kids:
+            out[k] = share * (by_id[k].weight or 0.0) / total
+            walk(k, out[k])
+
+    walk(None, 100.0)
+    return out
+
+
+@dataclass(frozen=True)
+class WorkDay:
+    """Jornada de trabalho (aba Parameters das planilhas): hora de início, horas trabalhadas
+    por dia e o almoço, que não conta como trabalho."""
+    start: time = time(8, 0)
+    hours: float = 8.0
+    lunch_start: time | None = time(12, 0)
+    lunch_hours: float = 1.0
+
+
+def clock_time(workday: WorkDay, fraction: float, end: bool) -> time:
+    """Hora do dia para uma fração de dia útil, como as fórmulas da planilha: um início que
+    cai na hora do almoço passa para depois dele; um fim exatamente no começo do almoço fica."""
+    fraction = min(max(fraction, 0.0), 1.0)
+    minutes = workday.start.hour * 60 + workday.start.minute + round(fraction * workday.hours * 60)
+    if workday.lunch_start is not None and workday.lunch_hours:
+        lunch = workday.lunch_start.hour * 60 + workday.lunch_start.minute
+        if (minutes > lunch) if end else (minutes >= lunch):
+            minutes += round(workday.lunch_hours * 60)
+    minutes = min(minutes, 23 * 60 + 59)
+    return time(minutes // 60, minutes % 60)
+
+
+def _depth(task_id: str, by_id: dict[str, ScheduleTask]) -> int:
+    depth, node, seen = 0, by_id[task_id].parent_id, {task_id}
+    while node and node in by_id and node not in seen:
+        seen.add(node)
+        depth += 1
+        node = by_id[node].parent_id
+    return depth
+
+
+def overall_percent(tasks: list[ScheduleTask], results: dict[str, ScheduleResult]) -> float | None:
+    """% da lista inteira. Com peso em todas as linhas de topo ativas, a média ponderada
+    pelo peso; senão, pela duração útil das tarefas-folha (como sempre foi)."""
+    ids = {t.id for t in tasks}
+    tops = [t for t in tasks if (not t.parent_id or t.parent_id not in ids)
+            and t.id in results and results[t.id].start is not None]
+    weight = sum(t.weight or 0.0 for t in tops)
+    if tops and all(t.weight is not None for t in tops) and weight > 0:
+        return sum((t.weight or 0.0) * results[t.id].percent for t in tops) / weight
+    leaves = [r for r in results.values() if not r.is_summary and r.start]
+    total = sum(r.duration_util for r in leaves)
+    return sum(r.duration_util * r.percent for r in leaves) / total if total else None
+
+
+def _fixed_block(task_id: str, by_id: dict[str, ScheduleTask]) -> tuple[str, date] | None:
+    """O grupo/disciplina com "Início fixado" mais interno acima da tarefa, e a data."""
+    node, seen = by_id[task_id].parent_id, set()
+    while node and node in by_id and node not in seen:
+        seen.add(node)
+        day = by_id[node].fixed_start
+        if day:
+            return node, day
+        node = by_id[node].parent_id
+    return None
+
+
+def _is_under(task_id: str, ancestor: str, by_id: dict[str, ScheduleTask]) -> bool:
+    node, seen = by_id[task_id].parent_id, set()
+    while node and node in by_id and node not in seen:
+        if node == ancestor:
+            return True
+        seen.add(node)
+        node = by_id[node].parent_id
+    return False
 
 
 class _LeafGraph:

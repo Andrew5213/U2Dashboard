@@ -24,6 +24,7 @@ STATUSES = [
 ]
 F_DURATION, F_PERCENT, F_CALENDAR, F_COMPLETION, F_FIXED = "f-dur", "f-pct", "f-cal", "f-done", "f-fixed"
 F_PFROM, F_PUNTIL, F_PREASON, F_PHIST = "f-pfrom", "f-puntil", "f-preason", "f-phist"
+F_WEIGHT = "f-weight"
 CALENDAR_OPTIONS = [
     {"id": "opt-util", "name": "Útil", "orderindex": 0},
     {"id": "opt-corrido", "name": "Corrido", "orderindex": 1},
@@ -38,10 +39,12 @@ FIELDS = [
     {"id": F_PUNTIL, "name": "Pausa até", "type": "date", "type_config": {}},
     {"id": F_PREASON, "name": "Motivo da pausa", "type": "short_text", "type_config": {}},
     {"id": F_PHIST, "name": "Histórico de pausas", "type": "text", "type_config": {}},
+    {"id": F_WEIGHT, "name": "Peso (%)", "type": "number", "type_config": {}},
 ]
 
 
-def make_task(task_id, parent=None, status="planejando", percent=0, duration=None, corrido=False, completed=None):
+def make_task(task_id, parent=None, status="planejando", percent=0, duration=None, corrido=False, completed=None,
+              weight=None):
     status_type = next(s["type"] for s in STATUSES if s["status"] == status)
     values = {
         F_DURATION: None if duration is None else str(duration),
@@ -50,6 +53,7 @@ def make_task(task_id, parent=None, status="planejando", percent=0, duration=Non
         F_COMPLETION: None if completed is None else str(date_to_ms(completed)),
         F_FIXED: None,
         F_PFROM: None, F_PUNTIL: None, F_PREASON: None, F_PHIST: None,
+        F_WEIGHT: None if weight is None else str(weight),
     }
     return {
         "id": task_id, "name": task_id.upper(), "parent": parent,
@@ -526,6 +530,20 @@ class TestBaseline:
         assert summary.baseline_finish == date(2026, 10, 29)          # o plano puro, sem o adiantamento
         assert summary.delay_days is not None and summary.delay_days < 0
 
+    async def test_fixed_starts_set_before_the_first_run_are_part_of_the_plan(self, db):
+        """O gerente fixa as datas obrigatórias e só depois põe o início do projeto: essas
+        datas são plano, não desvio (2026-10-23 — antes a linha de base as ignorava)."""
+        clickup = FakeClickUp(_project())
+        clickup._set("n2", F_FIXED, str(date_to_ms(date(2026, 10, 19))))     # grupo: começa em 19
+        clickup._set("c", F_FIXED, str(date_to_ms(date(2026, 10, 27))))      # tarefa: começa em 27
+
+        summary = await _run(db, clickup)
+
+        rows = await self._rows(db)
+        assert rows["a"].start == date(2026, 10, 19)
+        assert rows["c"].start == date(2026, 10, 27)
+        assert summary.delay_days == 0
+
     async def test_dry_run_does_not_store_a_baseline(self, db):
         summary = await _run(db, FakeClickUp(_project()), dry_run=True)
         assert summary.baseline_finish is None and summary.delay_days is None
@@ -980,9 +998,10 @@ class TestWritesRacingWithPeople:
 
 
 class TestSummaryEdits:
-    """Datas digitadas num grupo ou disciplina (resumo). Decisão de 22/10/2026: mudar o
-    início move o bloco — vira "não começar antes de" para todas as tarefas dele, com as
-    dependências valendo; um vencimento digitado num resumo é desfeito, com comentário."""
+    """Datas digitadas num grupo ou disciplina (resumo). Mudar o início move o bloco: vira o
+    "Início fixado" do grupo, o dia em que o bloco começa — desde 23/10/2026 vence as
+    antecessoras de fora dele, como numa tarefa (antes era só um piso); um vencimento digitado
+    num resumo é desfeito, com comentário."""
 
     async def test_moving_a_group_start_holds_the_whole_block(self, db):
         clickup = await _planned(db)                      # n2 = grupo com a → b, 13–15
@@ -1003,16 +1022,26 @@ class TestSummaryEdits:
         second = await _run(db, clickup)
         assert second.changed == 0 and clickup.writes == []
 
-    async def test_a_group_start_still_waits_for_the_dependencies(self, db):
+    async def test_a_group_start_beats_the_dependencies_from_outside(self, db):
         clickup = await _planned(db, TestAcrossDisciplines()._two_disciplines())
         clickup.type_dates("t2", start=date(2026, 10, 13))                    # z espera a (13–14)
 
         await _run(db, clickup)
 
         assert ms_to_date(clickup.value("t2", F_FIXED)) == date(2026, 10, 13)
-        assert clickup.dates("z") == (date(2026, 10, 15), date(2026, 10, 16))
+        assert clickup.dates("z")[0] == date(2026, 10, 13)                      # não espera mais a
         comments = [w for w in clickup.writes if w[0] == "comment"]
-        assert len(comments) == 1 and comments[0][1] == "t2" and '"A"' in comments[0][2]
+        assert len(comments) == 1 and comments[0][1] == "t2" and '"A"' in comments[0][2]   # alerta
+
+    async def test_a_group_start_already_past_goes_to_today_with_a_comment(self, db):
+        clickup = await _planned(db)
+        clickup.type_dates("n2", start=date(2026, 10, 14))
+
+        await _run(db, clickup, today=date(2026, 10, 20))
+
+        assert clickup.dates("a")[0] == date(2026, 10, 20)
+        comments = [w for w in clickup.writes if w[0] == "comment" and w[1] == "n2"]
+        assert len(comments) == 1 and "já passou" in comments[0][2]
 
     async def test_dragging_a_group_moves_the_block(self, db):
         clickup = await _planned(db)
@@ -1071,10 +1100,8 @@ class TestSummaryEdits:
 
         assert ms_to_date(clickup.value("b", F_FIXED)) == date(2026, 10, 20)
         assert clickup.dates("b") == (date(2026, 10, 20), date(2026, 10, 20))
-        # "não começar antes de" é um piso: a não vai para antes do início do projeto (13)
-        assert clickup.dates("a") == (date(2026, 10, 13), date(2026, 10, 14))
-        comments = [w for w in clickup.writes if w[0] == "comment"]
-        assert len(comments) == 1 and comments[0][1] == "n2" and "o projeto começa em 13/10/2026" in comments[0][2]
+        # a data do grupo é definitiva, mesmo antes do início do projeto (13), como numa tarefa
+        assert clickup.dates("a")[0] == date(2026, 10, 9)
 
     async def test_clearing_the_group_floor_lets_the_block_come_back(self, db):
         clickup = await _planned(db)
@@ -1117,6 +1144,151 @@ class TestStaleState:
         await _run(db, clickup)
 
         assert ms_to_date(clickup.value("a", F_FIXED)) == date(2026, 10, 15)
+
+
+class TestWeights:
+    """Campo "Peso (%)" (planilhas de tipos de site, 2026-10-23): o % dos grupos e da lista
+    é a média ponderada pelo peso de cada filho, nível a nível."""
+
+    def _weighted(self):
+        return [
+            make_task("d", weight=60),
+            make_task("a", parent="d", duration=1, weight=80),
+            make_task("b", parent="d", duration=9, weight=20),
+            make_task("h", duration=1, weight=40),               # linha de topo sem filhos (aceitação)
+        ]
+
+    async def test_group_percent_written_to_clickup_follows_the_weights(self, db):
+        tasks = self._weighted()
+        tasks[1] = make_task("a", parent="d", duration=1, weight=80, percent=50, status="fazendo")
+        clickup = FakeClickUp(tasks)
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok
+        assert clickup.value("d", F_PERCENT)["current"] == "40"           # 80% × 50%; pela duração: 5
+        assert summary.percent == pytest.approx(24)                        # 60% × 40% + 40% × 0%
+
+    async def test_without_weights_nothing_changes(self, db):
+        tasks = [make_task("d"), make_task("a", parent="d", duration=1, percent=50, status="fazendo"),
+                 make_task("b", parent="d", duration=9)]
+        clickup = FakeClickUp(tasks)
+
+        await _run(db, clickup)
+
+        assert clickup.value("d", F_PERCENT)["current"] == "5"
+
+
+F_PW, F_PLAN, F_SIT, F_PDAYS = "f-pw", "f-plan", "f-sit", "f-pdays"
+SITUATION_OPTIONS = [{"id": f"sit-{i}", "name": n, "orderindex": i} for i, n in
+                     enumerate(["Não iniciada", "Em andamento", "Atrasada", "Pausada", "Concluída"])]
+INFO_FIELDS = FIELDS + [
+    {"id": F_PW, "name": "Peso no projeto (%)", "type": "number", "type_config": {}},
+    {"id": F_PLAN, "name": "% Planejado", "type": "number", "type_config": {}},
+    {"id": F_SIT, "name": "Situação", "type": "drop_down", "type_config": {"options": SITUATION_OPTIONS}},
+    {"id": F_PDAYS, "name": "Dias pausados", "type": "number", "type_config": {}},
+]
+WORKDAY = "folga=dom\njornada=08:00-17:00\nalmoço=12:00-13:00"
+
+
+def with_info(tasks):
+    """Tarefas de uma lista importada das planilhas de tipos de site (com os campos calculados)."""
+    for t in tasks:
+        t["custom_fields"] += [{**f, "value": None} for f in INFO_FIELDS[len(FIELDS):]]
+    return tasks
+
+
+def angola(day, hour, minute=0):
+    return int(datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone(timedelta(hours=1))).timestamp() * 1000)
+
+
+class TestSiteTypeInfo:
+    """Informações das planilhas de tipos de site (2026-10-23): datas com hora pela jornada da
+    lista, peso no projeto, % planejado, situação e dias pausados."""
+
+    def _short(self):
+        tasks = [make_task("g"), make_task("p", parent="g", duration=0.25), make_task("q", parent="g", duration=0.5)]
+        depends(tasks, "q", "p")
+        return tasks
+
+    async def test_dates_carry_the_hours_of_the_workday(self, db):
+        clickup = FakeClickUp(self._short(), content=WORKDAY)
+
+        summary = await _run(db, clickup)
+
+        assert summary.ok
+        assert clickup.tasks["p"]["start_date"] == str(angola(date(2026, 10, 13), 8))
+        assert clickup.tasks["p"]["due_date"] == str(angola(date(2026, 10, 13), 10))
+        assert clickup.tasks["q"]["start_date"] == str(angola(date(2026, 10, 13), 10))
+        assert clickup.tasks["q"]["due_date"] == str(angola(date(2026, 10, 13), 15))   # 2 h + almoço + 2 h
+        assert clickup.tasks["g"]["due_date"] == str(angola(date(2026, 10, 13), 15))
+        put = next(w[2] for w in clickup.writes if w[0] == "task" and w[1] == "p")
+        assert put["start_date_time"] is True and put["due_date_time"] is True
+
+        clickup.writes.clear()
+        second = await _run(db, clickup)
+        assert second.changed == 0 and clickup.writes == []
+
+    async def test_without_a_workday_line_the_dates_stay_whole_days(self, db):
+        clickup = FakeClickUp(self._short())
+        await _run(db, clickup)
+        assert clickup.tasks["q"]["due_date"] == str(date_to_ms(date(2026, 10, 13)))
+
+    async def test_project_weight_is_written(self, db):
+        tasks = with_info([make_task("d", weight=60), make_task("a", parent="d", duration=1, weight=25),
+                           make_task("b", parent="d", duration=1, weight=75), make_task("h", duration=1, weight=40)])
+        clickup = FakeClickUp(tasks, fields=INFO_FIELDS)
+
+        await _run(db, clickup)
+
+        assert float(clickup.value("d", F_PW)) == 60
+        assert float(clickup.value("b", F_PW)) == 45
+        assert float(clickup.value("h", F_PW)) == 40
+
+    async def test_planned_percent_and_situation_against_the_baseline(self, db):
+        clickup = FakeClickUp(with_info(_chains()), fields=INFO_FIELDS)
+        await _run(db, clickup)                                  # linha de base: a 13–14, b 15, c 16–19
+
+        await _run(db, clickup, today=date(2026, 10, 15))        # nada feito, a já devia ter acabado
+
+        assert float(clickup.value("a", F_PLAN)) == 100
+        assert float(clickup.value("b", F_PLAN)) == 0
+        assert clickup.value("a", F_SIT) == "sit-2"              # Atrasada
+        assert clickup.value("b", F_SIT) == "sit-0"              # Não iniciada
+        assert float(clickup.value("n2", F_PLAN)) == pytest.approx(67, abs=1)   # 2 de 3 dias úteis
+        assert clickup.value("n2", F_SIT) == "sit-2"
+
+    async def test_situation_follows_the_progress(self, db):
+        tasks = with_info(_chains())
+        tasks[2] = with_info([make_task("a", parent="n2", duration=2, percent=100, status="complete",
+                                        completed=date(2026, 10, 14))])[0]
+        clickup = FakeClickUp(tasks, fields=INFO_FIELDS)
+
+        await _run(db, clickup, today=date(2026, 10, 15))
+
+        assert clickup.value("a", F_SIT) == "sit-4"              # Concluída
+
+    async def test_situation_paused_and_in_progress(self, db):
+        tasks = with_info(_chains())
+        tasks[2] = with_info([make_task("a", parent="n2", duration=2, percent=50, status="fazendo")])[0]
+        clickup = FakeClickUp(tasks, fields=INFO_FIELDS)
+        clickup.pause("x", start=date(2026, 10, 14), reason="Clima")          # parada até nova ordem
+
+        await _run(db, clickup, today=date(2026, 10, 14))        # a: 50% feito, 50% planejado
+
+        assert clickup.value("a", F_SIT) == "sit-1"              # Em andamento
+        assert clickup.value("x", F_SIT) == "sit-3"              # Pausada
+        assert clickup.value("n1", F_SIT) == "sit-3"             # o grupo acima de uma tarefa pausada
+        assert float(clickup.value("x", F_PDAYS)) == 1           # 14 (hoje)
+
+    async def test_paused_days_are_counted(self, db):
+        clickup = FakeClickUp(with_info(_chains()), fields=INFO_FIELDS)
+        clickup.pause("x", history="13/10/2026 – 15/10/2026 · Clima")
+
+        await _run(db, clickup)
+
+        assert float(clickup.value("x", F_PDAYS)) == 3
+        assert float(clickup.value("n1", F_PDAYS)) == 3
 
 
 class TestAcrossDisciplines:
@@ -1392,3 +1564,4 @@ class TestPauses:
         summary = await _run(db, clickup)
 
         assert summary.changed == 0 and clickup.writes == []
+

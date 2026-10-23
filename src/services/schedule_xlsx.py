@@ -35,16 +35,20 @@ class XlsxTask:
     expected_finish: date | None
     expected_pos_start: float | None
     expected_pos_finish: float | None
+    weight: float | None = None     # "Peso (%)" dentro do pai (planilhas de tipos de site)
+    source_id: int | None = None    # ID da linha na planilha (campo "ID")
+    wbs: str | None = None          # nível no ClickUp: "1" etapa/disciplina, "2" grupo, "3" tarefa (campo "WBS")
 
 
 @dataclass(frozen=True)
 class XlsxSchedule:
     province: str
     project: str
-    start: date
+    start: date | None
     weekend_mask: str
     holidays: tuple[tuple[date, str], ...]
     tasks: tuple[XlsxTask, ...] = field(default_factory=tuple)
+    list_lines: tuple[str, ...] = ()    # linhas para a descrição da lista (ex.: a jornada)
 
 
 def _as_date(value) -> date | None:
@@ -62,11 +66,15 @@ def load_schedule(paths: list[str], room: str | None = None) -> XlsxSchedule:
 
     As planilhas dos estúdios têm outro formato (uma aba por sala, sem a aba
     Parâmetros) e vão para o leitor próprio delas."""
+    from src.services.schedule_xlsx_sitetype import is_site_type_workbook, load_site_type_schedule
     from src.services.schedule_xlsx_studio import is_studio_workbook, load_studio_schedule
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        if is_studio_workbook(openpyxl.load_workbook(paths[0], read_only=True)):
+        first = openpyxl.load_workbook(paths[0], read_only=True)
+        if is_studio_workbook(first):
             return load_studio_schedule(paths, room)
+        if is_site_type_workbook(first):
+            return load_site_type_schedule(paths[0])
 
     books = []
     with warnings.catch_warnings():

@@ -33,7 +33,13 @@ from src.services.schedule_engine import (
     ScheduleTask,
     StatusNames,
     WorkCalendar,
+    WorkDay,
+    clock_time,
     compute_schedule,
+    overall_percent,
+    project_weights,
+    rollup,
+    workdays_between,
     dependents_of,
     display_percent,
     reconcile_leaf,
@@ -55,14 +61,22 @@ from src.services.schedule_fields import (
     FIELD_DEFS,
     FIELD_DURATION,
     FIELD_FIXED_START,
+    FIELD_PAUSED_DAYS,
+    FIELD_PLANNED,
+    FIELD_PROJECT_WEIGHT,
+    FIELD_SITUATION,
+    FIELD_WEIGHT,
     FIELD_PERCENT,
     date_to_ms,
     find_field,
     ms_to_site_date,
     norm,
+    option_id,
     parse_weekend_mask,
+    parse_workday,
     read_calendar,
     read_number,
+    read_option,
     read_percent,
     read_task_pauses,
 )
@@ -123,6 +137,7 @@ class _Current:
     pause: Pause | None = None                 # a pausa atual ou a próxima
     history: tuple[Pause, ...] = ()            # pausas já terminadas
     history_bad: tuple[str, ...] = ()          # linhas do histórico que não deu para ler
+    weight: float | None = None                # "Peso (%)" dentro do pai
 
 
 @dataclass(frozen=True)
@@ -262,6 +277,8 @@ class ScheduleService:
             holidays=await self._holidays(),
         )
         names = status_names(lst.get("statuses"))
+        # "jornada=08:00-17:00" na descrição: as datas vão com hora, como nas planilhas
+        workday = parse_workday(lst.get("content"))
         if not current:
             return
 
@@ -273,16 +290,16 @@ class ScheduleService:
 
         pause_fields = {name: find_field(fields, name, kind) for name, kind in (
             (FIELD_PAUSE_FROM, "date"), (FIELD_PAUSE_UNTIL, "date"),
-            (FIELD_PAUSE_REASON, "short_text"), (FIELD_PAUSE_HISTORY, "text"))}
+            (FIELD_PAUSE_REASON, None), (FIELD_PAUSE_HISTORY, "text"))}   # motivo: texto ou lista fechada
         active, pause_plans = _sort_pauses(current, pause_fields, calendar, today, summary)
 
-        # Datas digitadas num grupo/disciplina. O início vira "não começar antes de" para
-        # todas as tarefas do bloco (gravado no "Início fixado" do próprio resumo); um
+        # Datas digitadas num grupo/disciplina. O início vira o dia em que o bloco começa
+        # (gravado no "Início fixado" do próprio resumo, decisão de 2026-10-23); um
         # vencimento é desfeito com comentário — o fim de um resumo vem das tarefas dele.
         # A primeira linha fica de fora: o início dela é o início do projeto.
         floors = {c.id: c.fixed_start for c in current.values() if c.id in parents and c.fixed_start}
-        # Início do projeto mudado na primeira linha: os "começa em" das tarefas e os "não antes
-        # de" dos grupos andam a mesma distância — senão ficavam sozinhos no lugar velho
+        # Início do projeto mudado na primeira linha: os "Início fixado" das tarefas e dos grupos
+        # andam a mesma distância — senão ficavam sozinhos no lugar velho
         carried: dict[str, date] = {}
         floors_moved: set[str] = set()
         if from_top and list_start and start != list_start:
@@ -308,7 +325,6 @@ class ScheduleService:
                 block_edits[c.id] = floors[c.id] = c.start
             if due_changed and not moved:
                 summary_due_typed.add(c.id)
-        block_floor = _block_floors(current, floors)
         # Mover o bloco leva junto o "começa em" das tarefas dele, pela mesma distância —
         # senão uma tarefa fixada seguraria o bloco no lugar velho (ou perderia a vantagem
         # que tinha sobre a antecessora, se fosse apagado)
@@ -326,10 +342,15 @@ class ScheduleService:
         leaf_target: dict[str, tuple[float, str, date | None]] = {}
         touched: dict[str, tuple[bool, bool, bool]] = {}     # folha → (início mudou, fim mudou, só deslocada)
         pause_sig: dict[str, str] = {}
+        leaf_pauses: dict[str, tuple] = {}
         pause_roots: set[str] = set()                        # folhas cujas pausas mudaram
         for c in current.values():
             if c.id in parents:
-                engine_tasks.append(ScheduleTask(id=c.id, parent_id=c.parent_id, predecessors=c.predecessors))
+                # "Início fixado" do grupo: o bloco começa nesse dia (a primeira linha fica de
+                # fora — o início dela é o do projeto)
+                engine_tasks.append(ScheduleTask(id=c.id, parent_id=c.parent_id, predecessors=c.predecessors,
+                                                 weight=c.weight,
+                                                 fixed_start=floors.get(c.id) if c.id != top_id else None))
                 continue
             prev = previous.get(c.id)
             percent, status = reconcile_leaf(
@@ -346,6 +367,7 @@ class ScheduleService:
                 completed_on = c.completed_on or today
             leaf_target[c.id] = (percent, status, completed_on)
             ranges = _pause_ranges(c.id, current, active, today)
+            leaf_pauses[c.id] = ranges
             pause_sig[c.id] = ";".join(f"{a.isoformat()}..{b.isoformat()}" for a, b in ranges)
             if prev and (prev.start or prev.due) and (prev.pause or "") != pause_sig[c.id]:
                 pause_roots.add(c.id)
@@ -354,7 +376,7 @@ class ScheduleService:
                 percent=percent, predecessors=c.predecessors, start=c.start,
                 finished_on=completed_on, cancelled=cancelled,
                 fixed_start=carried.get(c.id, c.fixed_start),
-                not_before=block_floor.get(c.id), pauses=ranges,
+                pauses=ranges, weight=c.weight,
             ))
 
         # Datas digitadas à mão. O cálculo prévio (sem as edições) diz onde cada tarefa
@@ -409,8 +431,8 @@ class ScheduleService:
 
         leaves = [r for r in output.results.values() if not r.is_summary and r.start]
         if leaves:
-            total = sum(r.duration_util for r in leaves)
-            summary.percent = round(sum(r.duration_util * r.percent for r in leaves) / total, 2) if total else None
+            overall = overall_percent(engine_tasks, output.results)
+            summary.percent = round(overall, 2) if overall is not None else None
             summary.project_start = min(r.start for r in leaves)
             summary.project_finish = max(r.finish for r in leaves)
 
@@ -419,10 +441,12 @@ class ScheduleService:
             summary.baseline_captured = True
         elif not dry_run and await self._baseline_finish(list_id) is None:
             # Primeiro cálculo da lista: guarda o plano puro, sem o andamento — é
-            # contra ele que o atraso passa a ser medido.
+            # contra ele que o atraso passa a ser medido. Os "Início fixado" que já existem
+            # entram: no primeiro cálculo ainda não há datas digitadas (sem estado guardado,
+            # nada conta como edição), só as que o gerente fixou de propósito antes de pôr o
+            # início do projeto — são plano, não desvio (2026-10-23)
             baseline_plan = compute_schedule(
-                [replace(t, percent=0.0, start=None, finished_on=None, fixed_start=None, not_before=None,
-                         pinned=None) for t in engine_tasks],
+                [replace(t, percent=0.0, start=None, finished_on=None, pinned=None) for t in engine_tasks],
                 calendar, today, reschedule=False,
             )
             await self._save_baseline(list_id, baseline_plan.results)
@@ -431,13 +455,20 @@ class ScheduleService:
         if summary.baseline_finish and summary.project_finish:
             summary.delay_days = (summary.project_finish - summary.baseline_finish).days
 
+        stamps = _stamps(output.results, calendar, workday) if workday else {}
+        info = await self._site_info(list_id, fields, engine_tasks, output.results, calendar, today,
+                                     current, leaf_pauses)
+        raw_by_id = {str(t["id"]): t for t in raw_tasks}
+
         plans: list[dict] = []
         for c in sorted(current.values(), key=lambda item: -depth[item.id]):  # folhas antes dos resumos
             result = output.results[c.id]
             dates_allowed = date_scope is None or c.id in date_scope
+            stamp = stamps.get(c.id)
             if result.is_summary:
                 typed = (from_top and c.id == top_id) or c.id in block_edits or c.id in summary_due_typed
-                plan = _plan_summary(c, result, names, f_percent, f_duration, dates_allowed, normalize=typed)
+                plan = _plan_summary(c, result, names, f_percent, f_duration, dates_allowed, normalize=typed,
+                                     stamp=stamp)
                 new_floor = floors.get(c.id) if (c.id in block_edits or c.id in floors_moved) else None
                 if new_floor and f_fixed and new_floor != c.fixed_start:
                     plan["fields"].append((f_fixed["id"], date_to_ms(new_floor)))
@@ -446,8 +477,9 @@ class ScheduleService:
                 continue
             else:
                 percent, status, completed_on = leaf_target[c.id]
-                plan = _plan_leaf(c, result, percent, status, completed_on, names, f_percent, f_completion)
-                _plan_edit(c, edits.get(c.id), result, plan, f_duration, f_fixed)
+                plan = _plan_leaf(c, result, percent, status, completed_on, names, f_percent, f_completion,
+                                  stamp=stamp)
+                _plan_edit(c, edits.get(c.id), result, plan, f_duration, f_fixed, stamp=stamp)
                 moved_with_block = carried.get(c.id)
                 if (moved_with_block and moved_with_block != c.fixed_start and f_fixed
                         and not (edits.get(c.id) and edits[c.id].fixed_start)):
@@ -455,6 +487,7 @@ class ScheduleService:
                     plan["log"]["inicio_fixado"] = [_iso(c.fixed_start), _iso(moved_with_block)]
                 if not dates_allowed:
                     _drop_dates(plan)
+            _plan_info(raw_by_id[c.id].get("custom_fields"), info.get(c.id, {}), plan)
             extra = pause_plans.get(c.id)
             if extra:
                 plan["fields"] += extra["fields"]
@@ -668,6 +701,63 @@ class ScheduleService:
 
     # ─── Linha de base ───────────────────────────────────────────────────────
 
+    async def _site_info(
+        self, list_id: str, fields: list[dict], tasks: list[ScheduleTask], results: dict, calendar: WorkCalendar,
+        today: date, current: dict[str, _Current], leaf_pauses: dict[str, tuple],
+    ) -> dict[str, dict[str, object]]:
+        """Colunas calculadas das planilhas de tipos de site, só nas listas que têm os campos:
+        peso no projeto, % planejado (contra a linha de base, no início de hoje), situação e
+        dias pausados. Devolve {tarefa: {id do campo: valor}}."""
+        f_pw = find_field(fields, FIELD_PROJECT_WEIGHT, "number")
+        f_plan = find_field(fields, FIELD_PLANNED, "number")
+        f_sit = find_field(fields, FIELD_SITUATION, "drop_down")
+        f_days = find_field(fields, FIELD_PAUSED_DAYS, "number")
+        if not (f_pw or f_plan or f_sit or f_days):
+            return {}
+        out: dict[str, dict[str, object]] = {}
+
+        def put(task_id: str, field: dict | None, value: object) -> None:
+            if field is not None and value is not None:
+                out.setdefault(task_id, {})[field["id"]] = value
+
+        if f_pw:
+            for task_id, weight in project_weights(tasks).items():
+                put(task_id, f_pw, round(weight, 2))
+
+        by_id = {t.id: t for t in tasks}
+        leaves = [t.id for t in tasks if t.id in leaf_pauses and not t.cancelled]
+        baseline = await self._baseline_rows(list_id)
+        planned: dict[str, float] = {}
+        if baseline:
+            now = calendar.index_of(today)
+            values = {}
+            for leaf in leaves:
+                row = baseline.get(leaf)
+                if not row:
+                    continue
+                begin, end = calendar.index_of(row[0]), calendar.end_position(row[1])
+                values[leaf] = 100.0 if now >= end else 0.0 if now <= begin else 100.0 * (now - begin) / (end - begin)
+            planned = rollup(tasks, results, values)
+
+        paused_today = {leaf for leaf in leaves if any(a <= today <= b for a, b in leaf_pauses[leaf])}
+        days = {leaf: _paused_workdays(current[leaf], calendar, today) for leaf in leaves}
+        for task_id, result in results.items():
+            if by_id[task_id].cancelled or result.start is None:
+                continue
+            under = [leaf for leaf in leaves if leaf == task_id or _is_under(leaf, task_id, current)]
+            plan = planned.get(task_id) if baseline else None
+            if plan is not None:
+                put(task_id, f_plan, round(plan))
+            put(task_id, f_sit, _situation(result.percent, plan, any(leaf in paused_today for leaf in under)))
+            put(task_id, f_days, sum(days.get(leaf, 0) for leaf in under))
+        return out
+
+    async def _baseline_rows(self, list_id: str) -> dict[str, tuple[date, date]]:
+        rows = (await self._db.execute(
+            select(ScheduleBaseline).where(ScheduleBaseline.list_id == list_id)
+        )).scalars().all()
+        return {row.task_id: (row.start, row.finish) for row in rows}
+
     async def _baseline_finish(self, list_id: str) -> date | None:
         return (await self._db.execute(
             select(func.max(ScheduleBaseline.finish)).where(ScheduleBaseline.list_id == list_id)
@@ -812,6 +902,7 @@ def _parse_tasks(raw_tasks: list[dict]) -> dict[str, _Current]:
             fixed_start=_site((find_field(custom, FIELD_FIXED_START, "date") or {}).get("value")),
             start_raw=_raw(t.get("start_date")),
             due_raw=_raw(t.get("due_date")),
+            weight=read_number(find_field(custom, FIELD_WEIGHT, "number")),
             **_read_pause(custom),
         )
     return current
@@ -1076,52 +1167,52 @@ def _leaves_under(task_id: str, current: dict[str, _Current], parents: set) -> l
     return found
 
 
-def _block_floors(current: dict[str, _Current], floors: dict[str, date]) -> dict[str, date]:
-    """"Não começar antes de" de cada tarefa: o maior "Início fixado" dos grupos acima dela."""
-    out: dict[str, date] = {}
-    for c in current.values():
-        found: list[date] = []
-        node, seen = c.parent_id, set()
-        while node and node not in seen:
-            seen.add(node)
-            if node in floors:
-                found.append(floors[node])
-            node = current[node].parent_id if node in current else None
-        if found:
-            out[c.id] = max(found)
-    return out
-
-
 def _block_notices(
     block_edits: dict[str, date], current: dict[str, _Current], parents: set, results: dict,
     calendar: WorkCalendar, today: date,
 ) -> list[tuple[str, str]]:
-    """Grupo movido que não pôde começar no dia digitado: diz no grupo o que o segurou."""
+    """Grupo com início digitado: como numa tarefa, a data vence as antecessoras de fora do
+    bloco e só não fica antes de hoje. Comenta no grupo quando a data já tinha passado
+    (ajustada) ou quando o bloco começa antes do fim de uma antecessora de fora (alerta)."""
     notices: list[tuple[str, str]] = []
     for sid, wanted in block_edits.items():
         result = results.get(sid)
-        if not result or not result.start or result.start <= calendar.date_at(calendar.index_of(wanted)):
+        if not result or not result.start:
             continue
-        leaves = [leaf for leaf in _leaves_under(sid, current, parents) if leaf in results and results[leaf].start]
-        first = current[min(leaves, key=lambda leaf: results[leaf].pos_start)] if leaves else None
-        finishes = [
+        if result.start > calendar.date_at(calendar.index_of(wanted)):
+            notices.append((sid, (
+                f"Cronograma: o início do grupo em {wanted:%d/%m/%Y} já passou e as tarefas dele não "
+                f"foram iniciadas. Início ajustado para {result.start:%d/%m/%Y}."
+            )))
+            continue
+        inside = set(_leaves_under(sid, current, parents))
+        late = [
             (results[p].pos_finish, results[p].finish, current[p].name)
-            for p in (first.predecessors if first else ()) if p in results and results[p].finish
+            for leaf in inside for p in _leaf_predecessors(leaf, current, parents)
+            if p not in inside and p in results and results[p].finish
+            and results[leaf].start and results[p].pos_finish > results[leaf].pos_start + 1e-9
         ]
-        if calendar.index_of(wanted) < calendar.index_of(today):
-            reason = f"{wanted:%d/%m/%Y} já passou"
-        elif calendar.index_of(wanted) < 0:
-            reason = f"o projeto começa em {calendar.first_workday:%d/%m/%Y}"
-        elif first and finishes:
-            _, finish, name = max(finishes)
-            reason = f'"{first.name}" depende de "{name}", que termina em {finish:%d/%m/%Y}'
-        else:
-            reason = f"o primeiro dia útil possível é {result.start:%d/%m/%Y}"
-        notices.append((sid, (
-            f"Cronograma: as tarefas deste grupo não começam antes de {wanted:%d/%m/%Y} (campo "
-            f'"Início fixado" do grupo). O grupo começa em {result.start:%d/%m/%Y}: {reason}.'
-        )))
+        if late:
+            _, finish, name = max(late)
+            notices.append((sid, (
+                f"Cronograma: o grupo começa em {result.start:%d/%m/%Y} (campo \"Início fixado\"), antes "
+                f'do fim de "{name}" ({finish:%d/%m/%Y}), de que ele depende.'
+            )))
     return notices
+
+
+def _leaf_predecessors(leaf: str, current: dict[str, _Current], parents: set) -> set[str]:
+    """Antecessoras de uma tarefa, as do grupo e das disciplinas acima dela, expandidas até as
+    tarefas (depender de um grupo é depender de todas as tarefas dele)."""
+    found: set[str] = set()
+    node: str | None = leaf
+    seen: set[str] = set()
+    while node and node in current and node not in seen:
+        seen.add(node)
+        for p in current[node].predecessors:
+            found |= set(_leaves_under(p, current, parents)) if p in parents else {p}
+        node = current[node].parent_id
+    return found
 
 
 def _dates_now(c: _Current, put: dict | None) -> tuple[date | None, date | None]:
@@ -1137,6 +1228,81 @@ def _dates_now(c: _Current, put: dict | None) -> tuple[date | None, date | None]
 def _signature(c: _Current) -> tuple:
     """O que uma pessoa pode mudar numa tarefa e o motor também grava."""
     return c.start, c.due, c.status, c.percent, c.duration, c.fixed_start
+
+
+def _stamps(results: dict, calendar: WorkCalendar, workday: WorkDay) -> dict[str, tuple[int, int]]:
+    """Início e fim com hora (ms), pela jornada: a fração de dia da posição vira hora do relógio."""
+    out: dict[str, tuple[int, int]] = {}
+    for task_id, r in results.items():
+        if not r.start or not r.finish:
+            continue
+        begin = clock_time(workday, r.pos_start - calendar.index_of(r.start), end=False)
+        end = clock_time(workday, r.pos_finish - calendar.index_of(r.finish), end=True)
+        if r.start == r.finish and end < begin:
+            end = begin
+        out[task_id] = (_site_ms(r.start, begin), _site_ms(r.finish, end))
+    return out
+
+
+def _site_ms(day: date, clock) -> int:
+    site = timezone(timedelta(hours=settings.schedule_utc_offset_hours))
+    return int(datetime(day.year, day.month, day.day, clock.hour, clock.minute, tzinfo=site).timestamp() * 1000)
+
+
+def _clock(ms: int) -> str:
+    site = timezone(timedelta(hours=settings.schedule_utc_offset_hours))
+    return datetime.fromtimestamp(ms / 1000, site).strftime("%d/%m %H:%M")
+
+
+def _situation(percent: float, planned: float | None, paused: bool) -> str:
+    """Como a coluna Status da planilha: concluída, pausada, atrasada (abaixo do planejado) etc."""
+    if percent >= 100:
+        return "Concluída"
+    if paused:
+        return "Pausada"
+    if planned is not None and percent < planned - 0.01:
+        return "Atrasada"
+    return "Não iniciada" if percent <= 0 else "Em andamento"
+
+
+def _paused_workdays(c: _Current, calendar: WorkCalendar, today: date) -> int:
+    """Dias úteis parados de uma tarefa: as pausas do histórico e a atual (até hoje)."""
+    total = 0
+    pauses = list(c.history) + ([c.pause] if c.pause and c.pause.start <= today else [])
+    for pause in pauses:
+        end = (pause.end or pause.start) if pause.archived else min(pause.until(today), today)
+        if end >= pause.start:
+            total += max(0, workdays_between(calendar, pause.start, end))
+    return total
+
+
+def _is_under(task_id: str, ancestor: str, current: dict[str, _Current]) -> bool:
+    node, seen = current[task_id].parent_id, set()
+    while node and node not in seen:
+        if node == ancestor:
+            return True
+        seen.add(node)
+        node = current[node].parent_id if node in current else None
+    return False
+
+
+def _plan_info(custom: list[dict] | None, values: dict[str, object], plan: dict) -> None:
+    """Grava as colunas calculadas que mudaram (número ou opção de lista fechada)."""
+    for field in custom or []:
+        if field["id"] not in values:
+            continue
+        value = values[field["id"]]
+        if field.get("type") == "drop_down":
+            if read_option(field) != value:
+                option = option_id(field, str(value))
+                if option:
+                    plan["fields"].append((field["id"], option))
+                    plan["log"][norm(field.get("name"))] = [read_option(field), value]
+        else:
+            current_value = read_number(field)
+            if current_value is None or abs(current_value - float(value)) > 0.005:  # type: ignore[arg-type]
+                plan["fields"].append((field["id"], value))
+                plan["log"][norm(field.get("name"))] = [current_value, value]
 
 
 def _dates_in(task: dict | None) -> tuple[date | None, date | None] | None:
@@ -1156,12 +1322,27 @@ def _halfway(got: tuple, sent: tuple, old: tuple) -> bool:
 
 def _date_changes(
     c: _Current, start: date | None, finish: date | None, plan: dict, normalize: bool = False,
+    stamp: tuple[int, int] | None = None,
 ) -> None:
     """`normalize`: data digitada à mão é regravada pelo motor mesmo que o dia não
     mude. Quem digitou em Angola deixa a meia-noite UTC+1 — o dia anterior em UTC,
     que é como a dashboard e os relatórios leem. Regravada, a data passa a ser a
     meia-noite do fuso do token da app (o ClickUp guarda data sem hora assim:
-    03:00 UTC), que cai no mesmo dia nas duas leituras."""
+    03:00 UTC), que cai no mesmo dia nas duas leituras.
+
+    `stamp`: lista com jornada — início e fim com hora (ms), comparados ao instante gravado."""
+    if stamp:
+        for key, day, old_day, old_raw, ms, log in (
+            ("start_date", start, c.start, c.start_raw, stamp[0], "inicio"),
+            ("due_date", finish, c.due, c.due_raw, stamp[1], "fim"),
+        ):
+            if day and old_raw != ms:
+                plan["task"].update({key: ms, f"{key}_time": True})
+                if day != old_day:
+                    plan["log"][log] = [_iso(old_day), _iso(day)]
+                else:
+                    plan["log"][f"hora_{log}"] = _clock(ms)
+        return
     if start and (start != c.start or (normalize and c.start_raw != date_to_ms(start))):
         plan["task"].update({"start_date": date_to_ms(start), "start_date_time": False})
         if start != c.start:
@@ -1175,15 +1356,16 @@ def _date_changes(
 def _drop_dates(plan: dict) -> None:
     for key in ("start_date", "start_date_time", "due_date", "due_date_time"):
         plan["task"].pop(key, None)
-    for key in ("inicio", "fim"):
+    for key in ("inicio", "fim", "hora_inicio", "hora_fim"):
         plan["log"].pop(key, None)
 
 
-def _plan_edit(c: _Current, edit: _Edit | None, result, plan: dict, f_duration, f_fixed) -> None:
+def _plan_edit(c: _Current, edit: _Edit | None, result, plan: dict, f_duration, f_fixed,
+               stamp: tuple[int, int] | None = None) -> None:
     """Grava o que uma data digitada virou: duração nova e/ou "Início fixado"."""
     if not edit:
         return
-    _date_changes(c, result.start, result.finish, plan, normalize=True)
+    _date_changes(c, result.start, result.finish, plan, normalize=True, stamp=stamp)
     if edit.duration is not None and (c.duration is None or abs(edit.duration - c.duration) > 0.005):
         plan["fields"].append((f_duration["id"], _number(edit.duration)))
         plan["log"]["duracao"] = [c.duration, edit.duration]
@@ -1193,9 +1375,10 @@ def _plan_edit(c: _Current, edit: _Edit | None, result, plan: dict, f_duration, 
         plan["log"]["inicio_fixado"] = [_iso(c.fixed_start), _iso(edit.fixed_start)]
 
 
-def _plan_leaf(c, result, percent, status, completed_on, names, f_percent, f_completion) -> dict:
+def _plan_leaf(c, result, percent, status, completed_on, names, f_percent, f_completion,
+               stamp: tuple[int, int] | None = None) -> dict:
     plan = {"id": c.id, "name": c.name, "task": {}, "fields": [], "clear": [], "log": {}}
-    _date_changes(c, result.start, result.finish, plan)
+    _date_changes(c, result.start, result.finish, plan, stamp=stamp)
     if norm(status) != norm(c.status):
         plan["task"]["status"] = status
         plan["log"]["status"] = [c.status, status]
@@ -1213,10 +1396,11 @@ def _plan_leaf(c, result, percent, status, completed_on, names, f_percent, f_com
 
 def _plan_summary(
     c, result, names: StatusNames, f_percent, f_duration, dates_allowed: bool = True, normalize: bool = False,
+    stamp: tuple[int, int] | None = None,
 ) -> dict:
     plan = {"id": c.id, "name": c.name, "task": {}, "fields": [], "clear": [], "log": {}}
     if dates_allowed:
-        _date_changes(c, result.start, result.finish, plan, normalize=normalize)
+        _date_changes(c, result.start, result.finish, plan, normalize=normalize, stamp=stamp)
     status = summary_status(result.percent, c.status, c.status_type, names)
     if norm(status) != norm(c.status):
         plan["task"]["status"] = status
