@@ -25,7 +25,12 @@ async def run_recalculation(list_id: str, dry_run: bool = False, rebaseline: boo
     lock = _locks.setdefault(list_id, asyncio.Lock())
     async with lock:
         async with AsyncSessionLocal() as db, ClickUpClient() as clickup:
-            return await ScheduleService(db, clickup).recalculate(list_id, dry_run=dry_run, rebaseline=rebaseline)
+            summary = await ScheduleService(db, clickup).recalculate(list_id, dry_run=dry_run, rebaseline=rebaseline)
+    # As tarefas de outra lista que esperam por uma desta (salas de um estúdio) só andam quando a
+    # lista delas recalcula — e o webhook das gravações daqui só chega a esta lista
+    for other in [] if dry_run else summary.linked_lists:
+        notify_list_changed(other)
+    return summary
 
 
 async def _debounced(list_id: str) -> None:

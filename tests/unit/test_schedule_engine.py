@@ -14,6 +14,7 @@ from src.services.schedule_engine import (
     display_percent,
     WorkDay,
     clock_time,
+    day_fraction,
     overall_percent,
     project_weights,
     reconcile_leaf,
@@ -592,3 +593,62 @@ class TestManualDates:
         assert workdays_between(self.CAL, date(2026, 10, 19), date(2026, 10, 23)) == 5
         assert workdays_between(self.CAL, date(2026, 10, 23), date(2026, 10, 26)) == 2   # sex → seg
         assert workdays_between(self.CAL, date(2026, 10, 24), date(2026, 10, 25)) == 0   # fim de semana
+
+
+# ─── Antecessora de outra lista (salas de um estúdio, 2026-11-02) ────────────
+# Cada sala é uma lista; a COMAD que passa do estúdio para a redação, o SAT da CTP depois do
+# do estúdio. A antecessora de fora entra só pela posição do fim dela — não é calculada aqui.
+
+class TestExternalPredecessors:
+    CAL = WorkCalendar(start=date(2026, 10, 26), weekend_mask="0000001", holidays=frozenset())
+
+    def test_a_task_waits_for_the_finish_of_a_task_in_another_list(self):
+        tasks = [ScheduleTask(id="a", duration=1), ScheduleTask(id="b", duration=1, predecessors=("a", "x"))]
+        out = compute_schedule(tasks, self.CAL, date(2026, 10, 26), reschedule=False, external={"x": 3.5})
+
+        assert out.results["b"].pos_start == 3.5                     # a de fora termina depois de "a"
+        assert out.warnings == ()
+        assert "x" not in out.results
+
+    def test_a_group_waiting_outside_makes_all_its_tasks_wait(self):
+        tasks = [ScheduleTask(id="g", predecessors=("x",)),
+                 ScheduleTask(id="t1", parent_id="g", duration=1), ScheduleTask(id="t2", parent_id="g", duration=1)]
+        out = compute_schedule(tasks, self.CAL, date(2026, 10, 26), reschedule=False, external={"x": 2.0})
+
+        assert out.results["t1"].pos_start == out.results["t2"].pos_start == 2.0
+
+    def test_the_inside_order_still_counts_when_the_outside_finishes_earlier(self):
+        tasks = [ScheduleTask(id="a", duration=2), ScheduleTask(id="b", duration=1, predecessors=("a", "x"))]
+        out = compute_schedule(tasks, self.CAL, date(2026, 10, 26), reschedule=False, external={"x": 0.5})
+
+        assert out.results["b"].pos_start == 2.0
+
+    def test_a_fixed_block_does_not_wait_for_the_outside(self):
+        tasks = [ScheduleTask(id="g", predecessors=("x",), fixed_start=date(2026, 10, 27)),
+                 ScheduleTask(id="t", parent_id="g", duration=1)]
+        out = compute_schedule(tasks, self.CAL, date(2026, 10, 26), reschedule=False, external={"x": 5.0})
+
+        assert out.results["t"].pos_start == 1.0
+
+    def test_an_unknown_predecessor_is_still_ignored_with_a_warning(self):
+        tasks = [ScheduleTask(id="b", duration=1, predecessors=("x",))]
+        out = compute_schedule(tasks, self.CAL, date(2026, 10, 26), reschedule=False)
+
+        assert out.results["b"].pos_start == 0.0
+        assert any("não está nesta lista" in w for w in out.warnings)
+
+
+class TestDayFraction:
+    """O inverso de clock_time: a hora de uma data com hora vira a fração do dia útil."""
+    WD = WorkDay(start=time(7), hours=10, lunch_start=time(12), lunch_hours=1)
+
+    @pytest.mark.parametrize("clock, fraction", [
+        (time(7), 0.0), (time(9, 30), 0.25), (time(12), 0.5), (time(13), 0.5), (time(15, 30), 0.75),
+        (time(18), 1.0), (time(12, 30), 0.5), (time(6), 0.0), (time(20), 1.0),
+    ])
+    def test_the_fraction_of_the_working_day(self, clock, fraction):
+        assert day_fraction(self.WD, clock) == fraction
+
+    def test_it_undoes_clock_time(self):
+        for quarter in range(5):
+            assert day_fraction(self.WD, clock_time(self.WD, quarter / 4, end=True)) == quarter / 4

@@ -34,6 +34,7 @@ from src.services.schedule_fields import (  # noqa: E402
     FIELD_DEFS,
     FIELD_DURATION,
     FIELD_FIXED_START,
+    FIELD_FRONT,
     FIELD_PAUSED_DAYS,
     FIELD_PERCENT,
     FIELD_PLANNED,
@@ -49,10 +50,12 @@ from src.services.schedule_fields import (  # noqa: E402
     ms_to_date,
     norm,
     parse_weekend_mask,
+    read_number,
 )
 from src.services.schedule_pauses import FIELD_PAUSE_REASON, PAUSE_FIELD_DEFS  # noqa: E402
 from src.services.schedule_service import ScheduleService, rate_limit_wait, status_names  # noqa: E402
 from src.services.schedule_xlsx import XlsxSchedule, load_schedule  # noqa: E402
+from src.services.schedule_xlsx_sitetype import ROOMS  # noqa: E402
 import src.models.schedule_models  # noqa: E402,F401
 
 PAUSE_SECONDS = 0.3
@@ -102,9 +105,22 @@ def field_defs(site_type: bool = False) -> list[dict]:
     return [d for d in FIELD_DEFS if d["name"] != FIELD_PAUSE_REASON] + SITE_TYPE_FIELD_DEFS
 
 
-async def ensure_fields(clickup: ClickUpClient, list_id: str, site_type: bool = False) -> list[dict]:
+_FRONT_COLORS = ("#e8262a", "#1090e0", "#f8ae00", "#2ecd6f", "#9b59b6", "#87909e")
+
+
+def front_field_def(schedule: XlsxSchedule) -> dict | None:
+    """Campo "Frente" (etiquetas) com as frentes da planilha, se ela tiver a coluna Team."""
+    fronts = sorted({front for task in schedule.tasks for front in task.fronts})
+    if not fronts:
+        return None
+    return {"name": FIELD_FRONT, "type": "labels", "type_config": {"options": [
+        {"label": front, "color": _FRONT_COLORS[i % len(_FRONT_COLORS)]} for i, front in enumerate(fronts)]}}
+
+
+async def ensure_fields(clickup: ClickUpClient, list_id: str, site_type: bool = False,
+                        extra: tuple[dict, ...] = ()) -> list[dict]:
     fields = await call(lambda: clickup.get_list_fields(list_id))
-    for definition in field_defs(site_type):
+    for definition in [*field_defs(site_type), *extra]:
         # o motivo da pausa já existente (texto ou lista) não ganha um homónimo
         any_type = definition["name"] == FIELD_PAUSE_REASON
         if not find_field(fields, definition["name"], None if any_type else definition["type"]):
@@ -124,7 +140,10 @@ async def configure_list(clickup: ClickUpClient, lst: dict, schedule: XlsxSchedu
     content = lst.get("content") or ""
     if parse_weekend_mask(content, "") != schedule.weekend_mask:
         days = ", ".join(_WEEKDAY_NAMES[i] for i, flag in enumerate(schedule.weekend_mask) if flag == "1")
-        content = (content + "\n" if content else "") + f"folga={days}"
+        # substitui a linha de folga que houver (o motor lê a primeira): os estúdios do formato antigo
+        # tinham "folga=sab, dom" e os modelos novos folgam só ao domingo
+        kept = [line for line in content.splitlines() if norm(line.split("=")[0].split(":")[0]) != "folga"]
+        content = "\n".join(kept + [f"folga={days}"])
     for line in schedule.list_lines:          # ex.: a jornada das planilhas de tipos de site
         key = norm(line.split("=")[0])
         if not any(norm(existing.split("=")[0]) == key for existing in content.splitlines()):
@@ -167,7 +186,8 @@ async def ensure_views(clickup: ClickUpClient, list_id: str, fields: list[dict])
 def schedule_view_columns(fields: list[dict]) -> list[str]:
     """Colunas da vista "Cronograma", na ordem: ID e WBS, datas, duração, % (real e planejado),
     situação, pesos, calendário, dependências, conclusão, início fixado e os campos de pausa."""
-    head = [find_field(fields, FIELD_TASK_ID, "number"), find_field(fields, FIELD_WBS, "short_text")]
+    head = [find_field(fields, FIELD_TASK_ID, "number"), find_field(fields, FIELD_WBS, "short_text"),
+            find_field(fields, FIELD_FRONT, "labels")]
     custom = [
         find_field(fields, FIELD_DURATION, "number"),
         find_field(fields, FIELD_PERCENT, "manual_progress"),
@@ -202,7 +222,7 @@ async def add_view_columns(clickup: ClickUpClient, list_id: str, fields: list[di
     missing = [c for c in schedule_view_columns(fields) if c not in present]
     if not missing:
         return []
-    first = {f"cf_{f['id']}" for f in fields if f.get("name") in (FIELD_TASK_ID, FIELD_WBS)}
+    first = {f"cf_{f['id']}" for f in fields if f.get("name") in (FIELD_TASK_ID, FIELD_WBS, FIELD_FRONT)}
     new = [{"field": c, "width": 90 if c in first else 160, "hidden": False} for c in missing]
     cols = ([c for c in new if c["field"] in first]            # ID e WBS à frente, o resto no fim
             + list((full.get("columns") or {}).get("fields", []))
@@ -231,11 +251,14 @@ async def delete_existing(clickup: ClickUpClient, list_id: str) -> int:
 
 async def create_tasks(
     clickup: ClickUpClient, lst: dict, fields: list[dict], schedule: XlsxSchedule, teams: bool = True,
+    team_map: dict[str, list[str]] | None = None,
 ) -> dict[str, str]:
     f_duration = find_field(fields, FIELD_DURATION, "number")
     f_weight = find_field(fields, FIELD_WEIGHT, "number")
     f_task_id = find_field(fields, FIELD_TASK_ID, "number")
     f_wbs = find_field(fields, FIELD_WBS, "short_text")
+    f_front = find_field(fields, FIELD_FRONT, "labels")
+    front_ids = {norm(o.get("label")): o["id"] for o in ((f_front or {}).get("type_config") or {}).get("options", [])}
     f_percent = find_field(fields, FIELD_PERCENT, "manual_progress")
     f_calendar = find_field(fields, FIELD_CALENDAR, "drop_down")
     names = status_names(lst.get("statuses"))
@@ -250,6 +273,8 @@ async def create_tasks(
     created: dict[str, str] = {}
     for task in schedule.tasks:
         payload: dict = {"name": task.name, "custom_fields": list(blank_dropdowns)}
+        if task.notes:
+            payload["markdown_content"] = task.notes
         if task.parent_key:
             payload["parent"] = created[task.parent_key]
         if not task.is_summary:
@@ -266,12 +291,17 @@ async def create_tasks(
             payload["custom_fields"].append({"id": f_task_id["id"], "value": task.source_id})
         if task.wbs and f_wbs:
             payload["custom_fields"].append({"id": f_wbs["id"], "value": task.wbs})
+        labels = [front_ids[norm(front)] for front in task.fronts if norm(front) in front_ids]
+        if labels and f_front:
+            payload["custom_fields"].append({"id": f_front["id"], "value": labels})
         team_ids = []
         for resource in task.resources if teams else ():
-            if _team_key(resource) in groups:
-                team_ids.append(groups[_team_key(resource)])
-            else:
-                print(f'  AVISO: equipe "{resource}" não existe no ClickUp ({task.name})')
+            # a empresa da planilha (ex.: "PROEF") pode ser uma ou várias equipes no ClickUp (--team-map)
+            for team in (team_map or {}).get(_team_key(resource), [resource]):
+                if _team_key(team) in groups and groups[_team_key(team)] not in team_ids:
+                    team_ids.append(groups[_team_key(team)])
+                elif _team_key(team) not in groups:
+                    print(f'  AVISO: equipe "{team}" não existe no ClickUp ({task.name})')
         if team_ids:
             payload["group_assignees"] = team_ids
         try:
@@ -293,6 +323,52 @@ async def create_dependencies(clickup: ClickUpClient, schedule: XlsxSchedule, cr
         for predecessor in task.predecessors:
             await call(lambda t=task, p=predecessor: clickup.add_dependency(created[t.key], created[p]))
             count += 1
+    return count
+
+
+def _by_source_id(raw_tasks: list[dict]) -> dict[int, str]:
+    """Tarefa do ClickUp de cada linha da planilha, pelo campo "ID"."""
+    out: dict[int, str] = {}
+    for t in raw_tasks:
+        value = read_number(find_field(t.get("custom_fields"), FIELD_TASK_ID, "number"))
+        if value is not None:
+            out[int(value)] = str(t["id"])
+    return out
+
+
+async def link_rooms(clickup: ClickUpClient, lst: dict, schedule: XlsxSchedule, created: dict[str, str],
+                     path: str, room: str) -> int:
+    """Dependências entre salas (planos por equipe dos estúdios): o bloco que espera uma tarefa
+    de outra sala passa a esperá-la no ClickUp. Liga nos dois sentidos com as salas da mesma
+    pasta que já foram importadas — a ordem de importação das salas não importa."""
+    folder = (lst.get("folder") or {}).get("id")
+    if not folder:
+        return 0
+    siblings = {str(item["name"]).strip().upper(): str(item["id"])
+                for item in await call(lambda: clickup.get_lists_in_folder(folder))}
+    own_raw = await call(lambda: clickup.get_tasks(lst["id"], include_closed=True))
+    existing = {(str(d.get("task_id")), str(d.get("depends_on")))
+                for t in own_raw for d in t.get("dependencies") or []}
+    own = {t.source_id: created[t.key] for t in schedule.tasks if t.source_id is not None and t.key in created}
+    count = 0
+    for other in ROOMS:
+        if other == room:
+            continue
+        waiting_here = sum(1 for t in schedule.tasks for r, _ in t.outside if r == other)
+        if other not in siblings:
+            if waiting_here:
+                print(f"  {waiting_here} ligação(ões) com {other} ficam para quando {other} for importada")
+            continue
+        theirs = _by_source_id(await call(lambda o=siblings[other]: clickup.get_tasks(o, include_closed=True)))
+        pairs = [(created[t.key], theirs[sid]) for t in schedule.tasks
+                 for r, sid in t.outside if r == other and sid in theirs and t.key in created]
+        pairs += [(theirs[t.source_id], own[sid]) for t in load_schedule([path], room=other).tasks
+                  for r, sid in t.outside if r == room and t.source_id in theirs and sid in own]
+        for task_id, depends_on in pairs:
+            if (task_id, depends_on) not in existing:
+                await call(lambda a=task_id, b=depends_on: clickup.add_dependency(a, b))
+                existing.add((task_id, depends_on))
+                count += 1
     return count
 
 
@@ -326,7 +402,9 @@ async def main(args: argparse.Namespace) -> int:
         print("\nENSAIO: nada foi escrito no ClickUp. Rode com --yes para executar.")
         return 0
 
-    async with ClickUpClient() as clickup:
+    # timeout folgado: uma criação que expira não é repetida (podia duplicar) e aborta a importação;
+    # com o ClickUp lento (27 s num get_tasks, 2026-10-29) os 30 s da app não chegavam
+    async with ClickUpClient(timeout=120.0) as clickup:
         if args.list_id:
             lst = await call(lambda: clickup.get_list(args.list_id))
         else:
@@ -336,6 +414,13 @@ async def main(args: argparse.Namespace) -> int:
         print(f'\nLista: {lst["name"]} ({list_id})')
 
         existing = await call(lambda: clickup.get_tasks(list_id, include_closed=True))
+        if args.link_rooms_only:
+            # sala já importada: só as dependências com as outras salas da pasta
+            by_source = _by_source_id(existing)
+            created = {t.key: by_source[t.source_id] for t in schedule.tasks if t.source_id in by_source}
+            linked = await link_rooms(clickup, lst, schedule, created, args.files[0], args.room)
+            print(f"  {linked} dependências entre salas criadas\n\nConcluído.")
+            return 0
         if existing and not args.replace:
             print(f"ERRO: a lista já tem {len(existing)} tarefas. Use --replace para apagá-las antes de importar.")
             return 1
@@ -347,11 +432,20 @@ async def main(args: argparse.Namespace) -> int:
             print(f"  apagando {len(existing)} tarefas existentes…")
             await delete_existing(clickup, list_id)
 
-        fields = await ensure_fields(clickup, list_id, site_type=any(t.source_id for t in schedule.tasks))
+        front = front_field_def(schedule)
+        fields = await ensure_fields(clickup, list_id, site_type=any(t.source_id for t in schedule.tasks),
+                                     extra=(front,) if front else ())
         await configure_list(clickup, lst, schedule)
-        created = await create_tasks(clickup, lst, fields, schedule, teams=not args.no_teams)
+        team_map = {}
+        for item in args.team_map or []:
+            name, _, targets = item.partition("=")
+            team_map[_team_key(name)] = [t.strip() for t in targets.split(",") if t.strip()]
+        created = await create_tasks(clickup, lst, fields, schedule, teams=not args.no_teams, team_map=team_map)
         print(f"  {len(created)} tarefas criadas")
         print(f"  {await create_dependencies(clickup, schedule, created)} dependências criadas")
+        if args.room:
+            linked = await link_rooms(clickup, lst, schedule, created, args.files[0], args.room)
+            print(f"  {linked} dependências entre salas criadas")
         views = await ensure_views(clickup, list_id, fields)
         if views:
             print(f"  vistas criadas: {', '.join(views)}")
@@ -389,8 +483,12 @@ if __name__ == "__main__":
                         help="apaga as tarefas que já existem na lista; exige o nome exato dela como confirmação")
     parser.add_argument("--room", choices=["STUDIO", "CTP", "NEWSROOM"],
                         help="planilhas de estúdio: a sala a importar (cada sala é uma lista)")
+    parser.add_argument("--link-rooms-only", action="store_true",
+                        help="sala já importada: só cria as dependências com as outras salas da pasta")
     parser.add_argument("--zero", action="store_true", help="importa a estrutura com todo o progresso em 0%%")
     parser.add_argument("--no-teams", action="store_true", help="não atribui equipes (Resource Names da planilha)")
+    parser.add_argument("--team-map", action="append", metavar="EMPRESA=EQUIPE[,EQUIPE]",
+                        help='equipe(s) do ClickUp de uma empresa da planilha, ex.: --team-map "PROEF=PROEF 1"')
     parser.add_argument("--no-start-date", action="store_true",
                         help="não define a data de início da lista; as tarefas ficam sem datas até ela ser preenchida")
     parser.add_argument("--start-date", metavar="DD/MM/AAAA", help="data de início do projeto (padrão: a da planilha)")

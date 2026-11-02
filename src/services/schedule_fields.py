@@ -49,6 +49,8 @@ FIELD_DEFS += PAUSE_FIELD_DEFS
 # Informações das planilhas de tipos de site (2026-10-23). ID e WBS vêm da planilha (importador);
 # os outros são calculados pelo motor a cada recálculo, como as colunas da planilha.
 FIELD_TASK_ID = "ID"
+# frente de trabalho (coluna "Team" dos planos por equipe): etiquetas, uma ou várias por tarefa
+FIELD_FRONT = "Frente"
 FIELD_WBS = "WBS"
 FIELD_PROJECT_WEIGHT = "Peso no projeto (%)"
 FIELD_PLANNED = "% Planejado"

@@ -831,7 +831,9 @@ disciplinas e grupos continuam calculados. Início no passado: as tarefas não i
 Tarefas concluídas e em andamento não andam com o início do projeto (têm datas reais); se a primeira
 linha já tem tarefas feitas, o início que ela mostra volta a ser o real — o do projeto fica na lista.
 Dependências entre subtarefas de tarefas e disciplinas diferentes da mesma lista valem sempre (ex.: o
-rack da Área Técnica espera a concretagem da Obra Civil); dependência para outra lista é ignorada com aviso.
+rack da Área Técnica espera a concretagem da Obra Civil). Dependência para outra lista vale pela data de
+fim que a tarefa de lá tem no ClickUp — ver "Dependências entre listas"; tarefa que não se lê (apagada, sem
+acesso) é ignorada com aviso.
 
 **Peso (%)** (planilhas de tipos de site, 2026-10-23, decisão do utilizador: "o peso manda no %").
 Cada linha pode ter o peso dela dentro do pai (os de um mesmo pai somam 100 nas planilhas). Quando
@@ -865,6 +867,73 @@ distância do "Stage Start" ao início do projeto; saiu no mesmo dia, a pedido d
 o "Início fixado" — a API não apaga campos, então nas 14 listas do Teste 2 ele ficou vazio e fora da vista.
 Aplicadas ao Site FM das 14 províncias da lista no space "PEMx - RNA (Teste 2)" (`--zero --no-teams`,
 sem data de início); Mbanza Congo e Ndalatando não estão na lista.
+
+**Estúdios provinciais em WBS** (2026-10-29): "Provincial Studios Type 1 / Type 2 - Work Plan (Full
+Rennovation)" (pasta "Tipos de Estudios") usam **as mesmas colunas** das planilhas de tipos de site, com
+uma aba por sala — STUDIO, CTP, NEWSROOM, cada uma numa lista (`--room`) — e o mesmo leitor
+(`schedule_xlsx_sitetype.py`; `is_site_type_workbook` reconhece as abas das salas pelo cabeçalho WBS e é
+testado **antes** de `is_studio_workbook`, que senão apanharia estas planilhas: elas têm "Parameters" em
+inglês, não "Parâmetros"). Tipo 1 = pintura e piso de borracha; Tipo 2 = drywall e piso técnico; a
+"Type of Provincial Studios List" diz o tipo de cada um (Bié/Kuito, Huíla/Lubango, Lunda-Sul/Saurimo e
+Namibe = 2; o resto = 1). Duas diferenças em relação aos sites:
+- **Blocos em vez de cadeia de etapas** (decisão de 2026-10-29): nos estúdios a ordem está nas datas de
+  "Stage Start" de etapas **e de grupos**, que se entrelaçam (a Acoustic começa antes de a Obra Civil
+  acabar e espera o piso; o acabamento da Civil espera as ripas da Acoustic; o mobiliário espera a limpeza
+  da Civil). Cada bloco espera a tarefa ou tarefas de fora dele que, na planilha, terminam por último antes
+  de ele começar (`_block_links`). Reproduz a planilha minuto a minuto em 5 das 6 salas; no STUDIO do Tipo
+  1 a Acoustic (digitada 29/10 08:00 nos dois tipos) começa meio dia antes, logo depois do piso de borracha
+  (fim 28/10 12:00). Nos sites isto não serve — lá as datas têm esperas de propósito (o Equipment
+  Installation só em 10/11) — e vale a cadeia de etapas + "Início fixado".
+- **Marco final sem tarefa:** "End of Work" (duração 0, peso 0, ninguém o espera) não vira tarefa, como no
+  formato antigo dos estúdios.
+- A folga dos modelos é só o domingo; o importador **substitui** a linha `folga=` da descrição (o motor lê
+  a primeira, e as listas do formato antigo tinham `folga=sab, dom`).
+
+**Plano por equipe de um site** (2026-11-01): "Lubango TX Site - Work Plan by Team - 30-10-2026" (pasta
+`Sites Transmissores\Lubango- Huila`) é o replaneamento real de Lubango, no mesmo formato WBS (aba "Site FM -
+Type 1"), mas com grupos por equipe (Crew A/B, EVOLUTION, U2…) que têm **início próprio** — o padrão dos
+estúdios. Por isso a regra dos blocos (`_block_links`) vale também **sempre que algum grupo (Stage nível 3)
+tem "Stage Start"**; os modelos Tipo 1–4, que só têm o início das etapas, continuam com a cadeia (as
+dependências deles não mudaram). Com os blocos o plano bate com a planilha ao minuto (84 tarefas, 26/10 →
+14/11, jornada 07:00–18:00 = 10 h). A coluna nova **"Team"** (frente: CIVIL, RADIATING, ELECTRICAL,
+EQUIPMENT, COMMISSIONING; várias separadas por ";") vira `XlsxTask.fronts` e o campo de etiquetas
+**"Frente"** (`FIELD_FRONT`, criado pelo importador com as frentes da planilha, coluna logo depois de ID/WBS).
+"Resource Names" são **empresas**, e as equipes do ClickUp passaram a ser por frente (PROEF 1/2, U2 - RF
+1/2, U2 - STUDIO 1/2, RNA 1/2, EVOLUTION): `--team-map "EMPRESA=EQUIPE[,EQUIPE]"` diz quem é quem (Lubango:
+PROEF=PROEF 1, U2 BROADCAST=U2 - RF 1, RNA=RNA 1, ALL TEAMS=as quatro, EVOLUTION=EVOLUTION). Importado no
+Site FM de Lubango do space "PEMx - RNA (Teste 1)" com início 26/10 e `--recalculate` (banco próprio no
+scratchpad: linha de base 26/10 → 14/11; como 26/10 já tinha passado, o cálculo começa a 03/11 e termina a
+21/11). O motor do Teste 1 roda no servidor (instância `apiclickup-teste1`), com as listas de
+`SCHEDULE_LIST_IDS` dela.
+
+**Plano por equipe dos estúdios** (2026-11-02): "Lubango Studios - Work Plan by Team - 01-11-2026" (pasta
+`Estudios\Lubango- Huila`), mesmo formato WBS das salas (uma aba por sala, `--room`), com "Team" (frente) e
+três colunas novas de instruções — **Scope / Work Instructions**, **Done When / Hold Point** e **Next /
+Hands Over To** —, que vão para a **descrição** da tarefa (`XlsxTask.notes` → `markdown_content`, cada uma
+com o título da própria coluna). O "Stage Start" dos blocos é uma **fórmula** com o fim das linhas que o bloco
+espera (`=…MAX(H63,STUDIO!H82)…`), e 9 blocos esperam linhas de **outra sala** (a COMAD que passa do estúdio
+para a redação, o SAT da CTP depois do do estúdio, a entrega de todas depois do soak test do estúdio). O
+leitor tira essas referências da fórmula (`_room_links` → `XlsxTask.outside`, (sala, ID)), e o importador
+cria a dependência no ClickUp entre as listas das salas da mesma pasta (`link_rooms`, nos dois sentidos com
+as salas já importadas — a ordem de importação não importa; `--link-rooms-only` liga salas já importadas).
+As de dentro da sala continuam pela regra dos blocos. Importado no Teste 1 (STUDIO/CTP/NEWSROOM de Lubango,
+início 26/10, equipes PROEF=PROEF 1, U2 BROADCAST=U2 - STUDIO 1, RNA=RNA 1, COMAD=COMAD, "GATESAIR / ALL
+TEAMS"=as quatro): a linha de base das três bate com a planilha (212 tarefas, término ao minuto).
+
+**Dependências entre listas** (2026-11-02). Uma antecessora que está noutra lista entra no motor pela data
+de **fim que ela tem agora no ClickUp** (`_external_finishes`: `get_task` + a jornada da lista dela; com hora
+se as duas listas têm jornada, senão espera o dia inteiro) — `compute_schedule(..., external={id: posição})`
+não a calcula, só segura quem depende dela, como uma antecessora qualquer (e, como as outras de fora do bloco,
+não segura um bloco com "Início fixado"). Quem a calcula é o motor da lista dela, por isso:
+- **o webhook não basta**: as gravações do motor numa lista só avisam essa lista. Quando uma execução grava
+  alguma coisa e há tarefas de outras listas a esperar por uma desta, `summary.linked_lists` diz quais, e o
+  worker agenda o recálculo delas (`run_recalculation` → `notify_list_changed`; só as listas geridas). O
+  periódico também acerta, com atraso;
+- **a linha de base** usa o **plano** da antecessora, se a lista dela já tem linha de base
+  (`_baseline_positions`; `schedule_baseline.finish_at` guarda a hora do término planeado — sem ela, o fim do
+  dia); senão, o fim de agora. Salas que esperam umas pelas outras nos dois sentidos precisam de voltas: a
+  linha de base de cada uma é refeita com o plano das outras até nada mudar (foi assim no Teste 1);
+- uma antecessora de outra lista sem data de término é ignorada com aviso.
 
 **Jornada — datas com hora** (decisão de 2026-10-23). Uma lista com a linha `jornada=08:00-17:00` na
 descrição (e, opcional, `almoço=12:00-13:00`) recebe início e fim **com hora**: o motor converte a fração
@@ -993,7 +1062,7 @@ Tables:
 
 **Schedule table** (in `schedule_models.py`, imported in `main.py`):
 - `schedule_task_state` — último (%, concluída?, início, término) que o motor deixou por tarefa; decide quem vence quando % e status discordam e reconhece uma data digitada à mão
-- `schedule_baseline` — linha de base: início e término planeados por tarefa (ver "Linha de base")
+- `schedule_baseline` — linha de base: início e término planeados por tarefa (ver "Linha de base"); `finish_at` = hora do término planeado, nas listas com jornada
 
 ## Key Configuration
 
@@ -1111,15 +1180,16 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada), datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso), início pela primeira linha e dependências entre disciplinas
-- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx
+- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx; `TestOtherLists` (2026-11-02): antecessora noutra lista, com e sem hora, sem data, linha de base pelo plano dela e as listas a avisar
 - `test_schedule_pauses.py` — pausas: histórico (leitura/escrita), arquivamento com junção de pausas contíguas e o efeito no motor
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
 - `test_nextcloud_auth.py` — JWT do Nextcloud: assinatura ES256, expiração, emissor, confusão de algoritmo, formatos da chave e `GET /auth/me`
 - `test_schedule_cache.py` — cache, progresso ponderado por duração e telas com 3 níveis
 - `test_schedule_reports.py` — relatórios (PDF/XLSX), listagens, diário/semanal e Gantt de província sobre a lista de 3 níveis
-- `test_schedule_xlsx_sitetype.py` — leitor das planilhas de tipos de site: 3 níveis a partir da WBS, pesos em %, datas fora, 5º nível recusado, ID/WBS e a jornada
+- `test_schedule_xlsx_sitetype.py` — leitor das planilhas de tipos de site: 3 níveis a partir da WBS, pesos em %, datas fora, 5º nível recusado, ID/WBS e a jornada; estúdios em WBS (sala pedida, blocos encadeados, marco final de fora); plano por equipe (frentes, instruções na descrição, antecessoras noutra sala pela fórmula do Stage Start)
 - `test_schedule_fields_info.py` — leitura da jornada na descrição e dos campos drop_down (opção por nome/orderindex)
+- `test_schedule_worker.py` — o worker recalcula as listas que esperam por uma lista que gravou datas (nunca num ensaio)
 - `test_schedule_xlsx_studio.py` — leitor das planilhas de estúdio: uma lista por sala, disciplina → grupo → tarefa, fases achatadas, marcos externos virando dependências, conferência fórmula × Antecessores
 
 Unit tests:

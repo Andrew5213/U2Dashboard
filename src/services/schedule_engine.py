@@ -137,8 +137,12 @@ def compute_schedule(
     calendar: WorkCalendar,
     today: date,
     reschedule: bool = True,
+    external: dict[str, float] | None = None,
 ) -> ScheduleOutput:
     """Calcula início/fim de todas as tarefas e o progresso dos resumos.
+
+    `external`: antecessoras de outra lista (id → posição do fim delas neste calendário). Não
+    são calculadas aqui — só seguram quem depende delas, como uma antecessora qualquer.
 
     reschedule=False reproduz a planilha (linha de base: o progresso não mexe nas
     datas). reschedule=True aplica o andamento real:
@@ -148,18 +152,19 @@ def compute_schedule(
     """
     by_id = {t.id: t for t in tasks}
     order = [t.id for t in tasks]
-    graph = _LeafGraph(tasks)
+    external = external or {}
+    graph = _LeafGraph(tasks, set(external))
     children, leaves_of, leaf_ids, preds = graph.children, graph.leaves_of, graph.leaf_ids, graph.preds
     warnings: list[str] = list(graph.warnings)
 
-    ordered, cyclic = _topological_order(leaf_ids, preds)
+    ordered, cyclic = _topological_order(leaf_ids, {tid: p - external.keys() for tid, p in preds.items()})
     if cyclic:
         warnings.append("dependência circular entre: " + ", ".join(_ref(tid) for tid in cyclic))
 
     today_pos = calendar.index_of(today)
     anchors = {tid: a for tid in leaf_ids if (a := _fixed_block(tid, by_id))}
     pos_start: dict[str, float] = {}
-    pos_finish: dict[str, float] = {}
+    pos_finish: dict[str, float] = dict(external)
     dates: dict[str, tuple[date | None, date | None]] = {}
     weights: dict[str, float] = {}
 
@@ -337,6 +342,18 @@ def clock_time(workday: WorkDay, fraction: float, end: bool) -> time:
     return time(minutes // 60, minutes % 60)
 
 
+def day_fraction(workday: WorkDay, clock: time) -> float:
+    """Fração do dia útil já trabalhada a uma hora do relógio — o inverso de `clock_time`.
+    Antes do expediente = 0, depois = 1; o almoço não conta."""
+    minutes = clock.hour * 60 + clock.minute - (workday.start.hour * 60 + workday.start.minute)
+    if workday.lunch_start is not None and workday.lunch_hours:
+        lunch = workday.lunch_start.hour * 60 + workday.lunch_start.minute - (
+            workday.start.hour * 60 + workday.start.minute)
+        if minutes > lunch:
+            minutes = max(lunch, minutes - round(workday.lunch_hours * 60))
+    return min(max(minutes / (workday.hours * 60), 0.0), 1.0)
+
+
 def _depth(task_id: str, by_id: dict[str, ScheduleTask]) -> int:
     depth, node, seen = 0, by_id[task_id].parent_id, {task_id}
     while node and node in by_id and node not in seen:
@@ -373,6 +390,8 @@ def _fixed_block(task_id: str, by_id: dict[str, ScheduleTask]) -> tuple[str, dat
 
 
 def _is_under(task_id: str, ancestor: str, by_id: dict[str, ScheduleTask]) -> bool:
+    if task_id not in by_id:            # antecessora de outra lista: nunca está dentro do bloco
+        return False
     node, seen = by_id[task_id].parent_id, set()
     while node and node in by_id and node not in seen:
         if node == ancestor:
@@ -387,7 +406,7 @@ class _LeafGraph:
     depender de todas as tarefas dele; um resumo que depende de X faz todas as suas
     esperarem X."""
 
-    def __init__(self, tasks: list[ScheduleTask]) -> None:
+    def __init__(self, tasks: list[ScheduleTask], external: set[str] | None = None) -> None:
         by_id = {t.id: t for t in tasks}
         self.children: dict[str, list[str]] = {}
         for t in tasks:
@@ -399,6 +418,10 @@ class _LeafGraph:
         self.preds: dict[str, set[str]] = {tid: set() for tid in self.leaf_ids}
         for t in tasks:
             for pred_id in t.predecessors:
+                if pred_id in (external or ()) and pred_id not in by_id:
+                    for target in self.leaves_of(t.id):
+                        self.preds[target].add(pred_id)
+                    continue
                 if pred_id not in by_id:
                     self.warnings.append(f"{_ref(t.id)}: antecessor {_ref(pred_id)} não está nesta lista — ignorado")
                     continue

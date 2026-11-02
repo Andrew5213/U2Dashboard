@@ -44,4 +44,7 @@ class ScheduleBaseline(Base):
     list_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     start: Mapped[date] = mapped_column(Date, nullable=False)
     finish: Mapped[date] = mapped_column(Date, nullable=False)
+    # hora do término planeado (listas com jornada), na hora da obra — é por ela que uma
+    # tarefa de outra lista que espera esta entra na linha de base dela
+    finish_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

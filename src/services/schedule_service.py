@@ -36,6 +36,7 @@ from src.services.schedule_engine import (
     WorkDay,
     clock_time,
     compute_schedule,
+    day_fraction,
     overall_percent,
     project_weights,
     rollup,
@@ -89,6 +90,8 @@ _MAX_EDITS_PER_RUN = 10           # acima disto, as "datas digitadas" vêm de um
 _CHECK_EVERY = 8                  # gravações entre duas checagens de "alguém mexeu desde a leitura?"
 _CLOCK_MARGIN_MS = 5_000          # folga entre o relógio do servidor e o do ClickUp
 _HOLIDAYS_TTL_SECONDS = 600
+# lista de cada tarefa de outra lista já vista (as tarefas não costumam mudar de lista)
+_LIST_OF_TASK: dict[str, str] = {}
 _holidays_cache: dict[str, tuple[float, frozenset[date]]] = {}
 
 
@@ -107,6 +110,9 @@ class ScheduleRunSummary:
     baseline_finish: date | None = None
     delay_days: int | None = None
     baseline_captured: bool = False
+    # outras listas com tarefas que esperam por uma desta, quando esta execução gravou alguma
+    # coisa — o worker recalcula-as (o webhook só avisa a lista onde a gravação aconteceu)
+    linked_lists: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     changes: list[dict] = field(default_factory=list)
@@ -338,6 +344,11 @@ class ScheduleService:
                 if fixed:
                     carried[leaf] = fixed + shift
 
+        # Antecessoras de outra lista (salas de um estúdio): entram pela data de fim que têm agora
+        # no ClickUp — quem as calcula é o motor da lista delas
+        outside = sorted({p for c in current.values() for p in c.predecessors if p not in current})
+        external = await self._external_finishes(outside, calendar, workday, summary) if outside else {}
+
         engine_tasks: list[ScheduleTask] = []
         leaf_target: dict[str, tuple[float, str, date | None]] = {}
         touched: dict[str, tuple[bool, bool, bool]] = {}     # folha → (início mudou, fim mudou, só deslocada)
@@ -383,7 +394,7 @@ class ScheduleService:
         # estava — com a fração de dia, que a data mostrada no ClickUp não tem.
         edits: dict[str, _Edit] = {}
         block_roots = {leaf for sid in block_edits for leaf in _leaves_under(sid, current, parents)}
-        before = (compute_schedule(engine_tasks, calendar, today, reschedule=True).results
+        before = (compute_schedule(engine_tasks, calendar, today, reschedule=True, external=external).results
                   if touched or pause_roots or block_roots else {})
         for task_id, (start_changed, due_changed, moved) in touched.items():
             percent = leaf_target[task_id][0]
@@ -418,7 +429,7 @@ class ScheduleService:
         if not f_fixed and not dry_run and (block_edits or any(e.fixed_start for e in edits.values())):
             f_fixed = await self._create_fixed_start_field(list_id, summary)
 
-        output = compute_schedule(engine_tasks, calendar, today, reschedule=True)
+        output = compute_schedule(engine_tasks, calendar, today, reschedule=True, external=external)
         summary.warnings.extend(_named(w, current) for w in output.warnings)
         notices = _start_conflicts(edits, current, output.results, calendar, today)
         notices += _block_notices(block_edits, current, parents, output.results, calendar, today)
@@ -437,7 +448,8 @@ class ScheduleService:
             summary.project_finish = max(r.finish for r in leaves)
 
         if rebaseline:
-            await self._save_baseline(list_id, output.results)
+            await self._save_baseline(list_id, output.results, _stamps(output.results, calendar, workday)
+                                      if workday else None)
             summary.baseline_captured = True
         elif not dry_run and await self._baseline_finish(list_id) is None:
             # Primeiro cálculo da lista: guarda o plano puro, sem o andamento — é
@@ -445,11 +457,14 @@ class ScheduleService:
             # entram: no primeiro cálculo ainda não há datas digitadas (sem estado guardado,
             # nada conta como edição), só as que o gerente fixou de propósito antes de pôr o
             # início do projeto — são plano, não desvio (2026-10-23)
+            # uma antecessora de outra lista entra pelo plano dela, se a lista dela já o tiver
+            planned_outside = {**external, **await self._baseline_positions(outside, calendar, workday)}
             baseline_plan = compute_schedule(
                 [replace(t, percent=0.0, start=None, finished_on=None, pinned=None) for t in engine_tasks],
-                calendar, today, reschedule=False,
+                calendar, today, reschedule=False, external=planned_outside,
             )
-            await self._save_baseline(list_id, baseline_plan.results)
+            await self._save_baseline(list_id, baseline_plan.results,
+                                      _stamps(baseline_plan.results, calendar, workday) if workday else None)
             summary.baseline_captured = True
         summary.baseline_finish = await self._baseline_finish(list_id)
         if summary.baseline_finish and summary.project_finish:
@@ -543,6 +558,8 @@ class ScheduleService:
 
         final = await self._dates_after_writes(list_id, current, written, summary)
         await self._save_state(list_id, current, leaf_target, names, failed, final, previous, pause_sig)
+        if summary.writes:
+            summary.linked_lists = await self._waiting_lists(raw_tasks, current, list_id)
         logger.info(
             f"Cronograma [{list_id}]: {summary.tasks} tarefas, {summary.changed} alteradas, "
             f"{summary.writes} gravações, {len(summary.errors)} erro(s)"
@@ -763,11 +780,13 @@ class ScheduleService:
             select(func.max(ScheduleBaseline.finish)).where(ScheduleBaseline.list_id == list_id)
         )).scalar()
 
-    async def _save_baseline(self, list_id: str, results: dict) -> None:
+    async def _save_baseline(self, list_id: str, results: dict,
+                             stamps: dict[str, tuple[int, int]] | None = None) -> None:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         await self._db.execute(delete(ScheduleBaseline).where(ScheduleBaseline.list_id == list_id))
         rows = [
-            {"task_id": r.id, "list_id": list_id, "start": r.start, "finish": r.finish, "captured_at": now}
+            {"task_id": r.id, "list_id": list_id, "start": r.start, "finish": r.finish, "captured_at": now,
+             "finish_at": _site_clock(stamps[r.id][1]) if stamps and r.id in stamps else None}
             for r in results.values() if r.start and r.finish
         ]
         if rows:
@@ -778,6 +797,68 @@ class ScheduleService:
             await self._db.execute(sqlite_insert(ScheduleBaseline), rows)
         await self._db.commit()
         logger.info(f"Cronograma [{list_id}]: linha de base gravada ({len(rows)} tarefas)")
+
+    # ─── Outras listas ───────────────────────────────────────────────────────
+
+    async def _external_finishes(self, ids: list[str], calendar: WorkCalendar, workday: WorkDay | None,
+                                 summary: ScheduleRunSummary) -> dict[str, float]:
+        """Posição, neste calendário, do fim de cada antecessora que está noutra lista."""
+        positions: dict[str, float] = {}
+        timed: dict[str, bool] = {}                    # lista → as datas dela têm hora (jornada)?
+        for task_id in ids:
+            try:
+                task = await self._call(lambda t=task_id: self._clickup.get_task(t))
+            except httpx.HTTPStatusError:
+                continue                               # o motor avisa: "não está nesta lista — ignorado"
+            other = str((task.get("list") or {}).get("id") or "")
+            if other:
+                _LIST_OF_TASK[task_id] = other
+            due = _raw(task.get("due_date"))
+            if not due:
+                summary.warnings.append(f'"{task.get("name", task_id)}" (outra lista): sem data de término '
+                                        "— ignorada como antecessora")
+                continue
+            if other and other not in timed:
+                lst = await self._call(lambda o=other: self._clickup.get_list(o))
+                timed[other] = parse_workday(lst.get("content")) is not None
+            moment = _site_clock(due)
+            if workday and timed.get(other):
+                positions[task_id] = _position(calendar, workday, moment.date(), moment.time())
+            else:                                      # só o dia: espera o dia inteiro
+                positions[task_id] = float(calendar.end_position(_site(due) or moment.date()))
+        return positions
+
+    async def _baseline_positions(self, ids: list[str], calendar: WorkCalendar,
+                                  workday: WorkDay | None) -> dict[str, float]:
+        """O fim planeado das antecessoras de outra lista, se a lista delas já tem linha de base."""
+        if not ids:
+            return {}
+        rows = (await self._db.execute(
+            select(ScheduleBaseline).where(ScheduleBaseline.task_id.in_(ids))
+        )).scalars().all()
+        return {
+            row.task_id: (_position(calendar, workday, row.finish_at.date(), row.finish_at.time())
+                          if workday and row.finish_at else float(calendar.end_position(row.finish)))
+            for row in rows
+        }
+
+    async def _waiting_lists(self, raw_tasks: list[dict], current: dict[str, _Current], list_id: str) -> list[str]:
+        """Listas com tarefas que esperam por uma desta (o ClickUp põe o registo nas duas)."""
+        waiting = {str(dep["task_id"]) for t in raw_tasks for dep in t.get("dependencies") or []
+                   if dep.get("type", 1) == 1 and str(dep.get("depends_on")) in current
+                   and dep.get("task_id") and str(dep["task_id"]) not in current}
+        lists: set[str] = set()
+        for task_id in sorted(waiting):
+            if task_id not in _LIST_OF_TASK:
+                try:
+                    task = await self._call(lambda t=task_id: self._clickup.get_task(t))
+                except httpx.HTTPStatusError:
+                    continue                           # tarefa apagada: a dependência morreu com ela
+                if (task.get("list") or {}).get("id"):
+                    _LIST_OF_TASK[task_id] = str(task["list"]["id"])
+            if _LIST_OF_TASK.get(task_id, list_id) != list_id:
+                lists.add(_LIST_OF_TASK[task_id])
+        return sorted(lists)
 
     # ─── Estado anterior ─────────────────────────────────────────────────────
 
@@ -1242,6 +1323,19 @@ def _stamps(results: dict, calendar: WorkCalendar, workday: WorkDay) -> dict[str
             end = begin
         out[task_id] = (_site_ms(r.start, begin), _site_ms(r.finish, end))
     return out
+
+
+def _site_clock(ms: int) -> datetime:
+    """Data e hora da obra (sem fuso) de um instante em ms."""
+    site = timezone(timedelta(hours=settings.schedule_utc_offset_hours))
+    return datetime.fromtimestamp(int(ms) / 1000, site).replace(tzinfo=None)
+
+
+def _position(calendar: WorkCalendar, workday: WorkDay | None, day: date, clock) -> float:
+    """Posição de uma data com hora: o dia útil mais a fração da jornada já trabalhada."""
+    if workday is None or not calendar.is_workday(day):
+        return float(calendar.end_position(day))
+    return calendar.index_of(day) + day_fraction(workday, clock)
 
 
 def _site_ms(day: date, clock) -> int:

@@ -8,14 +8,14 @@ BASE_URL = "https://api.clickup.com/api/v2"
 
 
 class ClickUpClient:
-    def __init__(self) -> None:
+    def __init__(self, timeout: float = 30.0) -> None:
         self._client = httpx.AsyncClient(
             base_url=BASE_URL,
             headers={
                 "Authorization": settings.clickup_api_token,
                 "Content-Type": "application/json",
             },
-            timeout=30.0,
+            timeout=timeout,
         )
 
     async def __aenter__(self):

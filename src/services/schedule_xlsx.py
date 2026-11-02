@@ -38,6 +38,9 @@ class XlsxTask:
     weight: float | None = None     # "Peso (%)" dentro do pai (planilhas de tipos de site)
     source_id: int | None = None    # ID da linha na planilha (campo "ID")
     wbs: str | None = None          # nível no ClickUp: "1" etapa/disciplina, "2" grupo, "3" tarefa (campo "WBS")
+    fronts: tuple[str, ...] = ()    # coluna "Team" das planilhas por equipe (campo "Frente")
+    notes: str | None = None        # colunas de instruções dos planos por equipe (descrição da tarefa)
+    outside: tuple[tuple[str, int], ...] = ()   # antecessoras noutra sala: (sala, ID da linha)
 
 
 @dataclass(frozen=True)
@@ -71,10 +74,10 @@ def load_schedule(paths: list[str], room: str | None = None) -> XlsxSchedule:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         first = openpyxl.load_workbook(paths[0], read_only=True)
+        if is_site_type_workbook(first):               # WBS: tipos de site e estúdios provinciais
+            return load_site_type_schedule(paths[0], room)
         if is_studio_workbook(first):
             return load_studio_schedule(paths, room)
-        if is_site_type_workbook(first):
-            return load_site_type_schedule(paths[0])
 
     books = []
     with warnings.catch_warnings():

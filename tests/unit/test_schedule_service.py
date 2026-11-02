@@ -87,8 +87,12 @@ class FakeClickUp:
         self.holidays = list(holidays)
         self.writes: list[tuple] = []
         self.fail_on: set[str] = set()
+        self.others: dict[str, dict] = {}             # tarefas de outras listas (só por get_task)
+        self.other_content: dict[str, str] = {}       # descrição das outras listas
 
     async def get_list(self, list_id):
+        if list_id in self.other_content:
+            return {"id": list_id, "content": self.other_content[list_id], "statuses": STATUSES}
         return {
             "id": list_id, "content": self.content, "statuses": STATUSES,
             "start_date": str(date_to_ms(self.start)) if self.start else None,
@@ -113,6 +117,11 @@ class FakeClickUp:
         return copy.deepcopy(list(self.tasks.values()))
 
     async def get_task(self, task_id):
+        if task_id in self.others:
+            return copy.deepcopy(self.others[task_id])
+        if task_id not in self.tasks:                  # apagada, ou de um space sem acesso
+            request = httpx.Request("GET", "https://api.clickup.com")
+            raise httpx.HTTPStatusError("404", request=request, response=httpx.Response(404, request=request))
         return copy.deepcopy(self.tasks[task_id])
 
     def _check(self, task_id):
@@ -1565,3 +1574,73 @@ class TestPauses:
 
         assert summary.changed == 0 and clickup.writes == []
 
+
+
+class TestOtherLists:
+    """Antecessoras e sucessoras noutra lista (salas de um estúdio, 2026-11-02): cada sala é uma
+    lista, e um bloco pode esperar uma tarefa de outra sala (a equipe que muda de sala, o SAT da
+    CTP depois do do estúdio). O motor lê a data de fim dela no ClickUp e não a calcula."""
+
+    def _room(self, content=WORKDAY):
+        tasks = [make_task("g"), make_task("a", parent="g", duration=1), make_task("b", parent="g", duration=1)]
+        depends(tasks, "b", "a")
+        depends(tasks, "b", "x")                       # "x" está noutra lista
+        clickup = FakeClickUp(tasks, content=content)
+        clickup.others["x"] = {"id": "x", "name": "X", "list": {"id": "L2"},
+                               "dependencies": [{"task_id": "b", "depends_on": "x", "type": 1}],
+                               "due_date": str(angola(date(2026, 10, 14), 15))}
+        clickup.other_content["L2"] = WORKDAY
+        return clickup
+
+    async def test_a_task_waits_for_the_finish_of_a_task_in_another_list(self, db):
+        clickup = self._room()
+        summary = await _run(db, clickup)
+
+        assert int(clickup.tasks["b"]["start_date"]) == angola(date(2026, 10, 14), 15)   # na hora em que X acaba
+        assert not any("não está nesta lista" in w for w in summary.warnings)
+
+    async def test_without_hours_it_waits_for_the_whole_day(self, db):
+        clickup = self._room(content="")
+        clickup.other_content["L2"] = ""
+        clickup.others["x"]["due_date"] = str(date_to_ms(date(2026, 10, 14)))
+        await _run(db, clickup)
+
+        assert clickup.dates("b")[0] == date(2026, 10, 15)
+
+    async def test_a_task_of_another_list_without_dates_is_ignored_with_a_warning(self, db):
+        clickup = self._room()
+        clickup.others["x"]["due_date"] = None
+        summary = await _run(db, clickup)
+
+        assert int(clickup.tasks["b"]["start_date"]) == angola(date(2026, 10, 14), 8)    # só depois de "a"
+        assert any('"X"' in w and "outra lista" in w for w in summary.warnings)
+
+    async def test_the_baseline_waits_for_the_baseline_of_the_other_list(self, db):
+        from src.models.schedule_models import ScheduleBaseline
+        db.add(ScheduleBaseline(task_id="x", list_id="L2", start=date(2026, 10, 13), finish=date(2026, 10, 13),
+                                finish_at=datetime(2026, 10, 13, 10)))
+        await db.commit()
+        clickup = self._room()                         # hoje X acaba a 14/10 15:00 (atrasou)
+        await _run(db, clickup)
+
+        rows = await TestBaseline()._rows(db)
+        assert rows["b"].start == date(2026, 10, 14)   # o plano: depois de "a" (13/10 17:00), X planeado às 10:00
+        assert rows["b"].finish_at == datetime(2026, 10, 14, 17)
+        assert int(clickup.tasks["b"]["start_date"]) == angola(date(2026, 10, 14), 15)
+
+    async def test_the_baseline_keeps_the_planned_finish_hour(self, db):
+        await _run(db, self._room())
+
+        rows = await TestBaseline()._rows(db)
+        assert rows["a"].finish_at == datetime(2026, 10, 13, 17)
+        assert rows["b"].finish_at == datetime(2026, 10, 15, 15)    # sem plano de X: o fim de agora
+
+    async def test_a_change_here_tells_which_lists_wait_on_it(self, db):
+        clickup = self._room()
+        clickup.tasks["a"]["dependencies"].append({"task_id": "y", "depends_on": "a", "type": 1})
+        clickup.others["y"] = {"id": "y", "name": "Y", "list": {"id": "L3"}, "due_date": None}
+        summary = await _run(db, clickup)
+
+        assert summary.linked_lists == ["L3"]
+        again = await _run(db, clickup)                # nada mudou: não há o que avisar
+        assert again.writes == 0 and again.linked_lists == []
