@@ -652,3 +652,71 @@ class TestDayFraction:
     def test_it_undoes_clock_time(self):
         for quarter in range(5):
             assert day_fraction(self.WD, clock_time(self.WD, quarter / 4, end=True)) == quarter / 4
+
+
+class TestStartedAtZero:
+    """Status "em andamento" com 0% (2026-11-08): a tarefa começou, só o % ainda não foi lançado."""
+    CAL = WorkCalendar(start=date(2026, 9, 1), weekend_mask="0000001", holidays=frozenset())
+
+    def test_it_keeps_its_real_start_and_does_the_whole_duration_from_today(self):
+        task = ScheduleTask(id="a", duration=5, start=date(2026, 9, 15), started=True)
+        out = compute_schedule([task], self.CAL, date(2026, 11, 9))
+
+        assert (out.results["a"].start, out.results["a"].finish) == (date(2026, 9, 15), date(2026, 11, 13))
+
+    def test_not_started_still_moves_with_today(self):
+        task = ScheduleTask(id="a", duration=5, start=date(2026, 9, 15))
+        out = compute_schedule([task], self.CAL, date(2026, 11, 9))
+
+        assert out.results["a"].start == date(2026, 11, 9)
+
+
+    def test_a_completed_task_starts_at_its_real_start(self):
+        task = ScheduleTask(id="a", duration=1, percent=100, start=date(2026, 9, 2), finished_on=date(2026, 9, 5))
+        out = compute_schedule([task], self.CAL, date(2026, 11, 9))
+
+        assert out.results["a"].start == date(2026, 9, 2)
+        assert out.results["a"].pos_start == self.CAL.index_of(date(2026, 9, 2))
+
+
+class TestCalendarDays:
+    """"Corrido" é tempo de calendário (2026-11-08, decisão do utilizador: a cura do betão é
+    passiva, não depende de dias úteis). 14 dias corridos = 14 dias de calendário a partir do
+    início; domingos e feriados não esticam o prazo. Antes era convertido em úteis (× 6/7), como
+    as fórmulas das planilhas, e um feriado no meio esticava a cura."""
+    CAL = WorkCalendar(start=date(2026, 11, 9), weekend_mask="0000001", holidays=frozenset())
+    HOLIDAY = WorkCalendar(start=date(2026, 11, 9), weekend_mask="0000001", holidays=frozenset({date(2026, 11, 11)}))
+
+    def _cure(self, calendar, **kw):
+        tasks = [ScheduleTask(id="cura", duration=14, calendar=CAL_CORRIDO, **kw),
+                 ScheduleTask(id="depois", duration=1, predecessors=("cura",))]
+        return compute_schedule(tasks, calendar, date(2026, 11, 9))
+
+    def test_fourteen_calendar_days_end_on_the_fourteenth_day(self):
+        out = self._cure(self.CAL)
+
+        assert (out.results["cura"].start, out.results["cura"].finish) == (date(2026, 11, 9), date(2026, 11, 22))
+        assert out.results["depois"].start == date(2026, 11, 23)
+
+    def test_a_holiday_inside_does_not_stretch_it(self):
+        out = self._cure(self.HOLIDAY)
+
+        assert out.results["cura"].finish == date(2026, 11, 22)
+        assert out.results["depois"].start == date(2026, 11, 23)
+
+    def test_in_progress_the_rest_is_calendar_days_from_today(self):
+        out = self._cure(self.HOLIDAY, percent=60, start=date(2026, 9, 8))
+
+        assert out.results["cura"].start == date(2026, 9, 8)
+        assert out.results["cura"].finish == date(2026, 11, 14)        # 40% de 14 = 5,6 dias: 9 → 14/11
+        assert out.results["depois"].start == date(2026, 11, 14)        # a meio do sábado
+
+    def test_completed_it_starts_fourteen_days_before_its_end(self):
+        out = self._cure(self.CAL, percent=100, finished_on=date(2026, 9, 21))
+
+        assert out.results["cura"].start == date(2026, 9, 8)
+
+    def test_its_weight_in_the_progress_is_still_in_working_days(self):
+        out = self._cure(self.CAL)
+
+        assert out.results["cura"].duration_util == 12

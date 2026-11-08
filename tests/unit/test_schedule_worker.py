@@ -54,3 +54,4 @@ async def test_a_dry_run_does_not_wake_the_other_lists(lists):
     await _settle()
 
     assert lists == ["STUDIO"]
+

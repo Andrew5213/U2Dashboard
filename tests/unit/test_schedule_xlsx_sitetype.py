@@ -342,3 +342,14 @@ def test_a_block_waiting_on_another_room_comes_from_the_stage_start_formula(tmp_
     assert by_name["Mixer"].outside == ()
     studio = load_schedule([file], room="STUDIO")
     assert all(t.outside == () for t in studio.tasks)                  # a própria sala não conta
+
+
+def test_concrete_curing_is_always_calendar_days(tmp_path):
+    """Os modelos Tipo 1–4 trazem a cura como "Working"; a cura é passiva e não pára ao domingo
+    (decisão de 2026-11-08) — entra sempre como "Corrido", com o mesmo número de dias."""
+    rows = [r if r[1] != "Concrete Curing" else r[:7] + ("Working",) + r[8:] for r in ROWS]
+    rows.append((10, "Generator positioning on cured pad", "Task", 3, 6, "", "U2 BROADCAST", "Working", 1, 0))
+    by_name = {t.name: t for t in load_schedule([_workbook(tmp_path, rows=rows)]).tasks}
+
+    assert (by_name["Concrete Curing"].duration, by_name["Concrete Curing"].calendar) == (14, CAL_CORRIDO)
+    assert by_name["Generator positioning on cured pad"].calendar == CAL_UTIL

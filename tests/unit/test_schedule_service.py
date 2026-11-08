@@ -677,9 +677,8 @@ class TestManualDates:
 
     async def test_due_date_typed_on_a_calendar_day_task_is_honoured(self, db):
         """Cura do betão ("Corrido"): o vencimento digitado vira a duração em dias corridos que
-        termina nesse dia — fracionada se for preciso, como nas tarefas de dias úteis. Antes saía
-        em dias corridos inteiros e a conversão para dias úteis (× 6/7) terminava um dia depois
-        (achado no fuzz de 2026-10-22, Saurimo)."""
+        termina nesse dia (achado no fuzz de 2026-10-22, Saurimo). Desde 2026-11-08 o "Corrido" é
+        tempo de calendário: 16/10 → 02/11 são 18 dias (antes 17,5 = 15 úteis × 7/6)."""
         clickup = FakeClickUp(_project())
         await _run(db, clickup)                                   # c: 14 corridos, 16–29/10
         clickup.type_dates("c", due=date(2026, 11, 2))
@@ -687,7 +686,7 @@ class TestManualDates:
         await _run(db, clickup)
 
         assert clickup.dates("c") == (date(2026, 10, 16), date(2026, 11, 2))
-        assert float(clickup.value("c", F_DURATION)) == 17.5     # 15 dias úteis × 7/6
+        assert float(clickup.value("c", F_DURATION)) == 18
 
     async def test_due_date_typed_on_a_calendar_day_task_in_progress_is_honoured(self, db):
         clickup = FakeClickUp(_project())
@@ -751,15 +750,17 @@ class TestManualDates:
         comments = [w for w in clickup.writes if w[0] == "comment"]
         assert len(comments) == 1 and '"B"' in comments[0][2]
 
-    async def test_start_in_the_past_is_explained(self, db):
+    async def test_a_task_moved_into_the_past_was_done_then(self, db):
+        """Antes de 2026-11-08 voltava para hoje com aviso; com o andamento lançado depois, uma
+        tarefa aberta posta no passado foi feita nesse dia (ver TestPastDates)."""
         clickup = await _planned(db)
         clickup.type_dates("x", start=date(2026, 10, 13), due=date(2026, 10, 14))   # sem mudança
         clickup.type_dates("y", start=date(2026, 10, 14), due=date(2026, 10, 14))
 
-        summary = await _run(db, clickup, today=date(2026, 10, 15))
+        await _run(db, clickup, today=date(2026, 10, 15))
 
-        assert clickup.dates("y")[0] == date(2026, 10, 15)
-        assert any("já passou" in w for w in summary.warnings)
+        assert clickup.status("y") == "complete"
+        assert clickup.dates("y") == (date(2026, 10, 14), date(2026, 10, 14))
 
     async def test_tasks_outside_the_chain_keep_their_dates_even_if_something_else_changed(self, db):
         clickup = await _planned(db)
@@ -901,17 +902,18 @@ class TestEditsFoundInTheRealClickUp:
         assert float(clickup.value("a", F_DURATION)) == 10      # 50% feito: faltam 5 dias (15, 16, 17, 19, 20)
         assert clickup.dates("b")[0] == date(2026, 10, 21)
 
-    async def test_due_before_today_on_a_task_in_progress_is_refused(self, db):
+    async def test_due_before_today_on_a_task_in_progress_completes_it(self, db):
         tasks = [make_task("a", duration=4, status="fazendo", percent=50)]
         tasks[0]["start_date"] = str(date_to_ms(date(2026, 10, 13)))
         clickup = FakeClickUp(tasks)
         await _run(db, clickup, today=date(2026, 10, 15))
         clickup.type_dates("a", due=date(2026, 10, 14))
 
-        summary = await _run(db, clickup, today=date(2026, 10, 15))
+        await _run(db, clickup, today=date(2026, 10, 15))
 
-        assert float(clickup.value("a", F_DURATION)) == 4
-        assert any("antes de hoje" in w for w in summary.warnings)
+        assert float(clickup.value("a", F_DURATION)) == 4                 # a duração não muda
+        assert clickup.status("a") == "complete"                          # antes: recusado com aviso
+        assert ms_to_date(clickup.value("a", F_COMPLETION)) == date(2026, 10, 14)
 
     async def test_first_row_is_the_first_created_whatever_the_orderindex(self, db):
         clickup = await _planned(db, self._with_second_discipline())
@@ -973,11 +975,12 @@ class TestWritesRacingWithPeople:
         assert clickup.dates("c") == (date(2026, 10, 22), date(2026, 10, 24))
         assert ms_to_date(clickup.value("c", F_FIXED)) == date(2026, 10, 22)
 
-    async def test_writes_are_checked_for_fresh_changes_in_small_batches(self, db, monkeypatch):
-        monkeypatch.setattr(schedule_service, "_CHECK_EVERY", 2)
-        clickup = FakeClickUp(_chains())
-        await _run(db, clickup)                                # 7 tarefas gravadas
-        assert clickup.freshness_checks >= 4
+    async def test_writes_are_checked_for_fresh_changes_once_per_level(self, db):
+        """Uma releitura antes de cada nível (tarefas, grupos, disciplinas) — até 2026-11-08 era a
+        cada 8 gravações, e as releituras eram metade do tempo de um recálculo."""
+        clickup = FakeClickUp([make_task("g")] + [make_task(f"t{i}", parent="g", duration=1) for i in range(12)])
+        await _run(db, clickup)                                # 12 tarefas e o grupo: 2 níveis
+        assert clickup.freshness_checks == 2
 
     async def test_a_start_the_clickup_drops_on_the_put_is_written_again(self, db):
         """Visto no ClickUp real: a resposta do PUT já vem com o início antigo."""
@@ -1463,9 +1466,9 @@ class TestProjectStart:
         assert any(c["name"] == "(início do projeto)" for c in summary.changes)
 
 
-def test_debounce_default_is_five_seconds():
+def test_debounce_default_is_two_seconds():
     from src.core.config import Settings
-    assert Settings.model_fields["schedule_debounce_seconds"].default == 5.0
+    assert Settings.model_fields["schedule_debounce_seconds"].default == 2.0   # 2026-11-08: eram 5 s
 
 
 class TestPauses:
@@ -1644,3 +1647,190 @@ class TestOtherLists:
         assert summary.linked_lists == ["L3"]
         again = await _run(db, clickup)                # nada mudou: não há o que avisar
         assert again.writes == 0 and again.linked_lists == []
+
+
+class TestPastDates:
+    """Andamento lançado depois (2026-11-08): as listas já têm progresso real que ainda não foi
+    registado, e a pessoa lança datas de dias, semanas ou meses atrás. O motor nunca põe uma
+    tarefa não iniciada antes de hoje, então uma data passada digitada numa tarefa aberta só pode
+    ser história: o vencimento passado = concluída nesse dia; o início passado = começou nesse dia."""
+
+    NOW = date(2026, 11, 9)                       # segunda-feira
+    START = date(2026, 9, 1)
+
+    def _chain(self):
+        tasks = [make_task("g"), make_task("a", parent="g", duration=5), make_task("b", parent="g", duration=3),
+                 make_task("c", parent="g", duration=10)]
+        depends(tasks, "b", "a")
+        depends(tasks, "c", "b")
+        return tasks
+
+    async def _planned(self, db, tasks=None, start=START):
+        clickup = FakeClickUp(tasks or self._chain(), start=start)
+        await _run(db, clickup, today=self.NOW)
+        assert clickup.dates("a") == (self.NOW, date(2026, 11, 13))
+        clickup.writes.clear()
+        return clickup
+
+    def _complete(self, clickup, task_id, on=None):
+        clickup.tasks[task_id]["status"] = {"status": "complete", "type": "done"}
+        if on:
+            clickup._set(task_id, F_COMPLETION, str(date_to_ms(on)))
+
+    async def test_completion_date_in_the_past_is_kept(self, db):
+        clickup = await self._planned(db)
+        self._complete(clickup, "a", on=date(2026, 9, 10))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.dates("a") == (date(2026, 9, 5), date(2026, 9, 10))
+        assert clickup.dates("b") == (self.NOW, date(2026, 11, 11))      # a sucessora começa hoje
+
+    async def test_completion_before_the_project_start_is_kept(self, db):
+        clickup = await self._planned(db, start=date(2026, 10, 1))
+        self._complete(clickup, "a", on=date(2026, 9, 10))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.dates("a")[1] == date(2026, 9, 10)
+
+    async def test_a_past_due_date_on_an_open_task_means_it_was_completed_that_day(self, db):
+        clickup = await self._planned(db)
+        clickup.type_dates("a", due=date(2026, 9, 10))
+
+        summary = await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "complete"
+        assert clickup.value("a", F_PERCENT) == {"current": "100"}
+        assert ms_to_date(clickup.value("a", F_COMPLETION)) == date(2026, 9, 10)
+        assert clickup.dates("a")[1] == date(2026, 9, 10)
+        assert not [w for w in summary.warnings if '"A"' in w]
+
+    async def test_a_past_due_date_on_a_task_in_progress_completes_it(self, db):
+        clickup = await self._planned(db)
+        clickup._set("a", F_PERCENT, {"current": "50"})
+        await _run(db, clickup, today=self.NOW)
+        clickup.type_dates("a", due=date(2026, 11, 6))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "complete"
+        assert ms_to_date(clickup.value("a", F_COMPLETION)) == date(2026, 11, 6)
+
+    async def test_a_past_start_on_an_open_task_means_it_started_that_day(self, db):
+        clickup = await self._planned(db)
+        clickup.type_dates("a", start=date(2026, 9, 15))
+
+        summary = await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "fazendo"
+        assert clickup.value("a", F_FIXED) is None                   # não é "começa em": já começou
+        assert clickup.dates("a") == (date(2026, 9, 15), date(2026, 11, 13))   # falta tudo, a partir de hoje
+        assert not [w for w in summary.warnings if "já passou" in w and '"A"' in w]
+
+        clickup._set("a", F_PERCENT, {"current": "40"})              # o % vem depois
+        await _run(db, clickup, today=self.NOW)
+        assert clickup.dates("a") == (date(2026, 9, 15), date(2026, 11, 11))
+
+    async def test_past_start_and_due_together_record_the_whole_history(self, db):
+        clickup = await self._planned(db)
+        clickup.type_dates("a", start=date(2026, 9, 3), due=date(2026, 9, 10))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "complete"
+        assert clickup.dates("a") == (date(2026, 9, 3), date(2026, 9, 10))
+
+    async def test_a_future_start_on_an_open_task_is_still_a_fixed_start(self, db):
+        clickup = await self._planned(db)
+        clickup.type_dates("a", start=date(2026, 11, 20))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "planejando"
+        assert ms_to_date(clickup.value("a", F_FIXED)) == date(2026, 11, 20)
+
+    async def test_status_in_progress_at_zero_percent_counts_as_started(self, db):
+        clickup = await self._planned(db)
+        clickup.tasks["a"]["status"] = {"status": "fazendo", "type": "custom"}
+        await _run(db, clickup, today=self.NOW)
+
+        await _run(db, clickup, today=date(2026, 11, 10))           # no dia seguinte, sem %
+
+        assert clickup.dates("a") == (self.NOW, date(2026, 11, 14))  # o início não anda com hoje
+
+    async def test_many_past_dates_at_once_are_not_taken_for_a_stale_state(self, db, monkeypatch):
+        monkeypatch.setattr(schedule_service, "_MAX_EDITS_PER_RUN", 2)
+        clickup = await self._planned(db)
+        clickup.type_dates("a", due=date(2026, 9, 10))
+        clickup.type_dates("b", due=date(2026, 9, 20))
+        clickup.type_dates("c", start=date(2026, 9, 22))
+
+        summary = await _run(db, clickup, today=self.NOW)
+
+        assert not any("estado guardado" in w for w in summary.warnings)
+        assert ms_to_date(clickup.value("b", F_COMPLETION)) == date(2026, 9, 20)
+        assert clickup.status("c") == "fazendo" and clickup.dates("c")[0] == date(2026, 9, 22)
+
+    async def test_a_completion_in_the_same_run_as_an_edit_gets_its_dates(self, db):
+        clickup = await self._planned(db)
+        self._complete(clickup, "a", on=date(2026, 9, 10))
+        clickup._set("c", F_PERCENT, {"current": "30"})
+        clickup.type_dates("c", start=date(2026, 9, 22))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.dates("a")[1] == date(2026, 9, 10)
+        assert clickup.dates("c")[0] == date(2026, 9, 22)
+
+    async def test_a_completed_task_shows_the_hours_of_its_real_start_and_finish(self, db):
+        """Com jornada: o início real é às 08:00 (não a hora em que o plano o poria) e uma
+        conclusão num domingo, dia de folga, fica no fim do dia."""
+        clickup = FakeClickUp(self._chain(), start=self.START, content=WORKDAY)
+        await _run(db, clickup, today=self.NOW)
+        clickup.type_dates("a", start=date(2026, 9, 2))
+        await _run(db, clickup, today=self.NOW)                       # começou a 02/09
+        clickup.type_dates("a", due=date(2026, 9, 5))
+        clickup.type_dates("b", start=date(2026, 9, 5), due=date(2026, 9, 6))     # 06/09 é domingo
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert int(clickup.tasks["a"]["start_date"]) == angola(date(2026, 9, 2), 8)
+        assert int(clickup.tasks["a"]["due_date"]) == angola(date(2026, 9, 5), 17)
+        assert int(clickup.tasks["b"]["due_date"]) == angola(date(2026, 9, 6), 17)
+
+
+class TestCalendarDayEdits:
+    """Vencimento digitado numa tarefa "Corrido" (cura): a duração em dias de calendário que a faz
+    terminar nesse dia, desde 2026-11-08 sem a conversão × 6/7 das planilhas."""
+
+    def _cure(self):
+        tasks = [make_task("cura", duration=14, corrido=True), make_task("depois", duration=1)]
+        depends(tasks, "depois", "cura")
+        return tasks
+
+    async def test_due_typed_on_a_cure_not_started(self, db):
+        clickup = FakeClickUp(self._cure(), start=date(2026, 11, 9))
+        await _run(db, clickup, today=date(2026, 11, 9))
+        assert clickup.dates("cura") == (date(2026, 11, 9), date(2026, 11, 22))
+        clickup.type_dates("cura", due=date(2026, 11, 25))
+
+        await _run(db, clickup, today=date(2026, 11, 9))
+
+        assert float(clickup.value("cura", F_DURATION)) == 17
+        assert clickup.dates("cura")[1] == date(2026, 11, 25)
+        assert clickup.dates("depois")[0] == date(2026, 11, 26)
+
+    async def test_due_typed_on_a_cure_in_progress(self, db):
+        tasks = self._cure()
+        tasks[0] = make_task("cura", duration=14, corrido=True, status="fazendo", percent=50)
+        tasks[0]["start_date"] = str(date_to_ms(date(2026, 11, 2)))
+        depends(tasks, "depois", "cura")
+        clickup = FakeClickUp(tasks, start=date(2026, 11, 2))
+        await _run(db, clickup, today=date(2026, 11, 9))
+        clickup.type_dates("cura", due=date(2026, 11, 18))           # faltam 10 dias de calendário
+
+        await _run(db, clickup, today=date(2026, 11, 9))
+
+        assert float(clickup.value("cura", F_DURATION)) == 20         # 50% de 20 = 10
+        assert clickup.dates("cura")[1] == date(2026, 11, 18)

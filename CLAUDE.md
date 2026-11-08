@@ -639,9 +639,20 @@ contra `tests/fixtures/lubango_schedule.json` (51 tarefas, 11 resumos). Com `res
 - **em andamento** → o que falta (`duração × (1 − %)`) é executado a partir de hoje;
 - **não iniciada** → nunca começa antes de hoje (uma tarefa atrasada desliza um dia por dia).
 
-Dependência de/para um resumo é expandida para todas as folhas dele. "Corrido" converte por
-`dias × dias_úteis_semana / 7` (cura de 14 dias = 12 úteis), como a planilha — um feriado dentro da
-cura estica o prazo, limitação herdada. Os "marcos externos" (CIV-01, LOG-01…) não existem mais:
+Dependência de/para um resumo é expandida para todas as folhas dele.
+
+**"Corrido" é tempo de calendário** (2026-11-08, decisão do utilizador: a cura do betão é passiva e não
+depende de dias úteis). 14 dias corridos = 14 dias de calendário a partir do início (`_calendar_end`):
+domingos e feriados **não** esticam o prazo — a cura que começa segunda 09/11 acaba domingo 22/11 e a
+sucessora começa segunda 23/11; em andamento, o que falta (`duração × (1 − %)`) corre em dias de calendário
+desde hoje, inclusive ao domingo. O início continua num dia útil (a betonagem é trabalho). Antes era
+convertido em úteis (`dias × dias_úteis_semana / 7`, 14 corridos = 12 úteis), como as fórmulas das
+planilhas, e um feriado no meio esticava a cura — por isso uma cura num plano pode diferir da planilha
+num feriado ou nas horas. Ficam como antes: o **peso** da tarefa no progresso (`useful_duration`, ainda
+× 6/7) e uma cura com **pausa** (contada em dias úteis). Os modelos Tipo 1–4 trazem a cura como "Working":
+`load_schedule` põe toda tarefa com "curing"/"cura" no nome em "Corrido", com o mesmo número de dias
+(`_CURING`; "cured pad" não conta). No Teste 2 as 54 curas das listas Site FM e da lista de QA foram trocadas
+para "Corrido" no ClickUp. Os "marcos externos" (CIV-01, LOG-01…) não existem mais:
 com tudo na mesma lista viraram dependências comuns (o importador faz essa conversão).
 
 **% × status** (`reconcile_leaf`): 0% = aberto, 1–99% = fazendo, 100% = complete. Quando discordam,
@@ -658,11 +669,13 @@ do cálculo em vez de ser desfeita (`_typed_dates` detecta, `_interpret_edit` tr
   vencimento vira a **duração** que faz a tarefa terminar nesse dia, contada de onde ela
   começa — inclusive a meio de um dia, quando a antecessora termina a meio (durações de 0,25/0,5 e
   curas "Corrido" deixam frações): por isso a duração pode sair fracionada (ex.: 4,5). Em "Corrido",
-  a duração em dias corridos que, convertida (× 6/7), termina nesse dia — também fracionada (ex.:
-  17,5); antes saíam dias corridos inteiros e o fim caía um dia depois (fuzz de 2026-10-22). Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
+  os dias de calendário do início até ao fim do dia digitado (16/10 → 02/11 = 18; até 2026-11-08 era
+  17,5, pela conversão × 6/7; antes disso saíam dias corridos inteiros e o fim caía um dia depois — fuzz
+  de 2026-10-22). Mover as duas datas com a mesma distância entre elas é só mudar de lugar: a duração fica;
 - em andamento: o início já valia como início real; o vencimento vira a duração cujo restante
   (`duração × (1 − %)`), contado de hoje, termina nesse dia (50% e 5 dias até o vencimento → 10;
-  em "Corrido", convertido para dias corridos); vencimento antes de hoje é recusado com aviso. Uma
+  em "Corrido", em dias de calendário desde hoje); vencimento antes de hoje = concluída nesse dia
+  (ver "Andamento lançado depois"). Uma
   tarefa aberta nunca termina antes de hoje (um marco sem duração "em andamento" terminava ontem);
 - concluída: o vencimento vira a `Data de Conclusão`.
 - `_interpret_edit` usa um cálculo prévio, sem as edições, para saber a posição exata (com a fração)
@@ -689,6 +702,33 @@ fixado devolve a tarefa às dependências. O campo é criado sozinho na primeira
 listas importadas antes não o têm) e faz parte do `FIELD_DEFS` do importador. Estado sem datas (de antes
 deste recurso, ou tarefa nova) não conta como edição — o primeiro cálculo só registra as datas.
 
+**Andamento lançado depois — datas passadas** (2026-11-08). As listas têm progresso real que ainda não foi
+registado, e quem o lança põe datas de dias, semanas ou meses atrás. O motor nunca põe uma tarefa **não
+iniciada** antes de hoje, então uma data passada digitada numa tarefa aberta só pode ser história
+(`_interpret_edit`):
+- **vencimento antes de hoje** numa tarefa aberta (0–99%) = **concluída nesse dia**: % 100, status concluído,
+  `Data de Conclusão` = essa data; o início digitado junto (ou antes) vira o início real. Antes era "vencimento
+  antes do início" (aberta) ou recusado com aviso (em andamento), e a data era desfeita;
+- **início antes de hoje** numa tarefa não iniciada = **começou nesse dia**: o status passa a "em andamento"
+  (`started` no motor — status de andamento com 0% conta como iniciada), sem "Início fixado"; o que falta (a
+  duração inteira, até alguém lançar o %) é feito a partir de hoje. Antes virava "começa em" e ia para hoje;
+- início **no futuro** continua a ser "Início fixado", e uma tarefa arrastada inteira para o passado foi feita
+  nesse dia;
+- concluir pelo status + preencher a `Data de Conclusão` (em qualquer ordem) já funcionava e continua igual.
+- **O ClickUp recusa um vencimento anterior ao início** (API 400): numa tarefa cujo início planeado é hoje não
+  dá para pôr só um vencimento passado — lança-se o início primeiro (e o vencimento depois), as duas datas
+  juntas no seletor, ou o status + `Data de Conclusão`.
+- **A trava de estado velho não conta datas passadas** (`_only_past`): um lançamento retroativo traz muitas de
+  uma vez (13 numa só execução no teste real) e era tomado por estado velho, com as datas todas desfeitas.
+- % ou conclusão lançados na mesma execução de uma edição noutra tarefa entram no recálculo
+  (`_progress_changed`) — antes ficavam fora do alcance da edição e só ganhavam datas na execução seguinte.
+- Horas (listas com jornada): uma tarefa concluída com início real começa às horas do início da jornada
+  (antes saía 17:00 — a posição vinha do fim menos a duração), e uma conclusão num dia de folga fica no fim
+  do dia.
+- Conferido no ClickUp real (lista "Prova datas passadas", pasta ZZ_QA_DATAS_PASSADAS do Teste 2, Tipo 1 com
+  início 01/09): concluídas em setembro e outubro, início passado + % depois, vencimento depois do início; a
+  execução seguinte não grava nada.
+
 **Datas digitadas num grupo ou disciplina** (decisões de 2026-10-22). Antes eram desfeitas em silêncio
 — era a maior parte dos "mudei a data e ela voltou" relatados. O estado guarda agora as datas de todos
 os resumos, não só da primeira linha:
@@ -710,7 +750,8 @@ os resumos, não só da primeira linha:
   ClickUp a ordem de criação pode sair outra (no space "PEMx - RNA (Teste 2)" é a Logística).
 
 **Proteções contra quem mexe durante uma execução** (QA de 2026-10-22):
-- antes de cada lote de `_CHECK_EVERY` gravações, `_changed_since` pergunta ao ClickUp
+- antes de cada **nível** de gravações (tarefas, grupos, disciplinas — até 2026-11-08 era a cada 8),
+  `_changed_since` pergunta ao ClickUp
   (`get_tasks(date_updated_gt=…)`) o que mudou desde a leitura; tarefa que alguém mexeu entretanto não é
   regravada — fica para a execução seguinte, que o webhook dessa edição dispara. Antes, editar uma
   tarefa poucos segundos depois de outra (enquanto o motor gravava as dependentes) era desfeito;
@@ -730,12 +771,29 @@ os resumos, não só da primeira linha:
 - **Log:** cada execução com edições regista o que cada data virou (`_Edit.describe`) — antes só havia a
   contagem, e reconstruir um "a data voltou" a partir do log era impossível.
 
+**Tempo de resposta** (2026-11-08, "o gerente não ficaria incomodado com o atraso?"). Medido na lista de
+QA do Teste 2 com uma edição que empurra 38 tarefas, alternando o código antigo e o novo: o recálculo caiu de
+**44–50 s para 17–23 s**, e do clique a tudo atualizado de ~50 s para ~20 s (mais o ~1 s do webhook). O
+limite da conta é **1000 pedidos/min** (Business Plus) e um recálculo usa ~165/min — o tempo era da forma
+como o motor pedia, não do limite:
+- `get_tasks` para na página com `last_page` (antes pedia sempre uma página vazia a mais: metade das leituras);
+- 10 gravações ao mesmo tempo (`_WRITE_CONCURRENCY`, eram 4);
+- uma checagem de edições alheias por nível, não a cada 8 gravações — a janela em que uma edição feita a
+  meio do nível pode ser sobrescrita passa de ~2 s para a duração do nível (~7 s numa cascata de 33
+  tarefas); a releitura final continua a apanhar o que vier depois;
+- espera de 2 s depois do webhook (eram 5);
+- lista, campos e tarefas lidos em paralelo no início.
+O que sobra é o próprio ClickUp: ~1,2–2,5 s por gravação (sem gravação em lote para datas nem campos), três
+leituras da lista e as barreiras entre níveis. Script de medição: `scratchpad\medir_atraso.py` (sessão de
+2026-11-08).
+
 **Sem laço de webhook**: `ScheduleService.recalculate` grava só as diferenças. As gravações disparam
 webhooks, que agendam outro recálculo, que não encontra nada para gravar. Qualquer campo novo
 gravado pelo motor tem de convergir (comparar o que se lê com o que se gravaria) — senão vira laço.
 
 **Gatilhos** (`schedule_worker.py`): webhook de qualquer tarefa da lista → espera
-`SCHEDULE_DEBOUNCE_SECONDS` (5 s; reinicia a cada novo evento) → recalcula — uma execução por lista de
+`SCHEDULE_DEBOUNCE_SECONDS` (2 s — junta os 2–3 avisos que o ClickUp manda por edição; reinicia a cada
+novo evento; até 2026-11-08 eram 5 s) → recalcula — uma execução por lista de
 cada vez (lock por lista em `run_recalculation`; um aviso que chega durante o cálculo espera e roda
 depois); e um job a cada
 `SCHEDULE_INTERVAL_SECONDS`. O job periódico não é redundância: o ClickUp **não envia webhook quando
@@ -1117,7 +1175,7 @@ Tables:
 | `SCHEDULE_LIST_IDS` | Listas geridas pelo motor, separadas por vírgula | `""` |
 | `SCHEDULE_HOLIDAYS_LIST_ID` | Lista de feriados (fora do space sincronizado) | `""` |
 | `SCHEDULE_WEEKEND_MASK` | Folga semanal padrão, Seg→Dom, `1` = folga | `0000001` |
-| `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular | `5` |
+| `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular (os servidores de teste fixavam `5` no `.env`) | `2` |
 | `SCHEDULE_INTERVAL_SECONDS` | Intervalo do recálculo periódico | `300` |
 | `SCHEDULE_UTC_OFFSET_HOURS` | Fuso da obra (define "hoje" para o motor); Angola = 1 | `1` |
 | `EMBED_ALLOWED_ORIGINS` | Origens que podem abrir a app num iframe (Nextcloud), separadas por vírgula; vazio = sem restrição | `""` |
@@ -1180,7 +1238,7 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada), datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso), início pela primeira linha e dependências entre disciplinas
-- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx; `TestOtherLists` (2026-11-02): antecessora noutra lista, com e sem hora, sem data, linha de base pelo plano dela e as listas a avisar
+- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx; `TestOtherLists` (2026-11-02): antecessora noutra lista, com e sem hora, sem data, linha de base pelo plano dela e as listas a avisar; `TestPastDates` (2026-11-08): andamento lançado com datas passadas (vencimento passado = concluída, início passado = iniciada, a trava de estado velho, horas reais)
 - `test_schedule_pauses.py` — pausas: histórico (leitura/escrita), arquivamento com junção de pausas contíguas e o efeito no motor
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
@@ -1189,6 +1247,7 @@ Unit tests:
 - `test_schedule_reports.py` — relatórios (PDF/XLSX), listagens, diário/semanal e Gantt de província sobre a lista de 3 níveis
 - `test_schedule_xlsx_sitetype.py` — leitor das planilhas de tipos de site: 3 níveis a partir da WBS, pesos em %, datas fora, 5º nível recusado, ID/WBS e a jornada; estúdios em WBS (sala pedida, blocos encadeados, marco final de fora); plano por equipe (frentes, instruções na descrição, antecessoras noutra sala pela fórmula do Stage Start)
 - `test_schedule_fields_info.py` — leitura da jornada na descrição e dos campos drop_down (opção por nome/orderindex)
+- `test_clickup_client.py` — a leitura de tarefas para na última página (`last_page`)
 - `test_schedule_worker.py` — o worker recalcula as listas que esperam por uma lista que gravou datas (nunca num ensaio)
 - `test_schedule_xlsx_studio.py` — leitor das planilhas de estúdio: uma lista por sala, disciplina → grupo → tarefa, fases achatadas, marcos externos virando dependências, conferência fórmula × Antecessores
 

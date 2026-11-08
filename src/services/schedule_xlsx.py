@@ -6,8 +6,9 @@ Usado pelo importador (scripts/import_schedule.py) e para gerar os dados de test
 """
 from __future__ import annotations
 
+import re
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
 import openpyxl
@@ -64,7 +65,21 @@ def _split(value, separator: str) -> list[str]:
     return [part.strip() for part in str(value or "").split(separator) if part.strip()]
 
 
+# cura do betão: "Concrete Curing", "Cura do Concreto" — não "cured pad" (base já curada)
+_CURING = re.compile(r"\b(curing|cura)\b", re.IGNORECASE)
+
+
 def load_schedule(paths: list[str], room: str | None = None) -> XlsxSchedule:
+    """Lê as planilhas (ver `_read_schedule`). A cura do betão entra sempre em dias corridos: é
+    passiva e não pára ao domingo nem no feriado, e os modelos Tipo 1–4 a trazem como "Working"
+    (decisão de 2026-11-08 — o número de dias fica o mesmo)."""
+    schedule = _read_schedule(paths, room)
+    tasks = tuple(replace(t, calendar=CAL_CORRIDO) if not t.is_summary and _CURING.search(t.name) else t
+                  for t in schedule.tasks)
+    return replace(schedule, tasks=tasks)
+
+
+def _read_schedule(paths: list[str], room: str | None = None) -> XlsxSchedule:
     """Lê os ficheiros na ordem dada (a ordem define a ordem das disciplinas).
 
     As planilhas dos estúdios têm outro formato (uma aba por sala, sem a aba

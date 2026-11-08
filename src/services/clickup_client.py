@@ -82,9 +82,11 @@ class ClickUpClient:
                 params["date_updated_gt"] = str(date_updated_gt)
             data = await self._get(f"/list/{list_id}/task", params)
             tasks = data.get("tasks", [])
-            if not tasks:
-                break
             all_tasks.extend(tasks)
+            # o ClickUp diz qual é a última página; pedir a seguinte (vazia) era uma ida ao
+            # servidor a mais em cada leitura
+            if not tasks or data.get("last_page") is True:
+                break
             page += 1
         return all_tasks
 

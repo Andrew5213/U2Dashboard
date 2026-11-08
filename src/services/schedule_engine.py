@@ -104,6 +104,9 @@ class ScheduleTask:
     # "Peso (%)": peso da tarefa dentro do seu pai. Com peso em todos os filhos, o % do
     # resumo é a média ponderada por ele (como nas planilhas de tipos de site), não pela duração
     weight: float | None = None
+    # status "em andamento" com 0%: já começou (no `start`), só o % ainda não foi lançado — o que
+    # falta (a duração inteira) é feito a partir de hoje, como numa tarefa em andamento
+    started: bool = False
 
 
 @dataclass(frozen=True)
@@ -190,7 +193,10 @@ def compute_schedule(
             continue
 
         blocks = _blocked_positions(calendar, t.pauses)
-        if not reschedule or p <= 0:
+        # "Corrido" é tempo de calendário (a cura do betão não pára ao domingo nem no feriado).
+        # Com pausa continua em dias úteis, como antes — a pausa é contada em dias de trabalho
+        calendar_days = t.calendar == CAL_CORRIDO and not blocks
+        if not reschedule or (p <= 0 and not t.started):
             anchor = anchors.get(tid)
             if t.fixed_start:
                 floor = float(calendar.index_of(t.fixed_start))
@@ -201,23 +207,40 @@ def compute_schedule(
             else:
                 floor = max(0.0, pred_finish)
             n = max(floor, float(today_pos)) if reschedule else floor
-            n, o = _work_through(n, m, blocks)
-            start_day = calendar.date_at(math.floor(n + _EPS))
-            finish_day = calendar.date_at(_finish_index(n, o))
+            if calendar_days:
+                start_day = calendar.date_at(math.floor(n + _EPS))
+                o, finish_day = _calendar_end(calendar, start_day, n - calendar.index_of(start_day), t.duration)
+                o = max(o, n)
+            else:
+                n, o = _work_through(n, m, blocks)
+                start_day = calendar.date_at(math.floor(n + _EPS))
+                finish_day = calendar.date_at(_finish_index(n, o))
         elif p >= 1:
             finish_day = t.finished_on or today
             o = float(calendar.end_position(finish_day))
             n = round(o - m, 6)
             planned_start = calendar.date_at(math.floor(n + _EPS))
+            if calendar_days:
+                planned_start = finish_day - timedelta(days=max(math.ceil(t.duration - _EPS) - 1, 0))
+                n = min(float(calendar.index_of(planned_start)), o)
             start_day = t.start if t.start and t.start <= finish_day else min(planned_start, finish_day)
+            if start_day == t.start:
+                # início real (lançado depois): a posição é a do início desse dia, não a do plano —
+                # senão a hora do início saía errada (02/09 às 17:00 em vez de 08:00)
+                n = min(float(calendar.index_of(start_day)), n)
         else:
             start_day = t.start if t.start and t.start <= today else today
             n = float(calendar.index_of(start_day))
-            # o que falta é feito a partir de hoje, pulando as pausas que vierem
-            _, rest_end = _work_through(float(today_pos), m * (1 - p), blocks)
-            o = round(max(n, rest_end), 6)
-            # aberta, nunca termina antes de hoje (um marco sem duração terminava ontem)
-            finish_day = max(calendar.date_at(_finish_index(n, o)), start_day, calendar.date_at(today_pos))
+            if calendar_days:                          # o que falta corre desde hoje, em dias de calendário
+                rest_end, rest_day = _calendar_end(calendar, today, 0.0, t.duration * (1 - p))
+                o = round(max(n, rest_end), 6)
+                finish_day = max(rest_day, start_day, calendar.date_at(today_pos))
+            else:
+                # o que falta é feito a partir de hoje, pulando as pausas que vierem
+                _, rest_end = _work_through(float(today_pos), m * (1 - p), blocks)
+                o = round(max(n, rest_end), 6)
+                # aberta, nunca termina antes de hoje (um marco sem duração terminava ontem)
+                finish_day = max(calendar.date_at(_finish_index(n, o)), start_day, calendar.date_at(today_pos))
 
         pos_start[tid], pos_finish[tid] = n, o
         dates[tid] = (start_day, finish_day)
@@ -499,6 +522,19 @@ def workdays_between(calendar: WorkCalendar, start: date, finish: date) -> int:
 def _ref(task_id: str) -> str:
     """Marca um id de tarefa numa mensagem, para quem exibe poder trocá-lo pelo nome."""
     return f"[[{task_id}]]"
+
+
+def _calendar_end(calendar: WorkCalendar, day: date, fraction: float, days: float) -> tuple[float, date]:
+    """Fim de `days` dias de calendário a partir de `day` (mais a fração já passada desse dia):
+    a posição em que as sucessoras podem começar e o último dia da tarefa. Acabar à virada de um
+    dia é acabar no fim do anterior; acabar num domingo é deixar as sucessoras para segunda."""
+    total = fraction + max(days, 0.0)
+    whole = math.floor(total + _EPS)
+    end_day = day + timedelta(days=whole)
+    rest = total - whole
+    if rest < _EPS:
+        return float(calendar.index_of(end_day)), max(end_day - timedelta(days=1), day)
+    return calendar.index_of(end_day) + (rest if calendar.is_workday(end_day) else 0.0), end_day
 
 
 def _finish_index(n: float, o: float) -> int:
