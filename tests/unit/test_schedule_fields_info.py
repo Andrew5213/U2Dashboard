@@ -38,3 +38,24 @@ def test_site_type_fields_are_declared_once():
     names = [d["name"] for d in SITE_TYPE_FIELD_DEFS]
     assert len(names) == len(set(names))
     assert {"ID", "WBS", "Peso no projeto (%)", "% Planejado", "Situação", "Dias pausados", "Motivo da pausa"} <= set(names)
+
+
+# ─── Folga semanal na descrição da lista ──────────────────────────────────────
+
+from src.services.schedule_fields import parse_weekend_mask, weekend_line
+
+
+def test_no_weekly_rest_is_written_and_read_back():
+    # Dundo, Luena, Malanje…: semana de 7 dias com folgas rotativas (máscara 0000000).
+    # "folga=" vazio caía no padrão (domingo de folga) e o motor parava aos domingos.
+    assert weekend_line("0000000") == "folga=nenhuma"
+    assert parse_weekend_mask("jornada=07:00-18:00\nfolga=nenhuma", "0000001") == "0000000"
+
+
+def test_weekend_line_round_trips():
+    for mask in ("0000001", "0000011", "1000001"):
+        assert parse_weekend_mask(weekend_line(mask), "0000000") == mask
+
+
+def test_empty_rest_line_still_falls_back_to_the_default():
+    assert parse_weekend_mask("folga=", "0000001") == "0000001"

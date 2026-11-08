@@ -51,6 +51,7 @@ from src.services.schedule_fields import (  # noqa: E402
     norm,
     parse_weekend_mask,
     read_number,
+    weekend_line,
 )
 from src.services.schedule_pauses import FIELD_PAUSE_REASON, PAUSE_FIELD_DEFS  # noqa: E402
 from src.services.schedule_service import ScheduleService, rate_limit_wait, status_names  # noqa: E402
@@ -59,7 +60,6 @@ from src.services.schedule_xlsx_sitetype import ROOMS  # noqa: E402
 import src.models.schedule_models  # noqa: E402,F401
 
 PAUSE_SECONDS = 0.3
-_WEEKDAY_NAMES = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"]
 
 
 async def call(factory, attempts: int = 6, idempotent: bool = True):
@@ -139,11 +139,10 @@ async def configure_list(clickup: ClickUpClient, lst: dict, schedule: XlsxSchedu
         payload.update({"start_date": date_to_ms(schedule.start), "start_date_time": False})
     content = lst.get("content") or ""
     if parse_weekend_mask(content, "") != schedule.weekend_mask:
-        days = ", ".join(_WEEKDAY_NAMES[i] for i, flag in enumerate(schedule.weekend_mask) if flag == "1")
         # substitui a linha de folga que houver (o motor lê a primeira): os estúdios do formato antigo
-        # tinham "folga=sab, dom" e os modelos novos folgam só ao domingo
+        # tinham "folga=sab, dom" e os modelos novos folgam só ao domingo; sem folga = "folga=nenhuma"
         kept = [line for line in content.splitlines() if norm(line.split("=")[0].split(":")[0]) != "folga"]
-        content = "\n".join(kept + [f"folga={days}"])
+        content = "\n".join(kept + [weekend_line(schedule.weekend_mask)])
     for line in schedule.list_lines:          # ex.: a jornada das planilhas de tipos de site
         key = norm(line.split("=")[0])
         if not any(norm(existing.split("=")[0]) == key for existing in content.splitlines()):

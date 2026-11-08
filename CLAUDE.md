@@ -625,7 +625,7 @@ Lista (Site FM)                 ← data de início da lista = dia 0 do projeto
 | Conclusão real | campo `Data de Conclusão` | utilizador, ou o motor (hoje) se vazio |
 | Responsável | equipes (`group_assignees`): PROEF, U2BROADCAST, RNA | utilizador |
 | Data de início do projeto | data de início da **primeira linha** (disciplina do topo), ou `start_date` da lista | utilizador; o motor copia a da primeira linha para a lista |
-| Folga semanal | linha `folga=dom` na descrição da lista (padrão `SCHEDULE_WEEKEND_MASK`) | utilizador |
+| Folga semanal | linha `folga=dom` na descrição da lista; `folga=nenhuma` = semana de 7 dias (folgas rotativas — `folga=` vazio cai no padrão `SCHEDULE_WEEKEND_MASK`) | utilizador |
 | Feriados | lista `SCHEDULE_HOLIDAYS_LIST_ID`: uma tarefa por feriado, data = vencimento | utilizador |
 
 Os campos são criados **por lista** (a API v2 não cria campos a nível de Space), então cada lista tem

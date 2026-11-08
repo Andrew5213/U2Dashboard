@@ -168,18 +168,30 @@ def date_to_ms(day: date) -> int:
     return int(datetime(day.year, day.month, day.day, 9, tzinfo=timezone.utc).timestamp() * 1000)
 
 
+_NO_REST = "nenhuma"     # semana de 7 dias (folgas rotativas): "folga=" vazio cairia no padrão
+
+
 def parse_weekend_mask(text: str | None, default: str) -> str:
-    """Lê "folga=dom" ou "folga: sáb, dom" da descrição da lista → máscara Seg→Dom."""
+    """Lê "folga=dom", "folga: sáb, dom" ou "folga=nenhuma" da descrição da lista → máscara Seg→Dom."""
     for line in (text or "").splitlines():
         key, sep, value = line.partition("=")
         if not sep:
             key, sep, value = line.partition(":")
         if norm(key) != "folga" or not sep:
             continue
+        if norm(value) in ("nenhuma", "nenhum"):
+            return "0000000"
         days = {_WEEKDAYS[norm(part)[:3]] for part in value.replace(";", ",").split(",") if norm(part)[:3] in _WEEKDAYS}
         if days and len(days) < 7:
             return "".join("1" if index in days else "0" for index in range(7))
     return default
+
+
+def weekend_line(mask: str) -> str:
+    """A linha da descrição da lista para uma máscara Seg→Dom (o inverso de `parse_weekend_mask`)."""
+    names = list(_WEEKDAYS)
+    days = ", ".join(names[i] for i, flag in enumerate(mask) if flag == "1")
+    return f"folga={days or _NO_REST}"
 
 
 def parse_workday(text: str | None) -> WorkDay | None:
