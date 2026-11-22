@@ -68,9 +68,13 @@ def _sheet(book, room: str | None):
     return book[room]
 
 
-def _block_links(rows, col, kinds) -> dict[int, list[int]]:
+def _block_links(rows, col, kinds, backward: frozenset[int] = frozenset()) -> dict[int, list[int]]:
     """Estúdios: cada bloco (etapa ou grupo com "Stage Start") espera a tarefa ou tarefas de fora
-    dele que, na planilha, terminam por último até o início dele. O primeiro bloco não espera nada."""
+    dele que, na planilha, terminam por último até o início dele. O primeiro bloco não espera nada.
+    Bloco cujas tarefas já têm antecessoras de fora dele não ganha vínculo deduzido: a planilha
+    disse o que ele espera (Benguela de 22/11 — a dedução acrescentava esperas que não existem).
+    Bloco calculado para trás (`backward`) também não: o motor não tem "N dias antes de outra
+    terminar", e a tarefa que termina logo antes dele não tem relação nenhuma com ele."""
     parent = {int(r[col["ID"]]): r[col["Parent ID"]] for r in rows}
 
     def under(row_id: int, block: int) -> bool:
@@ -82,10 +86,16 @@ def _block_links(rows, col, kinds) -> dict[int, list[int]]:
             node = parent.get(int(node))
         return False
 
+    def declares_outside(block: int) -> bool:
+        """As tarefas do bloco já dizem, na coluna Predecessors, o que esperam de fora dele."""
+        return any(not under(p, block) for x in rows if under(int(x[col["ID"]]), block)
+                   for p in _ids(x[col["Predecessors"]]))
+
     links: dict[int, list[int]] = {}
     for r in rows:
         block, start = int(r[col["ID"]]), r[col["Stage Start"]]
-        if kinds[block][0] != "Stage" or not isinstance(start, datetime):
+        if (kinds[block][0] != "Stage" or not isinstance(start, datetime) or block in backward
+                or declares_outside(block)):
             continue
         done = [x for x in rows if kinds[int(x[col["ID"]])][0] == "Task" and not under(int(x[col["ID"]]), block)
                 and isinstance(x[col["Finish"]], datetime) and x[col["Finish"]] <= start]
@@ -121,12 +131,9 @@ NOTE_COLUMNS = ("Scope / Work Instructions", "Done When / Hold Point", "Next / H
 _ROOM_REF = re.compile(r"'?(" + "|".join(ROOMS) + r")'?!\$?[A-Z]+\$?(\d+)")
 
 
-def _room_links(path: str, book, title: str, col: dict[str, int]) -> dict[int, tuple[tuple[str, int], ...]]:
+def _room_links(formulas, book, title: str, col: dict[str, int]) -> dict[int, tuple[tuple[str, int], ...]]:
     """Planos por equipe dos estúdios: o "Stage Start" de um bloco é uma fórmula com o fim das
     linhas que ele espera, às vezes noutra sala. Devolve, por ID, as (sala, ID) de fora."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        formulas = openpyxl.load_workbook(path)[title]
     links: dict[int, tuple[tuple[str, int], ...]] = {}
     for row in formulas.iter_rows(min_row=2):
         row_id, text = row[col["ID"]].value, row[col["Stage Start"]].value
@@ -137,6 +144,28 @@ def _room_links(path: str, book, title: str, col: dict[str, int]) -> dict[int, t
         if refs := {(room, int(ref)) for room, ref in refs if ref is not None}:
             links[int(row_id)] = tuple(sorted(refs))
     return links
+
+
+# "Stage Start" contado para trás a partir do fim de outra linha: =WORKDAY.INTL(INT(H26),-3,…)
+_BACKWARD = re.compile(r"WORKDAY(?:\.INTL)?\([^,]+,\s*-", re.IGNORECASE)
+
+
+def _formulas(path: str, title: str):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return openpyxl.load_workbook(path)[title]
+
+
+def _backward_blocks(formulas, col: dict[str, int]) -> frozenset[int]:
+    """Blocos cujo início é calculado para trás (Benguela de 22/11: o aço da torre chega 5 dias
+    úteis antes de a cura acabar, para ficar pouco tempo no site)."""
+    out = set()
+    for row in formulas.iter_rows(min_row=2):
+        row_id, value = row[col["ID"]].value, row[col["Stage Start"]].value
+        text = getattr(value, "text", value)            # fórmula matricial: ArrayFormula.text
+        if row_id is not None and isinstance(text, str) and _BACKWARD.search(text):
+            out.add(int(row_id))
+    return frozenset(out)
 
 
 def _notes(r, col: dict[str, int]) -> str | None:
@@ -207,15 +236,16 @@ def load_site_type_schedule(path: str, room: str | None = None):
     chain: dict[int, list[int]] = {}
     group_starts = any(kinds[int(r[col["ID"]])] == ("Stage", 3) and isinstance(r[col["Stage Start"]], datetime)
                        for r in rows)
-    if sheet.title in ROOMS or group_starts:
-        chain = _block_links(rows, col, kinds)
+    formulas = _formulas(path, sheet.title) if sheet.title in ROOMS or group_starts else None
+    if formulas is not None:
+        chain = _block_links(rows, col, kinds, _backward_blocks(formulas, col))
     else:
         for before, after in zip(stages, stages[1:]):
             a, b = int(before[col["ID"]]), int(after[col["ID"]])
             if a in stage_starts and b in stage_starts and stage_starts[a] < stage_starts[b]:
                 chain[b] = [a]
     waited = {p for r in rows for p in _ids(r[col["Predecessors"]])}
-    outside = _room_links(path, book, sheet.title, col) if sheet.title in ROOMS else {}
+    outside = _room_links(formulas, book, sheet.title, col) if sheet.title in ROOMS else {}
 
     tasks: list[XlsxTask] = []
     for r in rows:

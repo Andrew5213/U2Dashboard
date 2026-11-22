@@ -964,6 +964,21 @@ scratchpad: linha de base 26/10 → 14/11; como 26/10 já tinha passado, o cálc
 21/11). O motor do Teste 1 roda no servidor (instância `apiclickup-teste1`), com as listas de
 `SCHEDULE_LIST_IDS` dela.
 
+**Benguela corrigida (22/11/2026)** — "Benguela TX Site - Work Plan by Team - 22-11-2026" (128 tarefas, nova
+WBS com logística em 3 envios e a torre nova de 120 m) traz as antecessoras **explícitas**: as tarefas de
+cada bloco já dizem, em Predecessors, o que esperam de fora dele (a fórmula do "Stage Start" é o fim
+dessas linhas). Duas regras de `_block_links` saíram daí:
+- bloco cujas tarefas têm antecessoras de fora dele **não ganha vínculo deduzido** — a dedução pelo fim
+  mais tardio acrescentava esperas que a planilha não tem (37/44 → 16, 78/99 → 86, 119 → 118);
+- bloco **calculado para trás** (`_backward_blocks`: `WORKDAY(…, -n)` no "Stage Start" — o aço da torre
+  chega 5 dias úteis antes de a cura acabar, para ficar pouco tempo no site) também não: o motor não tem
+  "N dias antes de outra terminar", e a tarefa que terminava logo antes ("Inventory List") não tinha
+  relação com ele. Decisão do utilizador: fica sem antecessora; a data da planilha vem do "Início fixado".
+As outras 28 abas de plano por equipe (sites e estúdios) dão exatamente o mesmo resultado com as regras
+novas. Com "Início fixado" em 05/11 no Shipment 1 (data digitada sem nada antes) e em 02/12 no Shipment
+3, o motor reproduz as 128 tarefas da planilha ao minuto. Importada sem datas nem equipes no Site FM do
+RNA (`901327253281`) e do Teste 1 (`1400260000005520`), mesmos ids.
+
 **Plano por equipe dos estúdios** (2026-11-02): "Lubango Studios - Work Plan by Team - 01-11-2026" (pasta
 `Estudios\Lubango- Huila`), mesmo formato WBS das salas (uma aba por sala, `--room`), com "Team" (frente) e
 três colunas novas de instruções — **Scope / Work Instructions**, **Done When / Hold Point** e **Next /

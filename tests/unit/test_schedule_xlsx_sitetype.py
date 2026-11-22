@@ -233,7 +233,7 @@ def test_the_end_of_work_milestone_is_left_out(tmp_path):
 # Mesmo formato dos tipos de site, mas os grupos (frentes de cada equipe) têm início próprio, como
 # nos estúdios, e há a coluna "Team" com a frente (uma ou várias, separadas por ";").
 
-def _team_workbook(path) -> str:
+def _team_workbook(path, racks_preds: str = "") -> str:
     rows = [
         # ID, nome, tipo, nível, pai, antecessoras, duração, peso, início, fim, Stage Start, Team
         (1, "Lubango TX Site", "Project", 1, None, "", None, 1, D(2026, 10, 26, 7), D(2026, 11, 14, 18), None, None),
@@ -244,7 +244,9 @@ def _team_workbook(path) -> str:
         (5, "Equipment Installation", "Stage", 2, 1, "", None, 0.5, D(2026, 10, 28, 7), D(2026, 10, 28, 18), None, None),
         (6, "Transmitter Room – U2 Crew", "Stage", 3, 5, "", None, 1, D(2026, 10, 28, 7), D(2026, 10, 28, 18),
          D(2026, 10, 28, 7), None),
-        (7, "Racks", "Task", 4, 6, "", 1, 1, D(2026, 10, 28, 7), D(2026, 10, 28, 18), None, "EQUIPMENT; ELECTRICAL"),
+        (7, "Racks", "Task", 4, 6, racks_preds, 1, 1, D(2026, 10, 28, 7), D(2026, 10, 28, 18), None,
+         "EQUIPMENT; ELECTRICAL"),
+        (8, "Wall painting", "Task", 4, 3, "", 2, 0, D(2026, 10, 26, 7), D(2026, 10, 27, 18), None, "CIVIL"),
     ]
     header = HEADER + ["Team"]
     book = openpyxl.Workbook()
@@ -275,8 +277,22 @@ def test_a_site_plan_with_group_starts_chains_its_blocks_like_the_studios(tmp_pa
     schedule = load_schedule([_team_workbook(tmp_path)])
     by_name = {t.name: t for t in schedule.tasks}
 
-    assert by_name["Transmitter Room – U2 Crew"].predecessors == (by_name["Rubber floor installation"].key,)
+    assert set(by_name["Transmitter Room – U2 Crew"].predecessors) == {
+        by_name["Rubber floor installation"].key, by_name["Wall painting"].key}
     assert by_name["Equipment Installation"].predecessors == ()      # quem espera é o bloco, não a etapa
+
+
+def test_a_block_whose_tasks_name_what_they_wait_for_gets_no_guessed_link(tmp_path):
+    """Benguela de 22/11: as tarefas do bloco já trazem, em Predecessors, o que esperam de fora dele
+    (a fórmula do "Stage Start" é o fim dessas linhas). Deduzir pelo fim mais tardio acrescentava
+    esperas que a planilha não tem — aqui, a pintura, que termina na mesma hora do piso."""
+    guessed = {t.name: t for t in load_schedule([_team_workbook(tmp_path)]).tasks}
+    assert set(guessed["Transmitter Room – U2 Crew"].predecessors) == {
+        guessed["Rubber floor installation"].key, guessed["Wall painting"].key}
+
+    declared = {t.name: t for t in load_schedule([_team_workbook(tmp_path, racks_preds="4")]).tasks}
+    assert declared["Transmitter Room – U2 Crew"].predecessors == ()
+    assert declared["Racks"].predecessors == (declared["Rubber floor installation"].key,)
 
 
 def test_the_team_column_becomes_the_fronts_of_each_task(tmp_path):
@@ -353,3 +369,36 @@ def test_concrete_curing_is_always_calendar_days(tmp_path):
 
     assert (by_name["Concrete Curing"].duration, by_name["Concrete Curing"].calendar) == (14, CAL_CORRIDO)
     assert by_name["Generator positioning on cured pad"].calendar == CAL_UTIL
+
+
+def test_a_block_counted_backwards_is_recognised_and_gets_no_guessed_link(tmp_path):
+    """Benguela de 22/11: o aço da torre chega 5 dias úteis antes de a cura acabar
+    (=WORKDAY.INTL(INT(H26),-…)). O motor não tem "N dias antes de outra terminar", e a tarefa que
+    terminava logo antes do bloco ("Inventory List") não tinha relação com ele — fica sem antecessora
+    e, para a data da planilha, preenche-se o "Início fixado" do grupo."""
+    from src.services.schedule_xlsx_sitetype import _backward_blocks, _block_links
+
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.append(HEADER)
+    col = {name: i for i, name in enumerate(HEADER)}
+    backward = "=WORKDAY.INTL(INT(H26),-ROUNDUP(AB30,0)-Ship3Advance,WeekendPattern,Holidays)+StartTime"
+    forward = "=IF(MOD(MAX(H5),1)>=StartTime,WORKDAY.INTL(INT(MAX(H5)),1,WeekendPattern,Holidays),MAX(H5))"
+    for task_id, formula in ((3, backward), (6, forward)):
+        row = [None] * len(HEADER)
+        row[col["ID"]], row[col["Stage Start"]] = task_id, formula
+        sheet.append(row)
+    assert _backward_blocks(sheet, col) == frozenset({3})
+
+    rows = []
+    for task_id, kind, parent, finish, stage_start in (
+            (2, "Task", None, D(2026, 11, 25, 16), None),                 # "Inventory List"
+            (3, "Stage", None, None, D(2026, 12, 2, 7)),                  # o bloco do aço
+            (4, "Task", 3, D(2026, 12, 2, 18), None)):
+        row = [None] * len(HEADER)
+        row[col["ID"]], row[col["Type"]], row[col["Parent ID"]] = task_id, kind, parent
+        row[col["Finish"]], row[col["Stage Start"]], row[col["Predecessors"]] = finish, stage_start, ""
+        rows.append(tuple(row))
+    kinds = {2: ("Task", 3), 3: ("Stage", 3), 4: ("Task", 4)}
+    assert _block_links(rows, col, kinds) == {3: [2]}                 # a dedução antiga
+    assert _block_links(rows, col, kinds, frozenset({3})) == {}
