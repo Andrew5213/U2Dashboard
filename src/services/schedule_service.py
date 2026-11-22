@@ -381,6 +381,14 @@ class ScheduleService:
             flags = None if cancelled else _typed_dates(c, prev)
             if flags:
                 touched[c.id] = flags
+            if (percent < 100 and not cancelled and c.completed_on and c.completed_on <= today
+                    and not (prev and prev.is_done)
+                    and norm(status) in (norm(names.open), norm(names.in_progress))):
+                # "Data de Conclusão" lançada numa tarefa aberta (2026-11-22): concluída nesse dia,
+                # como um vencimento passado. Numa tarefa que acabou de ser reaberta o campo é o
+                # da conclusão antiga e é limpo; uma data futura não conclui nada, e um status fora
+                # do trio (impedimento, revisão) nunca é trocado.
+                percent, status = 100.0, names.done
             completed_on = None
             if percent >= 100 and not cancelled:
                 # sem data real informada, a conclusão vale a partir de hoje

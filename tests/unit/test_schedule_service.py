@@ -1717,6 +1717,55 @@ class TestPastDates:
         assert clickup.status("a") == "complete"
         assert ms_to_date(clickup.value("a", F_COMPLETION)) == date(2026, 11, 6)
 
+    async def test_a_completion_date_on_an_open_task_means_it_was_completed_that_day(self, db):
+        """2026-11-22, pedido do utilizador: lançar só a "Data de Conclusão" numa tarefa aberta (sem
+        mexer no status) vale como concluída nesse dia — antes o motor apagava o campo."""
+        clickup = await self._planned(db)
+        clickup._set("a", F_COMPLETION, str(date_to_ms(date(2026, 9, 10))))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "complete"
+        assert clickup.value("a", F_PERCENT) == {"current": "100"}
+        assert ms_to_date(clickup.value("a", F_COMPLETION)) == date(2026, 9, 10)
+        assert clickup.dates("a")[1] == date(2026, 9, 10)
+        assert clickup.dates("b")[0] == self.NOW                         # a sucessora começa hoje
+
+        clickup.writes.clear()
+        await _run(db, clickup, today=self.NOW)
+        assert not clickup.writes                                        # converge
+
+    async def test_a_completion_date_on_a_task_in_progress_completes_it(self, db):
+        clickup = await self._planned(db)
+        clickup._set("a", F_PERCENT, {"current": "50"})
+        await _run(db, clickup, today=self.NOW)
+        clickup._set("a", F_COMPLETION, str(date_to_ms(date(2026, 11, 6))))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") == "complete"
+        assert clickup.dates("a")[1] == date(2026, 11, 6)
+
+    async def test_a_completion_date_in_the_future_on_an_open_task_is_cleared(self, db):
+        clickup = await self._planned(db)
+        clickup._set("a", F_COMPLETION, str(date_to_ms(date(2026, 11, 20))))
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") != "complete"
+        assert clickup.value("a", F_COMPLETION) in (None, "")
+
+    async def test_reopening_a_completed_task_does_not_complete_it_again(self, db):
+        clickup = await self._planned(db)
+        self._complete(clickup, "a", on=date(2026, 9, 10))
+        await _run(db, clickup, today=self.NOW)
+        clickup.tasks["a"]["status"] = {"status": "planejando", "type": "open"}    # reaberta; o campo ficou
+
+        await _run(db, clickup, today=self.NOW)
+
+        assert clickup.status("a") != "complete"
+        assert clickup.value("a", F_COMPLETION) in (None, "")
+
     async def test_a_past_start_on_an_open_task_means_it_started_that_day(self, db):
         clickup = await self._planned(db)
         clickup.type_dates("a", start=date(2026, 9, 15))

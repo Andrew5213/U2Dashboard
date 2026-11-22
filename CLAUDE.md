@@ -715,6 +715,11 @@ iniciada** antes de hoje, então uma data passada digitada numa tarefa aberta s�
 - início **no futuro** continua a ser "Início fixado", e uma tarefa arrastada inteira para o passado foi feita
   nesse dia;
 - concluir pelo status + preencher a `Data de Conclusão` (em qualquer ordem) já funcionava e continua igual.
+- **só a `Data de Conclusão`** (2026-11-22, pedido do utilizador): preenchida numa tarefa aberta ou em
+  andamento, com data de hoje ou passada, = **concluída nesse dia** (% 100 e status concluído), como um
+  vencimento passado — antes o motor apagava o campo, porque tarefa aberta não tem conclusão. Não vale numa
+  tarefa que acabou de ser **reaberta** (o campo é o da conclusão antiga, e é limpo), numa data **futura**
+  (limpa) nem num status fora do trio (impedimento, revisão — nunca trocado).
 - **O ClickUp recusa um vencimento anterior ao início** (API 400): numa tarefa cujo início planeado é hoje não
   dá para pôr só um vencimento passado — lança-se o início primeiro (e o vencimento depois), as duas datas
   juntas no seletor, ou o status + `Data de Conclusão`.
@@ -1253,7 +1258,7 @@ Unit tests:
 - `test_authorization_flow.py` — ciclo dos tokens e decisão ponta a ponta com ClickUp/SMTP dublados
 - `test_schedule_engine.py` — motor do cronograma: paridade com as planilhas, calendário, reprogramação, % × status, Início fixado, datas fixadas e dependentes
 - `test_schedule_service.py` — leitura/gravação contra um ClickUp em memória (segunda execução não grava nada), datas digitadas à mão (atraso, adiantamento, mover, conflito com a antecessora, só as dependentes mudam, fuso), início pela primeira linha e dependências entre disciplinas
-- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx; `TestOtherLists` (2026-11-02): antecessora noutra lista, com e sem hora, sem data, linha de base pelo plano dela e as listas a avisar; `TestPastDates` (2026-11-08): andamento lançado com datas passadas (vencimento passado = concluída, início passado = iniciada, a trava de estado velho, horas reais)
+- `test_schedule_service.py` também cobre (QA de 2026-10-22): `TestSummaryEdits` (grupo movido, vencimento de grupo, bloco leva os "começa em"), `TestWritesRacingWithPeople` (edição durante a gravação, gravação pela metade, checagem por lotes), `TestStaleState` (estado velho) e a retentativa em 5xx; `TestOtherLists` (2026-11-02): antecessora noutra lista, com e sem hora, sem data, linha de base pelo plano dela e as listas a avisar; `TestPastDates` (2026-11-08): andamento lançado com datas passadas (vencimento passado = concluída, início passado = iniciada, a trava de estado velho, horas reais; desde 2026-11-22, só a `Data de Conclusão` numa tarefa aberta = concluída)
 - `test_schedule_pauses.py` — pausas: histórico (leitura/escrita), arquivamento com junção de pausas contíguas e o efeito no motor
 - `test_i18n.py` — versão em inglês: script de termos, nomes do ClickUp traduzidos e idioma do assistente
 - `test_embed_security.py` — cabeçalho `frame-ancestors` (com e sem configuração, e em resposta de streaming)
