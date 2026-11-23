@@ -68,11 +68,15 @@ def _sheet(book, room: str | None):
     return book[room]
 
 
-def _block_links(rows, col, kinds, backward: frozenset[int] = frozenset()) -> dict[int, list[int]]:
+def _block_links(rows, col, kinds, backward: frozenset[int] = frozenset(),
+                 formula_refs: dict[int, list[int]] | None = None) -> dict[int, list[int]]:
     """Estúdios: cada bloco (etapa ou grupo com "Stage Start") espera a tarefa ou tarefas de fora
     dele que, na planilha, terminam por último até o início dele. O primeiro bloco não espera nada.
     Bloco cujas tarefas já têm antecessoras de fora dele não ganha vínculo deduzido: a planilha
     disse o que ele espera (Benguela de 22/11 — a dedução acrescentava esperas que não existem).
+    Mas a fórmula do "Stage Start" pode esperar mais linhas do que as tarefas declaram (Caxito de
+    22/11: a montagem da torre espera a pré-montagem, que nenhuma tarefa dela cita) — essas linhas
+    (`formula_refs`, o fim de cada uma) entram como espera do bloco.
     Bloco calculado para trás (`backward`) também não: o motor não tem "N dias antes de outra
     terminar", e a tarefa que termina logo antes dele não tem relação nenhuma com ele."""
     parent = {int(r[col["ID"]]): r[col["Parent ID"]] for r in rows}
@@ -86,16 +90,21 @@ def _block_links(rows, col, kinds, backward: frozenset[int] = frozenset()) -> di
             node = parent.get(int(node))
         return False
 
-    def declares_outside(block: int) -> bool:
-        """As tarefas do bloco já dizem, na coluna Predecessors, o que esperam de fora dele."""
-        return any(not under(p, block) for x in rows if under(int(x[col["ID"]]), block)
-                   for p in _ids(x[col["Predecessors"]]))
+    def declared_outside(block: int) -> set[int]:
+        """O que as tarefas do bloco dizem, na coluna Predecessors, que esperam de fora dele."""
+        return {p for x in rows if under(int(x[col["ID"]]), block)
+                for p in _ids(x[col["Predecessors"]]) if not under(p, block)}
 
     links: dict[int, list[int]] = {}
     for r in rows:
         block, start = int(r[col["ID"]]), r[col["Stage Start"]]
-        if (kinds[block][0] != "Stage" or not isinstance(start, datetime) or block in backward
-                or declares_outside(block)):
+        if kinds[block][0] != "Stage" or not isinstance(start, datetime) or block in backward:
+            continue
+        if declared := declared_outside(block):
+            extra = [ref for ref in (formula_refs or {}).get(block, [])
+                     if ref != block and not under(ref, block) and ref not in declared]
+            if extra:
+                links[block] = extra
             continue
         done = [x for x in rows if kinds[int(x[col["ID"]])][0] == "Task" and not under(int(x[col["ID"]]), block)
                 and isinstance(x[col["Finish"]], datetime) and x[col["Finish"]] <= start]
@@ -144,6 +153,25 @@ def _room_links(formulas, book, title: str, col: dict[str, int]) -> dict[int, tu
         if refs := {(room, int(ref)) for room, ref in refs if ref is not None}:
             links[int(row_id)] = tuple(sorted(refs))
     return links
+
+
+# fim de outra linha (coluna Finish, H) citado na fórmula do "Stage Start": MAX(H5,H13,H17)
+_FINISH_REF = re.compile(r"(?<![A-Z$!])\$?H\$?(\d+)")
+
+
+def _formula_refs(formulas, col: dict[str, int]) -> dict[int, list[int]]:
+    """Por bloco, os IDs das linhas cujo fim a fórmula do "Stage Start" espera (só desta aba)."""
+    ids = {row[0].row: row[col["ID"]].value for row in formulas.iter_rows(min_row=2)}
+    out: dict[int, list[int]] = {}
+    for row in formulas.iter_rows(min_row=2):
+        row_id, value = row[col["ID"]].value, row[col["Stage Start"]].value
+        text = getattr(value, "text", value)
+        if row_id is None or not isinstance(text, str):
+            continue
+        refs = sorted({int(ids[int(n)]) for n in _FINISH_REF.findall(text) if ids.get(int(n)) is not None})
+        if refs:
+            out[int(row_id)] = refs
+    return out
 
 
 # "Stage Start" contado para trás a partir do fim de outra linha: =WORKDAY.INTL(INT(H26),-3,…)
@@ -238,7 +266,7 @@ def load_site_type_schedule(path: str, room: str | None = None):
                        for r in rows)
     formulas = _formulas(path, sheet.title) if sheet.title in ROOMS or group_starts else None
     if formulas is not None:
-        chain = _block_links(rows, col, kinds, _backward_blocks(formulas, col))
+        chain = _block_links(rows, col, kinds, _backward_blocks(formulas, col), _formula_refs(formulas, col))
     else:
         for before, after in zip(stages, stages[1:]):
             a, b = int(before[col["ID"]]), int(after[col["ID"]])

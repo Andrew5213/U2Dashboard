@@ -402,3 +402,35 @@ def test_a_block_counted_backwards_is_recognised_and_gets_no_guessed_link(tmp_pa
     kinds = {2: ("Task", 3), 3: ("Stage", 3), 4: ("Task", 4)}
     assert _block_links(rows, col, kinds) == {3: [2]}                 # a dedução antiga
     assert _block_links(rows, col, kinds, frozenset({3})) == {}
+
+
+def test_a_block_also_waits_for_the_rows_its_stage_start_formula_cites(tmp_path):
+    """Caxito/Namibe de 22/11: a fórmula do "Stage Start" pode esperar linhas que nenhuma tarefa do
+    bloco declara (o Shipment 1 espera o estudo de solo) — elas entram como espera do bloco; as que
+    as tarefas já declaram não são repetidas."""
+    from src.services.schedule_xlsx_sitetype import _block_links, _formula_refs
+
+    book = openpyxl.Workbook()
+    sheet = book.active
+    sheet.append(HEADER)
+    col = {name: i for i, name in enumerate(HEADER)}
+    for task_id, formula in ((2, None), (3, None), (4, "=IF(MOD(MAX(H3,H2),1)>=StartTime,1,MAX(H3,H2))"), (5, None)):
+        row = [None] * len(HEADER)
+        row[col["ID"]], row[col["Stage Start"]] = task_id, formula
+        sheet.append(row)
+    refs = _formula_refs(sheet, col)            # H3 = linha 3 = ID 3; H2 = ID 2
+    assert refs == {4: [2, 3]}
+
+    rows = []
+    for task_id, kind, parent, preds, finish, stage_start in (
+            (2, "Task", None, "", D(2026, 11, 5, 18), None),
+            (3, "Task", None, "", D(2026, 11, 6, 18), None),
+            (4, "Stage", None, "", None, D(2026, 11, 9, 7)),
+            (5, "Task", 4, "3", D(2026, 11, 9, 18), None)):        # a tarefa declara só a 3
+        row = [None] * len(HEADER)
+        row[col["ID"]], row[col["Type"]], row[col["Parent ID"]] = task_id, kind, parent
+        row[col["Finish"]], row[col["Stage Start"]], row[col["Predecessors"]] = finish, stage_start, preds
+        rows.append(tuple(row))
+    kinds = {2: ("Task", 3), 3: ("Task", 3), 4: ("Stage", 3), 5: ("Task", 4)}
+    assert _block_links(rows, col, kinds) == {}                      # sem a fórmula: nada deduzido
+    assert _block_links(rows, col, kinds, formula_refs=refs) == {4: [2]}

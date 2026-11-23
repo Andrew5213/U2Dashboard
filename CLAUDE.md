@@ -984,6 +984,28 @@ novas. Com "Início fixado" em 05/11 no Shipment 1 (data digitada sem nada antes
 3, o motor reproduz as 128 tarefas da planilha ao minuto. Importada sem datas nem equipes no Site FM do
 RNA (`901327253281`) e do Teste 1 (`1400260000005520`), mesmos ids.
 
+**Caxito, Mbanza Congo e Namibe corrigidas (22/11/2026)**, no mesmo formato. Uma regra a mais em
+`_block_links`: a fórmula do "Stage Start" pode esperar linhas que **nenhuma tarefa do bloco declara** (o
+Shipment 1 de Caxito espera o estudo de solo; em Namibe, a fundação espera o projeto e o Shipment 1) — essas
+linhas (`_formula_refs`, só as referências à coluna Finish desta aba) entram como espera do bloco; as já
+declaradas não se repetem. As outras abas não mudam. "Início fixado" usados (o resto vem das dependências):
+Caxito Shipment 3 = 10/12; Mbanza Congo Shipment 3 = 06/12 e EVOLUTION = 26/11 (semana de 7 dias); Namibe
+Shipment 3 = 07/12 e EVOLUTION ("1 dia útil antes do fim da montagem", calculado para trás) = 17/12. Linha de
+base = planilha em Caxito (128/128) e Mbanza Congo (129/129); em Namibe 95/129 — a cura de 25 dias corridos
+acaba num domingo: o motor (dias de calendário, decisão de 2026-11-08) solta a strength test segunda às 07:00,
+a planilha (dias úteis convertidos) às 11:00, e o que vem depois fica até 5 horas adiantado. Importadas com
+datas (início 03/11, sem equipes) em produção (`901327255155`, `901327255229`, `901327255236`) e no Teste 1
+(`1400260000005307`, `1400260000005412`, `1400260000005445`).
+
+**As outras 12 províncias com a planilha de 22/11** (23/11/2026), importadas com datas e sem equipes nos
+mesmos ids, todas com linha de base = planilha. Um "Início fixado" por bloco com data digitada ou calculada
+para trás — exceto na **primeira linha** (o bloco 2, Mobilization): o motor ignora o "Início fixado" dela
+(o início dela é o do projeto), então a data vai para a primeira tarefa do bloco (ID 3, sem antecessora),
+com o mesmo resultado. Datas literais dentro da fórmula do "Stage Start" (`MAX(H9, 46340.29)` em Huambo e
+N'Dalatando: a chegada da EVOLUTION) também viram "Início fixado". Em Lubango, as conclusões reais foram
+relançadas depois da importação (status e só depois a `Data de Conclusão`, que a automação do ClickUp
+sobrescreve com hoje ao concluir — inclusive nos grupos que ela conclui sozinha).
+
 **Plano por equipe dos estúdios** (2026-11-02): "Lubango Studios - Work Plan by Team - 01-11-2026" (pasta
 `Estudios\Lubango- Huila`), mesmo formato WBS das salas (uma aba por sala, `--room`), com "Team" (frente) e
 três colunas novas de instruções — **Scope / Work Instructions**, **Done When / Hold Point** e **Next /
