@@ -1133,9 +1133,13 @@ tarefa. Liga com `INSPECTOR_BRIDGE_ENABLED`. Sem ele, a rota nem é registada.
   gravado.
 - **Sala → lista** (`DEFAULT_ROOM_LISTS` em `inspector_bridge.py`, sobreponível por
   `INSPECTOR_BRIDGE_ROOM_LISTS`): Announcer Room e Control Room → STUDIO, Technical Center → CTP,
-  Newsroom → NEWSROOM, Transmission Site → Site FM. O modelo é avisado de que STUDIO cobre duas salas: uma
-  tarefa do estúdio inteiro não fecha com a foto de uma sala só (no ensaio real de 26/11 isso baixou o
-  drywall de 100% para 40%).
+  Newsroom → NEWSROOM, Transmission Site → Site FM.
+- **Salas da mesma lista são combinadas** (STUDIO = locução + controle). Cada envio do Inspector traz em
+  `other_rooms` o estado atual das outras salas da cidade (etapas + relato do último registo), e
+  `other_rooms_text` põe no prompt só as da mesma lista. Uma tarefa das duas salas vai a 100% quando as
+  duas estão concluídas, e à média quando só uma está; sala sem avaliação conta como não vista.
+  Antes disso o modelo só via uma sala por vez, e toda tarefa partilhada parava em 50% (pedido do utilizador
+  em 26/11). Tarefa com o nome da outra sala continua à espera da inspeção dessa sala.
 - **Garantias que não dependem do modelo** (`plan_updates`):
   - a tarefa tem de ser uma tarefa-folha da lista (`enum` no esquema de saída);
   - o % é arredondado a 5 e **nunca desce**.

@@ -117,9 +117,13 @@ Regras:
 5. O relato da equipa é aceite como evidência, inclusive para concluir (fonte "relato"), desde que nenhuma foto o
    contradiga.
 6. Distingue o que é novo do que já existia: reforma; o piso cerâmico, visor ou ar condicionado antigos não contam.
-7. Uma lista pode cobrir várias salas (ex.: STUDIO = sala de locução + sala de controle). Uma tarefa que, pelo nome,
-   vale para todas essas salas só chega a 100% se a inspeção mostrar todas; vendo só uma, dá um percentual proporcional.
-   Uma tarefa com o nome de outra sala (ex.: "announcer booth" numa inspeção da sala de controle) não se atualiza.
+7. Uma lista pode cobrir várias salas (ex.: STUDIO = sala de locução + sala de controle). Para uma tarefa que, pelo
+   nome, vale para todas essas salas, combina esta inspeção com o estado das outras salas da lista (secção "ESTADO
+   ATUAL DAS OUTRAS SALAS DESTA LISTA", que é a última avaliação delas no Inspector): o elemento concluído nesta sala
+   E nas outras = 100%; concluído só numa = a média entre as salas (ex.: 100% aqui e 0% na outra = 50%). Uma sala
+   "sem avaliação no Inspector" conta como não vista (0% dela). Diz na evidência o que veio desta inspeção e o que
+   veio da outra sala. Uma tarefa com o nome de outra sala (ex.: "announcer booth" numa inspeção da sala de
+   controle) não se atualiza aqui: atualiza-se quando chegar a inspeção dessa sala.
 8. Uma etapa posterior concluída permite deduzir as anteriores da mesma parede/elemento (paredes pintadas → placas e
    estrutura de drywall feitas); diz na evidência que é uma dedução.
 9. "evidencia": frase curta, em português, dizendo o que nas fotos/relato sustenta o percentual. Vai para o comentário
@@ -132,8 +136,38 @@ def rooms_of_list(list_name: str, mapping: dict[str, str] | None = None) -> list
     return [room for room, name in mapping.items() if norm(name) == norm(list_name) and norm(room) != norm(name)]
 
 
+def _same_room(a: str, b: str) -> bool:
+    return norm(str(a).split("(", 1)[0]) == norm(str(b).split("(", 1)[0])
+
+
+def other_rooms_text(payload: dict, list_name: str, list_rooms: list[str] | None,
+                     mapping: dict[str, str] | None = None) -> str:
+    """Estado atual das outras salas da mesma lista (o Inspector manda as da cidade inteira em other_rooms)."""
+    if not list_rooms or len(list_rooms) < 2:
+        return ""
+    current = payload.get("room", "")
+    others = [o for o in payload.get("other_rooms") or []
+              if not _same_room(o.get("room", ""), current)
+              and norm(room_list_name(o.get("room", ""), mapping) or "") == norm(list_name)]
+    blocks = []
+    for o in others:
+        stages = "\n".join(
+            f"  - {s.get('name')}: {s.get('status')}, {s.get('percent') if s.get('percent') is not None else '?'}%"
+            f" — {str(s.get('evidence') or '')[:300]}" for s in o.get("stages") or []) or "  - (sem etapas avaliadas)"
+        notes = str(o.get("notes") or "").strip()[:600]
+        blocks.append(f"{o.get('room')} (último registo {str(o.get('last_record', ''))[:16]}):\n{stages}"
+                      + (f"\n  Relato desse registo: {notes}" if notes else ""))
+    seen = [o.get("room", "") for o in others] + [current]
+    for room in list_rooms:
+        if not any(_same_room(room, s) for s in seen):
+            blocks.append(f"{room}: sem avaliação no Inspector (conta como não vista).")
+    if not blocks:
+        return ""
+    return "ESTADO ATUAL DAS OUTRAS SALAS DESTA LISTA (última avaliação de cada uma no Inspector):\n" + "\n".join(blocks) + "\n\n"
+
+
 def build_user_text(payload: dict, candidates: list[Candidate], n_photos: int, list_name: str = "",
-                    list_rooms: list[str] | None = None) -> str:
+                    list_rooms: list[str] | None = None, mapping: dict[str, str] | None = None) -> str:
     stages = "\n".join(
         f"- {s.get('name')}: {s.get('status')}, {s.get('percent')}% da etapa"
         f" ({'relato' if s.get('source') == 'relato' else 'foto'}) — {s.get('evidence', '')}"
@@ -156,7 +190,7 @@ O QUE AS FOTOS MOSTRAM (segundo a inspeção):
 
 RESUMO DA INSPEÇÃO: {payload.get('summary') or '(sem resumo)'}
 
-TAREFAS DO CRONOGRAMA DESTA SALA ([id] caminho — % atual):
+{other_rooms_text(payload, list_name, list_rooms, mapping)}TAREFAS DO CRONOGRAMA DESTA SALA ([id] caminho — % atual):
 {tasks}
 
 Responde com as tarefas comprovadas por esta inspeção (lista vazia se nenhuma)."""

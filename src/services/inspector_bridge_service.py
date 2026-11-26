@@ -130,9 +130,10 @@ class InspectorBridgeService:
             content.append({"type": "text", "text": f"FOTO {i}" + (f" — comentário: {photo['comment']}" if photo["comment"] else "")})
             content.append({"type": "image", "source": {"type": "base64", "media_type": photo["mime"], "data": photo["b64"]}})
         list_name = info.get("name") or ""
+        mapping = room_lists()
         content.append({"type": "text", "text": rules.build_user_text(
             payload, candidates, min(len(photos), rules.MAX_PHOTOS_TO_MODEL), list_name,
-            rules.rooms_of_list(list_name, room_lists()))})
+            rules.rooms_of_list(list_name, mapping), mapping)})
         raw = await self._model_call(rules.SYSTEM_PROMPT, content, rules.response_schema(candidates))
         try:
             plan = rules.plan_updates(raw, candidates)

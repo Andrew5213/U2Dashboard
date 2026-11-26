@@ -269,3 +269,38 @@ def test_the_model_is_told_which_rooms_share_the_list():
     assert "A lista STUDIO do ClickUp cobre estas salas: Announcer Room, Control Room" in text
     assert "Studio" not in rules.rooms_of_list("STUDIO")
     assert "vale para todas essas salas" in rules.SYSTEM_PROMPT
+
+
+ANNOUNCER_STATE = {
+    "room": "Announcer Room (Estúdio de Locução)", "last_record": "2026-11-26T14:24:38",
+    "notes": "Porta, quadros, aquário e placa ON AIR concluídos",
+    "stages": [{"name": "Tratamento acústico", "status": "concluido", "percent": 100,
+                "evidence": "painéis e ripado instalados", "source": "ia"}],
+}
+NEWSROOM_STATE = {
+    "room": "Newsroom (Redação de Jornalismo)", "last_record": "2026-11-25T10:00:00", "notes": "",
+    "stages": [{"name": "Mobiliário", "status": "em_execucao", "percent": 30, "evidence": "mesas", "source": "ia"}],
+}
+
+
+def test_the_other_room_of_the_same_list_is_given_to_the_model():
+    """STUDIO = locução + controle: a inspeção de uma sala chega com o estado atual da outra."""
+    payload = _payload(other_rooms=[ANNOUNCER_STATE, NEWSROOM_STATE])
+    text = rules.build_user_text(payload, rules.leaf_candidates(TASKS), 1, "STUDIO", rules.rooms_of_list("STUDIO"))
+    assert "ESTADO ATUAL DAS OUTRAS SALAS DESTA LISTA" in text
+    assert "Announcer Room (Estúdio de Locução)" in text
+    assert "Tratamento acústico: concluido, 100%" in text
+    assert "Porta, quadros, aquário e placa ON AIR concluídos" in text
+    assert "Newsroom" not in text          # outra lista (NEWSROOM): não entra
+    assert "combina esta inspeção com o estado das outras salas" in rules.SYSTEM_PROMPT
+
+
+def test_without_the_other_room_the_model_is_told_it_was_not_seen():
+    text = rules.build_user_text(_payload(), rules.leaf_candidates(TASKS), 1, "STUDIO", rules.rooms_of_list("STUDIO"))
+    assert "Announcer Room: sem avaliação no Inspector" in text
+
+
+def test_a_list_of_one_room_has_no_combination_section():
+    payload = _payload(room="Newsroom (Redação de Jornalismo)", other_rooms=[ANNOUNCER_STATE])
+    text = rules.build_user_text(payload, rules.leaf_candidates(TASKS), 1, "NEWSROOM", rules.rooms_of_list("NEWSROOM"))
+    assert "OUTRAS SALAS" not in text and "Announcer" not in text
