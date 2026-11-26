@@ -30,3 +30,27 @@ async def test_without_the_flag_it_reads_until_an_empty_page(monkeypatch):
 
     assert [t["id"] for t in tasks] == ["a"]
     assert asked == ["0", "1"]
+
+
+async def test_attachment_is_sent_as_multipart(monkeypatch):
+    """O cliente principal manda Content-Type JSON em todo pedido; o anexo precisa de multipart."""
+    import httpx
+    from src.services import clickup_client as module
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"id": "att"})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(module.httpx, "AsyncClient",
+                        lambda *a, **kw: real(*a, transport=httpx.MockTransport(handler), **kw))
+    async with ClickUpClient() as client:
+        result = await client.upload_attachment("T1", "foto.jpg", b"jpeg-bytes", "image/jpeg")
+
+    request = seen[0]
+    assert result == {"id": "att"}
+    assert str(request.url) == "https://api.clickup.com/api/v2/task/T1/attachment"
+    assert request.headers["content-type"].startswith("multipart/form-data; boundary=")
+    assert b'name="attachment"; filename="foto.jpg"' in request.read()
+    assert request.headers["authorization"] == "test_token"

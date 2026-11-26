@@ -12,7 +12,7 @@ from src.core.logging import setup_logging
 from src.core.config import settings
 from src.api import auth, health, webhooks, sync
 from src.api import dashboard, dashboard_stream, reports, disciplines, chat
-from src.api import civil, progress_civil, authorizations, schedule
+from src.api import civil, progress_civil, authorizations, schedule, inspector_bridge
 from src.workers.polling_worker import start_polling, stop_polling
 from src.workers.cache_worker import start_cache_worker, stop_cache_worker
 from src.workers.email_worker import start_email_worker, stop_email_worker
@@ -23,6 +23,7 @@ import src.models.civil_models  # noqa: F401
 import src.models.progress_models  # noqa: F401
 import src.models.authorization_models  # noqa: F401
 import src.models.schedule_models  # noqa: F401
+import src.models.inspector_bridge_models  # noqa: F401
 
 
 @asynccontextmanager
@@ -94,6 +95,8 @@ if settings.authorization_module_enabled:
     app.include_router(authorizations.router)
 if settings.schedule_enabled:
     app.include_router(schedule.router)
+if settings.inspector_bridge_enabled:
+    app.include_router(inspector_bridge.router)
 
 
 _MOBILE_UA_KEYWORDS = ("mobile", "android", "iphone", "ipad", "ipod")

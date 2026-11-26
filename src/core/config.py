@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     # Fuso da obra em horas a partir de UTC (Angola = +1) — define o que é "hoje"
     schedule_utc_offset_hours: int = 1
 
+    # ── Ponte Broadcast Inspector → ClickUp ──────────────────────────────────
+    # A IA do Inspector avalia as fotos; aqui a avaliação vira % e anexos nas tarefas.
+    inspector_bridge_enabled: bool = False
+    # ÚNICO space onde a ponte grava (laboratório "PEMx - RNA (Auto.)"). Vazio = nada é gravado.
+    inspector_bridge_space_id: str = ""
+    # HMAC-SHA256 do corpo, cabeçalho X-Inspector-Signature. Obrigatório: sem ele a rota recusa tudo.
+    inspector_bridge_secret: str = ""
+    inspector_bridge_model: str = "claude-opus-5-5"
+    # Opcional: JSON {"sala": "lista"} — sobrepõe inspector_bridge.DEFAULT_ROOM_LISTS
+    inspector_bridge_room_lists: str = ""
+
     # ── Embutir a app em outro site (Nextcloud › External sites) ─────────────
     # Origens autorizadas a abrir a app num iframe, separadas por vírgula
     # (ex.: https://cloud.exemplo.com). Vazio = nenhum cabeçalho é enviado.

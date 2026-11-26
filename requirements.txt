@@ -18,6 +18,6 @@ pytest-httpx==0.35.0
 fpdf2>=2.8.0
 pikepdf>=9.0.0        # aplica o papel timbrado vetorial sobre o PDF gerado
 openpyxl>=3.1.0
-anthropic>=0.40.0
+anthropic>=0.112.0  # output_config (saída estruturada) e fallbacks na ponte do Inspector
 PyJWT>=2.8.0
 cryptography>=42.0.0

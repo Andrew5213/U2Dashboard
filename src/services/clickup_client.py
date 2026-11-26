@@ -260,3 +260,15 @@ class ClickUpClient:
     async def create_comment(self, task_id: str, comment_text: str, notify_all: bool = True) -> dict:
         payload = {"comment_text": comment_text, "notify_all": notify_all}
         return await self._post(f"/task/{task_id}/comment", payload)
+
+    async def upload_attachment(self, task_id: str, filename: str, data: bytes, mime: str = "image/jpeg") -> dict:
+        """Anexa um ficheiro à tarefa (multipart, campo "attachment").
+
+        Cliente próprio: o principal manda `Content-Type: application/json` em todo pedido, e esse
+        cabeçalho venceria o `multipart/form-data; boundary=...` que o upload precisa.
+        """
+        async with httpx.AsyncClient(base_url=BASE_URL, headers={"Authorization": settings.clickup_api_token},
+                                     timeout=60.0) as client:
+            response = await client.post(f"/task/{task_id}/attachment", files={"attachment": (filename, data, mime)})
+            response.raise_for_status()
+            return response.json()

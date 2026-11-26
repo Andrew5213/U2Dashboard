@@ -1119,6 +1119,44 @@ declarado na aba Parâmetros (ex.: Saurimo, `EXT-01` "Torre entregue no site") �
 `schedule_xlsx.py` como tarefa própria, logo antes de quem depende dela, sem duração nem equipe —
 preenche-se a duração no ClickUp com o prazo de entrega.
 
+## Ponte Broadcast Inspector → ClickUp (laboratório)
+
+O Broadcast Inspector (`C:\dev\Broadcast-Inspector`, outro projeto) avalia as fotos de cada sala por etapas
+com Gemini/OpenAI. Cada análise com etapas é enviada para `POST /inspector/updates` deste backend, e o Claude
+(`INSPECTOR_BRIDGE_MODEL`, por padrão `claude-opus-5-5`) escolhe as tarefas do cronograma que a inspeção
+comprova. O backend então grava o `% Concluído`, um comentário com a evidência e até 4 fotos em anexo em cada
+tarefa. Liga com `INSPECTOR_BRIDGE_ENABLED`. Sem ele, a rota nem é registada.
+
+- **Só grava no space de laboratório** `INSPECTOR_BRIDGE_SPACE_ID` (hoje **PEMx - RNA (Auto.)**,
+  `1400260000003694`), por decisão do utilizador em 26/11/2026. A pasta da cidade é procurada nesse space, e a
+  lista só é aceite se o próprio ClickUp disser que ela pertence a ele (`resolve_list`). Space vazio = nada é
+  gravado.
+- **Sala → lista** (`DEFAULT_ROOM_LISTS` em `inspector_bridge.py`, sobreponível por
+  `INSPECTOR_BRIDGE_ROOM_LISTS`): Announcer Room e Control Room → STUDIO, Technical Center → CTP,
+  Newsroom → NEWSROOM, Transmission Site → Site FM. O modelo é avisado de que STUDIO cobre duas salas: uma
+  tarefa do estúdio inteiro não fecha com a foto de uma sala só (no ensaio real de 26/11 isso baixou o
+  drywall de 100% para 40%).
+- **Garantias que não dependem do modelo** (`plan_updates`):
+  - a tarefa tem de ser uma tarefa-folha da lista (`enum` no esquema de saída);
+  - o % é arredondado a 5 e **nunca desce**.
+- Ao chegar a 100%, a `Data de Conclusão` recebe o **dia da inspeção**, não o do envio.
+- Numa lista gerida pelo motor (`SCHEDULE_LIST_IDS`), o status fica com o motor, avisado por
+  `notify_list_changed`. Numa lista fora do motor, a ponte põe "fazendo" / concluído.
+- **Assinatura obrigatória**: HMAC-SHA256 hex do corpo, no cabeçalho `X-Inspector-Signature`, com
+  `INSPECTOR_BRIDGE_SECRET`. Sem segredo, a rota responde 503. O mesmo segredo vai no Inspector como
+  `CLICKUP_BRIDGE_SECRET`.
+- **Uma vez por chave** (`inspector_bridge_run`): a chave vem do Inspector (registo + momento da análise), e
+  uma reanálise gera chave nova. A resposta é 202 e o trabalho corre em segundo plano, um de cada vez (`_lock`).
+  O resultado fica em `GET /inspector/updates/{key}`, que assina a própria chave.
+- `dry_run: true` no corpo (no Inspector, `CLICKUP_BRIDGE_DRY_RUN=true`) só propõe: chama o Claude e guarda
+  a proposta, sem gravar no ClickUp.
+- **nginx**: o corpo leva até 4 fotos de 1280 px em base64 (~1–2 MB). O `client_max_body_size` padrão (1 MB)
+  recusaria com 413; usar pelo menos `8m` na rota.
+- **Teste local no Windows com Kaspersky**: o antivírus intercepta o TLS de `api.anthropic.com` com uma raiz
+  própria, que o `certifi` do httpx não conhece (`CERTIFICATE_VERIFY_FAILED`). No servidor não acontece. Para
+  ensaiar localmente, passe `http_client=anthropic.DefaultAsyncHttpxClient(verify=ssl.create_default_context())`;
+  não desligue a verificação.
+
 ## Agreement ↔ List Matching
 
 Lists and agreements are matched **by name** (case-insensitive). If names don't match:
@@ -1220,6 +1258,11 @@ Tables:
 | `SCHEDULE_DEBOUNCE_SECONDS` | Espera após webhook antes de recalcular (os servidores de teste fixavam `5` no `.env`) | `2` |
 | `SCHEDULE_INTERVAL_SECONDS` | Intervalo do recálculo periódico | `300` |
 | `SCHEDULE_UTC_OFFSET_HOURS` | Fuso da obra (define "hoje" para o motor); Angola = 1 | `1` |
+| `INSPECTOR_BRIDGE_ENABLED` | Liga a ponte Broadcast Inspector → ClickUp (`POST /inspector/updates`) | `false` |
+| `INSPECTOR_BRIDGE_SPACE_ID` | Único space onde a ponte grava (laboratório PEMx - RNA (Auto.)); vazio = nada é gravado | `""` |
+| `INSPECTOR_BRIDGE_SECRET` | HMAC do corpo (`X-Inspector-Signature`); obrigatório | `""` |
+| `INSPECTOR_BRIDGE_MODEL` | Modelo Claude que escolhe as tarefas | `claude-opus-5-5` |
+| `INSPECTOR_BRIDGE_ROOM_LISTS` | Opcional: JSON `{"sala": "lista"}` que sobrepõe o mapa padrão | `""` |
 | `EMBED_ALLOWED_ORIGINS` | Origens que podem abrir a app num iframe (Nextcloud), separadas por vírgula; vazio = sem restrição | `""` |
 | `NEXTCLOUD_JWT_PUBLIC_KEY_PEM` | Chave pública (PEM) que confere o JWT do External sites; vazio = identificação desligada | `""` |
 | `NEXTCLOUD_JWT_ISSUER` | Opcional: URL base do Nextcloud; token com outro `iss` é recusado | `""` |
